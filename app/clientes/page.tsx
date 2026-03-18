@@ -6,28 +6,36 @@ import { supabase } from "../../lib/supabase"
 export default function Clientes() {
 
   const [clientes, setClientes] = useState<any[]>([])
-  const [nuevoNombre, setNuevoNombre] = useState("")
+  const [nuevoNombre, setNuevoNombre] = useState<string>("")
 
   useEffect(() => {
     fetchClientes()
   }, [])
 
-  async function fetchClientes() {
-    const { data } = await supabase
+  const fetchClientes = async () => {
+    const { data, error } = await supabase
       .from("clientes")
       .select("*")
+
+    if (error) {
+      console.error(error)
+      return
+    }
 
     setClientes(data || [])
   }
 
-  async function agregarCliente() {
+  const agregarCliente = async () => {
     if (!nuevoNombre) return
 
-    await supabase
+    const { error } = await supabase
       .from("clientes")
-      .insert([
-        { nombre: nuevoNombre }
-      ])
+      .insert([{ nombre: nuevoNombre }])
+
+    if (error) {
+      console.error(error)
+      return
+    }
 
     setNuevoNombre("")
     fetchClientes()
@@ -35,7 +43,6 @@ export default function Clientes() {
 
   return (
     <main style={{ padding: "40px" }}>
-
       <h1>Clientes</h1>
 
       <input
@@ -50,12 +57,11 @@ export default function Clientes() {
 
       <hr />
 
-      {clientes.map((cliente) => (
+      {clientes.map((cliente: any) => (
         <div key={cliente.id}>
           {cliente.nombre}
         </div>
       ))}
-
     </main>
   )
 }
