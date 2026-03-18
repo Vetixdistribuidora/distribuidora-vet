@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabase"
 
 export default function Productos() {
 
-  const [productos, setProductos] = useState([])
+  const [productos, setProductos] = useState[]>([])
 
   const [nuevoNombre, setNuevoNombre] = useState("")
   const [nuevoPrecio, setNuevoPrecio] = useState("")

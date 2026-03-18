@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabase"
 
 export default function Clientes() {
 
-  const [clientes, setClientes] = useState([])
+  const [clientes, setClientes] = useState[]>([])
   const [nombre, setNombre] = useState("")
   const [telefono, setTelefono] = useState("")
 
