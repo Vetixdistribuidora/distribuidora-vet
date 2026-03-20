@@ -29,7 +29,7 @@ export default function Ventas() {
     const cliente = clientes.find(c => c.id == clienteId)
 
     if (producto && cliente) {
-      const precio = producto.precio_venta - (producto.precio_venta * cliente.descuento / 100)
+      const precio = producto.costo + (producto.costo * cliente.porcentaje / 100)
       setPrecioFinal(precio)
     }
 
@@ -37,11 +37,16 @@ export default function Ventas() {
 
   async function vender() {
 
-    await supabase.from("ventas").insert([{
+    const { error } = await supabase.from("ventas").insert([{
       producto_id: productoId,
       cliente_id: clienteId,
       total: precioFinal
     }])
+
+    if (error) {
+      alert(error.message)
+      return
+    }
 
     alert("✅ Venta realizada")
   }
@@ -51,23 +56,27 @@ export default function Ventas() {
 
       <h1>💰 Venta</h1>
 
-      <select onChange={e => setProductoId(e.target.value)}>
-        <option>Producto</option>
-        {productos.map(p => (
-          <option key={p.id} value={p.id}>{p.nombre}</option>
-        ))}
-      </select>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <select onChange={e => setProductoId(e.target.value)}>
+          <option value="">Seleccionar producto</option>
+          {productos.map(p => (
+            <option key={p.id} value={p.id}>{p.nombre}</option>
+          ))}
+        </select>
 
-      <select onChange={e => setClienteId(e.target.value)}>
-        <option>Cliente</option>
-        {clientes.map(c => (
-          <option key={c.id} value={c.id}>
-            {c.nombre} ({c.descuento}%)
-          </option>
-        ))}
-      </select>
+        <select onChange={e => setClienteId(e.target.value)}>
+          <option value="">Seleccionar cliente</option>
+          {clientes.map(c => (
+            <option key={c.id} value={c.id}>
+              {c.nombre} ({c.porcentaje}%)
+            </option>
+          ))}
+        </select>
+      </div>
 
-      <h2>💵 Precio final: ${precioFinal.toFixed(2)}</h2>
+      <h2 style={{ marginTop: 20 }}>
+        💵 Precio final: ${precioFinal.toFixed(2)}
+      </h2>
 
       <button onClick={vender}>💾 Confirmar venta</button>
 
