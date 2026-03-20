@@ -3,85 +3,66 @@
 import { useEffect, useState } from "react"
 import { supabase } from "../../lib/supabase"
 
-type Cliente = {
-  id: number
-  nombre: string
-  apellido: string
-  razon_social: string
-  cuit: string
-  telefono: string
-  localidad: string
-}
-
 export default function Clientes() {
 
-  const [clientes, setClientes] = useState<Cliente[]>([])
-
+  const [clientes, setClientes] = useState<any[]>([])
   const [nombre, setNombre] = useState("")
   const [apellido, setApellido] = useState("")
-  const [razon, setRazon] = useState("")
   const [cuit, setCuit] = useState("")
   const [telefono, setTelefono] = useState("")
   const [localidad, setLocalidad] = useState("")
 
-  useEffect(() => {
-    fetchClientes()
-  }, [])
-
-  async function fetchClientes() {
+  async function cargar() {
     const { data } = await supabase.from("clientes").select("*")
     setClientes(data || [])
   }
 
-  async function agregarCliente() {
+  useEffect(() => { cargar() }, [])
 
-    const { error } = await supabase.from("clientes").insert([
-      {
-        nombre,
-        apellido,
-        razon_social: razon,
-        cuit,
-        telefono,
-        localidad
-      }
-    ])
-
-    if (error) {
-      alert(error.message)
-      return
-    }
-
-    setNombre("")
-    setApellido("")
-    setRazon("")
-    setCuit("")
-    setTelefono("")
-    setLocalidad("")
-
-    fetchClientes()
+  async function agregar() {
+    await supabase.from("clientes").insert([{
+      nombre,
+      apellido,
+      cuit,
+      telefono,
+      localidad
+    }])
+    cargar()
   }
 
   return (
-    <main style={{ padding: 20 }}>
-      <h1>Clientes</h1>
+    <div>
 
-      <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
-      <input placeholder="Apellido" value={apellido} onChange={e => setApellido(e.target.value)} />
-      <input placeholder="Razón Social" value={razon} onChange={e => setRazon(e.target.value)} />
-      <input placeholder="CUIT" value={cuit} onChange={e => setCuit(e.target.value)} />
-      <input placeholder="Teléfono" value={telefono} onChange={e => setTelefono(e.target.value)} />
-      <input placeholder="Localidad" value={localidad} onChange={e => setLocalidad(e.target.value)} />
+      <h1>👥 Clientes</h1>
 
-      <button onClick={agregarCliente}>Agregar</button>
+      <button onClick={() => window.history.back()}>🔙 Volver</button>
 
-      <hr />
+      <div style={{ marginTop: 20 }}>
+        <input placeholder="Nombre" onChange={e => setNombre(e.target.value)} />
+        <input placeholder="Apellido" onChange={e => setApellido(e.target.value)} />
+        <input placeholder="CUIT" onChange={e => setCuit(e.target.value)} />
+        <input placeholder="Teléfono" onChange={e => setTelefono(e.target.value)} />
+        <input placeholder="Localidad" onChange={e => setLocalidad(e.target.value)} />
 
-      {clientes.map(c => (
-        <div key={c.id}>
-          <p>{c.nombre} {c.apellido}</p>
-          <p>{c.razon_social}</p>
-        </div>
-      ))}
-    </main>
+        <button onClick={agregar}>➕ Agregar</button>
+      </div>
+
+      <div style={{ marginTop: 20 }}>
+        {clientes.map(c => (
+          <div key={c.id} style={{
+            background: "white",
+            padding: 15,
+            marginBottom: 15,
+            borderRadius: 10
+          }}>
+            <b>{c.nombre} {c.apellido}</b>
+            <p>CUIT: {c.cuit}</p>
+            <p>📞 {c.telefono}</p>
+            <p>📍 {c.localidad}</p>
+          </div>
+        ))}
+      </div>
+
+    </div>
   )
 }
