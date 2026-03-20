@@ -7,8 +7,8 @@ type Cliente = {
   id: number
   nombre: string
   apellido: string
-  cuit: string
   razon_social: string
+  cuit: string
   telefono: string
   localidad: string
 }
@@ -16,141 +16,72 @@ type Cliente = {
 export default function Clientes() {
 
   const [clientes, setClientes] = useState<Cliente[]>([])
-  const [form, setForm] = useState<Partial<Cliente>>({})
+
+  const [nombre, setNombre] = useState("")
+  const [apellido, setApellido] = useState("")
+  const [razon, setRazon] = useState("")
+  const [cuit, setCuit] = useState("")
+  const [telefono, setTelefono] = useState("")
+  const [localidad, setLocalidad] = useState("")
 
   useEffect(() => {
     fetchClientes()
   }, [])
 
   async function fetchClientes() {
-    const { data, error } = await supabase.from("clientes").select("*")
-    if (error) {
-      console.log(error)
-      alert("Error al cargar clientes")
-      return
-    }
+    const { data } = await supabase.from("clientes").select("*")
     setClientes(data || [])
   }
 
-  async function guardarCliente() {
+  async function agregarCliente() {
 
-    if (!form.nombre) {
-      alert("Nombre obligatorio")
-      return
-    }
-
-    const { data, error } = await supabase
-      .from("clientes")
-      .insert([{
-        nombre: form.nombre || "",
-        apellido: form.apellido || "",
-        cuit: form.cuit || "",
-        razon_social: form.razon_social || "",
-        telefono: form.telefono || "",
-        localidad: form.localidad || ""
-      }])
-      .select() // <- asegura que traiga el registro insertado
+    const { error } = await supabase.from("clientes").insert([
+      {
+        nombre,
+        apellido,
+        razon_social: razon,
+        cuit,
+        telefono,
+        localidad
+      }
+    ])
 
     if (error) {
-      console.log("ERROR REAL:", error)
-      alert("Error al guardar: " + error.message)
+      alert(error.message)
       return
     }
 
-    alert("Cliente guardado ✅")
-    setForm({})
-    fetchClientes()
-  }
+    setNombre("")
+    setApellido("")
+    setRazon("")
+    setCuit("")
+    setTelefono("")
+    setLocalidad("")
 
-  async function eliminar(id: number) {
-    const { error } = await supabase.from("clientes").delete().eq("id", id)
-    if (error) {
-      alert("Error al eliminar: " + error.message)
-      return
-    }
     fetchClientes()
   }
 
   return (
-    <main style={{ padding: 20, fontFamily: "Arial, sans-serif" }}>
+    <main style={{ padding: 20 }}>
+      <h1>Clientes</h1>
 
-      <h1 style={{ color: "#000" }}>👤 Clientes</h1>
+      <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
+      <input placeholder="Apellido" value={apellido} onChange={e => setApellido(e.target.value)} />
+      <input placeholder="Razón Social" value={razon} onChange={e => setRazon(e.target.value)} />
+      <input placeholder="CUIT" value={cuit} onChange={e => setCuit(e.target.value)} />
+      <input placeholder="Teléfono" value={telefono} onChange={e => setTelefono(e.target.value)} />
+      <input placeholder="Localidad" value={localidad} onChange={e => setLocalidad(e.target.value)} />
 
-      <button onClick={() => window.history.back()} style={{ marginBottom: 20 }}>
-        🔙 Volver
-      </button>
+      <button onClick={agregarCliente}>Agregar</button>
 
-      <h2>Nuevo cliente</h2>
-
-      <input
-        placeholder="Nombre"
-        value={form.nombre || ""}
-        onChange={e => setForm({ ...form, nombre: e.target.value })}
-      />
-
-      <input
-        placeholder="Apellido"
-        value={form.apellido || ""}
-        onChange={e => setForm({ ...form, apellido: e.target.value })}
-      />
-
-      <input
-        placeholder="CUIT"
-        value={form.cuit || ""}
-        onChange={e => setForm({ ...form, cuit: e.target.value })}
-      />
-
-      <input
-        placeholder="Razón social"
-        value={form.razon_social || ""}
-        onChange={e => setForm({ ...form, razon_social: e.target.value })}
-      />
-
-      <input
-        placeholder="Teléfono"
-        value={form.telefono || ""}
-        onChange={e => setForm({ ...form, telefono: e.target.value })}
-      />
-
-      <input
-        placeholder="Localidad"
-        value={form.localidad || ""}
-        onChange={e => setForm({ ...form, localidad: e.target.value })}
-      />
-
-      <br /><br />
-      <button onClick={guardarCliente} style={{ marginRight: 10 }}>
-        💾 Guardar cliente
-      </button>
-
-      <hr style={{ margin: "20px 0" }} />
-
-      <h2>Lista de clientes</h2>
+      <hr />
 
       {clientes.map(c => (
-        <div
-          key={c.id}
-          style={{
-            border: "1px solid gray",
-            marginBottom: 10,
-            padding: 10,
-            borderRadius: 8,
-            backgroundColor: "#f9f9f9",
-            color: "#000"
-          }}
-        >
-          <b>{c.nombre} {c.apellido}</b>
-          <p>CUIT: {c.cuit}</p>
-          <p>Razón social: {c.razon_social}</p>
-          <p>Teléfono: {c.telefono}</p>
-          <p>Localidad: {c.localidad}</p>
-
-          <button onClick={() => eliminar(c.id)} style={{ marginTop: 5 }}>
-            ❌ Eliminar
-          </button>
+        <div key={c.id}>
+          <p>{c.nombre} {c.apellido}</p>
+          <p>{c.razon_social}</p>
         </div>
       ))}
-
     </main>
   )
 }
