@@ -2,11 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { supabase } from "../../lib/supabase"
-import { useRouter } from "next/navigation"
 
 export default function Ventas() {
-
-  const router = useRouter()
 
   const [productos, setProductos] = useState<any[]>([])
   const [clientes, setClientes] = useState<any[]>([])
@@ -16,6 +13,7 @@ export default function Ventas() {
 
   const [carrito, setCarrito] = useState<any[]>([])
 
+  // 🔄 CARGAR DATOS
   async function cargar() {
     const { data: p } = await supabase.from("productos").select("*")
     const { data: c } = await supabase.from("clientes").select("*")
@@ -24,8 +22,17 @@ export default function Ventas() {
     setClientes(c || [])
   }
 
-  useEffect(() => { cargar() }, [])
+  useEffect(() => {
+    cargar()
+  }, [])
 
+  // 💾 RECUPERAR CLIENTE GUARDADO
+  useEffect(() => {
+    const guardado = localStorage.getItem("clienteId")
+    if (guardado) setClienteId(guardado)
+  }, [])
+
+  // ➕ AGREGAR AL CARRITO
   function agregarProducto() {
 
     const producto = productos.find(p => p.id == productoId)
@@ -38,24 +45,32 @@ export default function Ventas() {
 
     const precio = producto.costo + (producto.costo * cliente.porcentaje / 100)
 
-    setCarrito([...carrito, {
-      id: producto.id,
-      nombre: producto.nombre,
-      precioFinal: precio,
-      cantidad: 1
-    }])
+    setCarrito(prev => [
+      ...prev,
+      {
+        id: producto.id,
+        nombre: producto.nombre,
+        precioFinal: precio,
+        cantidad: 1
+      }
+    ])
+
+    setProductoId("")
   }
 
+  // ❌ ELIMINAR ITEM
   function eliminarItem(index: number) {
     const nuevo = [...carrito]
     nuevo.splice(index, 1)
     setCarrito(nuevo)
   }
 
+  // 💰 TOTAL
   function total() {
     return carrito.reduce((acc, p) => acc + p.precioFinal * p.cantidad, 0)
   }
 
+  // 💾 VENDER
   async function vender() {
 
     if (!clienteId || carrito.length === 0) {
@@ -63,7 +78,6 @@ export default function Ventas() {
       return
     }
 
-    // 🟢 1. CREAR VENTA
     const { data: venta, error } = await supabase
       .from("ventas")
       .insert([{ cliente_id: clienteId, total: total() }])
@@ -75,7 +89,7 @@ export default function Ventas() {
       return
     }
 
-    // 🟢 2. GUARDAR DETALLE + DESCONTAR STOCK
+    // 🧾 DETALLE + STOCK
     for (const item of carrito) {
 
       await supabase.from("detalle_ventas").insert([{
@@ -94,10 +108,9 @@ export default function Ventas() {
       }
     }
 
-    setCarrito([])
+    alert("✅ Venta realizada")
 
-    // 🧾 IR A FACTURA
-    router.push(`/factura/${venta.id}`)
+    setCarrito([])
   }
 
   return (
@@ -107,8 +120,15 @@ export default function Ventas() {
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         
-        <select onChange={e => setClienteId(e.target.value)}>
-          <option value="">Cliente</option>
+        {/* 👤 CLIENTE */}
+        <select
+          value={clienteId}
+          onChange={e => {
+            setClienteId(e.target.value)
+            localStorage.setItem("clienteId", e.target.value)
+          }}
+        >
+          <option value="">Seleccionar cliente</option>
           {clientes.map(c => (
             <option key={c.id} value={c.id}>
               {c.nombre}
@@ -116,8 +136,12 @@ export default function Ventas() {
           ))}
         </select>
 
-        <select onChange={e => setProductoId(e.target.value)}>
-          <option value="">Producto</option>
+        {/* 📦 PRODUCTO */}
+        <select
+          value={productoId}
+          onChange={e => setProductoId(e.target.value)}
+        >
+          <option value="">Seleccionar producto</option>
           {productos.map(p => (
             <option key={p.id} value={p.id}>
               {p.nombre}
@@ -125,7 +149,9 @@ export default function Ventas() {
           ))}
         </select>
 
-        <button onClick={agregarProducto}>➕ Agregar</button>
+        <button onClick={agregarProducto}>
+          ➕ Agregar
+        </button>
 
       </div>
 
@@ -136,14 +162,15 @@ export default function Ventas() {
             background: "white",
             padding: 10,
             marginBottom: 10,
-            borderRadius: 8
+            borderRadius: 8,
+            display: "flex",
+            justifyContent: "space-between"
           }}>
-            {p.nombre} - ${p.precioFinal.toFixed(2)}
+            <span>
+              {p.nombre} - 💵 ${p.precioFinal.toFixed(2)}
+            </span>
 
-            <button
-              onClick={() => eliminarItem(i)}
-              style={{ marginLeft: 10 }}
-            >
+            <button onClick={() => eliminarItem(i)}>
               ❌
             </button>
           </div>
@@ -152,7 +179,9 @@ export default function Ventas() {
 
       <h2>Total: ${total().toFixed(2)}</h2>
 
-      <button onClick={vender}>💾 Confirmar venta</button>
+      <button onClick={vender}>
+        💾 Confirmar venta
+      </button>
 
     </div>
   )
