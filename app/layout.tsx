@@ -3,11 +3,12 @@ import "./globals.css"
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <body style={{
-        margin: 0,
-        fontFamily: "Segoe UI",
-        background: "#f1f3f5"
-      }}>
+     <body style={{
+  margin: 0,
+  fontFamily: "Segoe UI",
+  background: "#f1f3f5",
+  color: "#111" // 👈 ESTO ARREGLA TODO EL TEXTO
+}}>
 
         <nav style={{
           background: "#111",
