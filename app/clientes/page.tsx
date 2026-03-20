@@ -48,38 +48,46 @@ export default function Clientes() {
   }
 
   return (
-    <div>
+  <div>
 
-      <h1>👥 Clientes</h1>
+    <h1>👥 Clientes</h1>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-        <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
-        <input placeholder="Apellido" value={apellido} onChange={e => setApellido(e.target.value)} />
-        <input placeholder="CUIT" value={cuit} onChange={e => setCuit(e.target.value)} />
-        <input placeholder="Teléfono" value={telefono} onChange={e => setTelefono(e.target.value)} />
-        <input placeholder="Localidad" value={localidad} onChange={e => setLocalidad(e.target.value)} />
-        <input placeholder="% Margen" value={porcentaje} onChange={e => setPorcentaje(e.target.value)} />
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+      <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
+      <input placeholder="Apellido" value={apellido} onChange={e => setApellido(e.target.value)} />
+      <input placeholder="CUIT" value={cuit} onChange={e => setCuit(e.target.value)} />
+      <input placeholder="Teléfono" value={telefono} onChange={e => setTelefono(e.target.value)} />
+      <input placeholder="Localidad" value={localidad} onChange={e => setLocalidad(e.target.value)} />
+      <input placeholder="% Margen" value={porcentaje} onChange={e => setPorcentaje(e.target.value)} />
 
-        <button onClick={agregar}>➕ Agregar</button>
-      </div>
-
-      <div style={{ marginTop: 20 }}>
-        {clientes.map(c => (
-          <div key={c.id} style={{
-            background: "white",
-            padding: 15,
-            marginBottom: 15,
-            borderRadius: 10
-          }}>
-            <b>{c.nombre} {c.apellido}</b>
-            <p>CUIT: {c.cuit}</p>
-            <p>📞 {c.telefono}</p>
-            <p>📍 {c.localidad}</p>
-            <p>📊 Margen: {c.porcentaje}%</p>
-          </div>
-        ))}
-      </div>
-
+      <button onClick={agregar}>➕ Agregar</button>
     </div>
-  )
+
+    <div style={{ marginTop: 20 }}>
+      {clientes.map(c => (
+        <div key={c.id} style={{
+          background: "white",
+          padding: 15,
+          marginBottom: 15,
+          borderRadius: 10
+        }}>
+
+          <b>{c.nombre} {c.apellido}</b>
+          <p>CUIT: {c.cuit}</p>
+          <p>📞 {c.telefono}</p>
+          <p>📍 {c.localidad}</p>
+          <p>📊 Margen: {c.porcentaje}%</p>
+
+          <button
+            onClick={() => window.location.href = `/clientes/${c.id}`}
+          >
+            📊 Ver historial
+          </button>
+
+        </div>
+      ))}
+    </div>
+
+  </div>
+)
 }

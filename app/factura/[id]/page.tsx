@@ -56,7 +56,9 @@ export default function Factura() {
 
       <button onClick={() => window.print()}>🖨 Imprimir</button>
       <button onClick={() => window.history.back()}>🔙 Volver</button>
-
+<button onClick={() => window.location.href = "/ventas"}>
+  ➕ Nueva venta
+</button>
     </div>
   )
 }
