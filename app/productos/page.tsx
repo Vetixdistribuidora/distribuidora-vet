@@ -26,7 +26,7 @@ export default function Productos() {
   const [stock, setStock] = useState("")
 
   const [busqueda, setBusqueda] = useState("")
-
+// force rebuild
   // 🔄 TRAER PRODUCTOS
   async function fetchProductos() {
     const { data, error } = await supabase
