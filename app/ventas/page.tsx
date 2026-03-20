@@ -13,7 +13,7 @@ export default function Ventas() {
 
   const [carrito, setCarrito] = useState<any[]>([])
 
-  // 🔄 CARGAR DATOS
+  // 🔄 CARGAR
   async function cargar() {
     const { data: p } = await supabase.from("productos").select("*")
     const { data: c } = await supabase.from("clientes").select("*")
@@ -26,13 +26,13 @@ export default function Ventas() {
     cargar()
   }, [])
 
-  // 💾 RECUPERAR CLIENTE GUARDADO
+  // 💾 CLIENTE GUARDADO
   useEffect(() => {
     const guardado = localStorage.getItem("clienteId")
     if (guardado) setClienteId(guardado)
   }, [])
 
-  // ➕ AGREGAR AL CARRITO
+  // ➕ AGREGAR PRODUCTO
   function agregarProducto() {
 
     const producto = productos.find(p => p.id == productoId)
@@ -43,7 +43,21 @@ export default function Ventas() {
       return
     }
 
+    // 🔴 SI NO HAY STOCK
+    if (producto.stock <= 0) {
+      alert("❌ Sin stock")
+      return
+    }
+
     const precio = producto.costo + (producto.costo * cliente.porcentaje / 100)
+
+    // 👉 SI YA EXISTE EN CARRITO
+    const existente = carrito.find(p => p.id === producto.id)
+
+    if (existente) {
+      actualizarCantidad(producto.id, existente.cantidad + 1)
+      return
+    }
 
     setCarrito(prev => [
       ...prev,
@@ -51,18 +65,44 @@ export default function Ventas() {
         id: producto.id,
         nombre: producto.nombre,
         precioFinal: precio,
-        cantidad: 1
+        cantidad: 1,
+        stock: producto.stock
       }
     ])
 
     setProductoId("")
   }
 
-  // ❌ ELIMINAR ITEM
-  function eliminarItem(index: number) {
-    const nuevo = [...carrito]
-    nuevo.splice(index, 1)
-    setCarrito(nuevo)
+  // ➕➖ ACTUALIZAR CANTIDAD
+  function actualizarCantidad(id: number, nuevaCantidad: number) {
+
+    const producto = productos.find(p => p.id === id)
+
+    if (!producto) return
+
+    if (nuevaCantidad > producto.stock) {
+      alert("⚠️ No hay suficiente stock")
+      return
+    }
+
+    if (nuevaCantidad <= 0) {
+      eliminarItem(id)
+      return
+    }
+
+    setCarrito(carrito.map(p =>
+      p.id === id ? { ...p, cantidad: nuevaCantidad } : p
+    ))
+  }
+
+  // ❌ ELIMINAR
+  function eliminarItem(id: number) {
+    setCarrito(carrito.filter(p => p.id !== id))
+  }
+
+  // 🧹 VACIAR
+  function vaciarCarrito() {
+    setCarrito([])
   }
 
   // 💰 TOTAL
@@ -78,6 +118,15 @@ export default function Ventas() {
       return
     }
 
+    // 🔴 VALIDAR STOCK FINAL
+    for (const item of carrito) {
+      const producto = productos.find(p => p.id === item.id)
+      if (producto && item.cantidad > producto.stock) {
+        alert(`Stock insuficiente: ${producto.nombre}`)
+        return
+      }
+    }
+
     const { data: venta, error } = await supabase
       .from("ventas")
       .insert([{ cliente_id: clienteId, total: total() }])
@@ -89,7 +138,6 @@ export default function Ventas() {
       return
     }
 
-    // 🧾 DETALLE + STOCK
     for (const item of carrito) {
 
       await supabase.from("detalle_ventas").insert([{
@@ -111,6 +159,7 @@ export default function Ventas() {
     alert("✅ Venta realizada")
 
     setCarrito([])
+    cargar()
   }
 
   return (
@@ -144,7 +193,7 @@ export default function Ventas() {
           <option value="">Seleccionar producto</option>
           {productos.map(p => (
             <option key={p.id} value={p.id}>
-              {p.nombre}
+              {p.nombre} (Stock: {p.stock})
             </option>
           ))}
         </select>
@@ -153,26 +202,42 @@ export default function Ventas() {
           ➕ Agregar
         </button>
 
+        <button onClick={vaciarCarrito}>
+          🧹 Vaciar
+        </button>
+
       </div>
 
       {/* 🛒 CARRITO */}
       <div style={{ marginTop: 20 }}>
-        {carrito.map((p, i) => (
-          <div key={i} style={{
+        {carrito.map(p => (
+          <div key={p.id} style={{
             background: "white",
             padding: 10,
             marginBottom: 10,
-            borderRadius: 8,
-            display: "flex",
-            justifyContent: "space-between"
+            borderRadius: 8
           }}>
-            <span>
-              {p.nombre} - 💵 ${p.precioFinal.toFixed(2)}
-            </span>
+            <b>{p.nombre}</b>
 
-            <button onClick={() => eliminarItem(i)}>
-              ❌
+            <p>💵 ${p.precioFinal.toFixed(2)}</p>
+            <p>📦 Stock disponible: {p.stock}</p>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => actualizarCantidad(p.id, p.cantidad - 1)}>
+                ➖
+              </button>
+
+              <span>{p.cantidad}</span>
+
+              <button onClick={() => actualizarCantidad(p.id, p.cantidad + 1)}>
+                ➕
+              </button>
+            </div>
+
+            <button onClick={() => eliminarItem(p.id)}>
+              ❌ Eliminar
             </button>
+
           </div>
         ))}
       </div>
