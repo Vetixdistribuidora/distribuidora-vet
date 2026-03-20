@@ -7,9 +7,9 @@ export default function Productos() {
 
   const [productos, setProductos] = useState<any[]>([])
   const [nombre, setNombre] = useState("")
-  const [precio, setPrecio] = useState("")
+  const [costo, setCosto] = useState("")
+  const [precioVenta, setPrecioVenta] = useState("")
   const [stock, setStock] = useState("")
-  const [editando, setEditando] = useState<number | null>(null)
 
   async function cargar() {
     const { data } = await supabase.from("productos").select("*")
@@ -19,12 +19,19 @@ export default function Productos() {
   useEffect(() => { cargar() }, [])
 
   async function agregar() {
+
     await supabase.from("productos").insert([{
       nombre,
-      precio: Number(precio),
+      costo: Number(costo),
+      precio_venta: Number(precioVenta),
       stock: Number(stock)
     }])
-    setNombre(""); setPrecio(""); setStock("")
+
+    setNombre("")
+    setCosto("")
+    setPrecioVenta("")
+    setStock("")
+
     cargar()
   }
 
@@ -33,65 +40,29 @@ export default function Productos() {
     cargar()
   }
 
-  async function guardar(id: number) {
-    await supabase.from("productos").update({
-      precio: Number(precio),
-      stock: Number(stock)
-    }).eq("id", id)
-
-    setEditando(null)
-    cargar()
-  }
-
   return (
     <div>
 
       <h1>📦 Productos</h1>
 
-      <button onClick={() => window.history.back()}>🔙 Volver</button>
-
-      <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
+      <div style={{ display: "flex", gap: 10 }}>
         <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
-        <input placeholder="Precio" value={precio} onChange={e => setPrecio(e.target.value)} />
+        <input placeholder="Costo" value={costo} onChange={e => setCosto(e.target.value)} />
+        <input placeholder="Precio Venta" value={precioVenta} onChange={e => setPrecioVenta(e.target.value)} />
         <input placeholder="Stock" value={stock} onChange={e => setStock(e.target.value)} />
+
         <button onClick={agregar}>➕ Agregar</button>
       </div>
 
       <div style={{ marginTop: 20 }}>
         {productos.map(p => (
-          <div key={p.id} style={{
-            background: "white",
-            padding: 15,
-            marginBottom: 15,
-            borderRadius: 10,
-            boxShadow: "0 2px 5px rgba(0,0,0,0.1)"
-          }}>
+          <div key={p.id} style={{ background: "white", padding: 15, marginBottom: 10 }}>
+            <b>{p.nombre}</b>
+            <p>💰 Costo: ${p.costo}</p>
+            <p>💵 Venta: ${p.precio_venta}</p>
+            <p>📦 Stock: {p.stock}</p>
 
-            <h3>{p.nombre}</h3>
-
-            {editando === p.id ? (
-              <>
-                <input value={precio} onChange={e => setPrecio(e.target.value)} />
-                <input value={stock} onChange={e => setStock(e.target.value)} />
-                <button onClick={() => guardar(p.id)}>💾 Guardar</button>
-              </>
-            ) : (
-              <>
-                <p>💰 ${p.precio}</p>
-                <p>📦 Stock: {p.stock}</p>
-
-                <button onClick={() => {
-                  setEditando(p.id)
-                  setPrecio(String(p.precio))
-                  setStock(String(p.stock))
-                }}>✏️ Editar</button>
-
-                <button onClick={() => eliminar(p.id)} style={{ marginLeft: 10 }}>
-                  ❌ Eliminar
-                </button>
-              </>
-            )}
-
+            <button onClick={() => eliminar(p.id)}>❌ Eliminar</button>
           </div>
         ))}
       </div>
