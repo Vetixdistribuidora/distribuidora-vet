@@ -6,10 +6,14 @@ import { supabase } from "@/lib/supabase"
 function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
   return (
     <div style={{
-      position: "fixed", bottom: 30, right: 30,
+      position: "fixed",
+      bottom: 30,
+      right: 30,
       background: tipo === "ok" ? "#2f9e44" : "#e03131",
-      color: "white", padding: "12px 20px",
-      borderRadius: 10, fontWeight: "bold",
+      color: "white",
+      padding: "12px 20px",
+      borderRadius: 10,
+      fontWeight: "bold",
       zIndex: 1000
     }}>
       {mensaje}
@@ -36,7 +40,7 @@ export default function Clientes() {
   // ✏️ EDITAR
   const [editando, setEditando] = useState<any | null>(null)
 
-  // 🔥 MODAL HISTORIAL
+  // 📊 HISTORIAL
   const [modalAbierto, setModalAbierto] = useState(false)
   const [clienteSeleccionado, setClienteSeleccionado] = useState<any>(null)
   const [ventas, setVentas] = useState<any[]>([])
@@ -47,12 +51,92 @@ export default function Clientes() {
   }
 
   async function cargar() {
-    const { data } = await supabase.from("clientes").select("*").order("nombre")
+    const { data } = await supabase
+      .from("clientes")
+      .select("*")
+      .order("nombre")
+
     setClientes(data || [])
     setCargando(false)
   }
 
-  useEffect(() => { cargar() }, [])
+  useEffect(() => {
+    cargar()
+  }, [])
+
+  // ➕ AGREGAR
+  async function agregar() {
+
+    if (!nombre || !apellido) {
+      mostrarToast("⚠️ Nombre y apellido obligatorios", "error")
+      return
+    }
+
+    const { error } = await supabase.from("clientes").insert([{
+      nombre,
+      apellido,
+      cuit,
+      telefono,
+      localidad,
+      porcentaje: Number(porcentaje || 0)
+    }])
+
+    if (error) return mostrarToast("❌ " + error.message, "error")
+
+    mostrarToast("✅ Cliente agregado", "ok")
+
+    setNombre("")
+    setApellido("")
+    setCuit("")
+    setTelefono("")
+    setLocalidad("")
+    setPorcentaje("")
+
+    cargar()
+  }
+
+  // ✏️ EDITAR
+  async function guardarEdicion() {
+
+    if (!editando.nombre || !editando.apellido) {
+      mostrarToast("⚠️ Nombre y apellido obligatorios", "error")
+      return
+    }
+
+    const { error } = await supabase
+      .from("clientes")
+      .update({
+        nombre: editando.nombre,
+        apellido: editando.apellido,
+        cuit: editando.cuit,
+        telefono: editando.telefono,
+        localidad: editando.localidad,
+        porcentaje: Number(editando.porcentaje || 0)
+      })
+      .eq("id", editando.id)
+
+    if (error) return mostrarToast("❌ " + error.message, "error")
+
+    mostrarToast("✅ Cliente actualizado", "ok")
+    setEditando(null)
+    cargar()
+  }
+
+  // 🗑️ ELIMINAR
+  async function eliminar(id: number) {
+
+    if (!confirm("¿Eliminar este cliente?")) return
+
+    const { error } = await supabase
+      .from("clientes")
+      .delete()
+      .eq("id", id)
+
+    if (error) return mostrarToast("❌ " + error.message, "error")
+
+    mostrarToast("🗑️ Cliente eliminado", "ok")
+    cargar()
+  }
 
   // 📊 HISTORIAL
   async function abrirHistorial(cliente: any) {
@@ -91,7 +175,7 @@ export default function Clientes() {
     setVentas([])
   }
 
-  if (cargando) return <p style={{ padding: 30 }}>⏳ Cargando...</p>
+  if (cargando) return <p style={{ padding: 30 }}>⏳ Cargando clientes...</p>
 
   return (
     <div>
@@ -103,41 +187,98 @@ export default function Clientes() {
       <input
         placeholder="Buscar cliente..."
         value={busqueda}
-        onChange={e => setBusqueda(e.target.value)}
+        onChange={(e) => setBusqueda(e.target.value)}
         style={{ marginBottom: 20, padding: 8, width: "100%" }}
       />
 
+      {/* ➕ FORM */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
+        <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
+        <input placeholder="Apellido" value={apellido} onChange={e => setApellido(e.target.value)} />
+        <input placeholder="CUIT" value={cuit} onChange={e => setCuit(e.target.value)} />
+        <input placeholder="Teléfono" value={telefono} onChange={e => setTelefono(e.target.value)} />
+        <input placeholder="Localidad" value={localidad} onChange={e => setLocalidad(e.target.value)} />
+        <input placeholder="% Margen" type="number" value={porcentaje} onChange={e => setPorcentaje(e.target.value)} />
+
+        <button onClick={agregar}>➕ Agregar</button>
+      </div>
+
+      {/* 📋 LISTA */}
       {clientes
-        .filter(c => `${c.nombre} ${c.apellido}`.toLowerCase().includes(busqueda.toLowerCase()))
+        .filter(c =>
+          `${c.nombre} ${c.apellido}`.toLowerCase().includes(busqueda.toLowerCase())
+        )
         .map(c => (
 
           <div key={c.id} style={{
-            background: "white",
+            background: editando?.id === c.id ? "#fff9db" : "white",
             padding: 15,
             marginBottom: 10,
-            borderRadius: 10
+            borderRadius: 10,
+            border: editando?.id === c.id ? "2px solid #ffd43b" : "none"
           }}>
 
-            <b>{c.nombre} {c.apellido}</b>
-            <p>CUIT: {c.cuit || "-"}</p>
-            <p>📞 {c.telefono || "-"}</p>
-            <p>📍 {c.localidad || "-"}</p>
-            <p>📊 Margen: {c.porcentaje || 0}%</p>
+            {editando?.id === c.id ? (
 
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => setEditando({ ...c })}>✏️ Editar</button>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <input value={editando.nombre || ""} onChange={e => setEditando({ ...editando, nombre: e.target.value })} />
+                <input value={editando.apellido || ""} onChange={e => setEditando({ ...editando, apellido: e.target.value })} />
+                <input value={editando.cuit || ""} onChange={e => setEditando({ ...editando, cuit: e.target.value })} />
+                <input value={editando.telefono || ""} onChange={e => setEditando({ ...editando, telefono: e.target.value })} />
+                <input value={editando.localidad || ""} onChange={e => setEditando({ ...editando, localidad: e.target.value })} />
+                
+                <input
+                  type="number"
+                  value={editando.porcentaje ?? ""}
+                  onChange={e => setEditando({
+                    ...editando,
+                    porcentaje: e.target.value
+                  })}
+                />
 
-              <button onClick={() => abrirHistorial(c)}>
-                📊 Historial
-              </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={guardarEdicion}>💾 Guardar</button>
+                  <button onClick={() => setEditando(null)}>✖️ Cancelar</button>
+                </div>
+              </div>
 
-              <button
-                onClick={() => supabase.from("clientes").delete().eq("id", c.id).then(() => cargar())}
-                style={{ background: "#e03131", color: "white", borderRadius: 6 }}
-              >
-                🗑️
-              </button>
-            </div>
+            ) : (
+
+              <div>
+                <b>{c.nombre} {c.apellido}</b>
+                <p>CUIT: {c.cuit || "-"}</p>
+                <p>📞 {c.telefono || "-"}</p>
+                <p>📍 {c.localidad || "-"}</p>
+                <p>📊 Margen: {c.porcentaje || 0}%</p>
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setEditando({
+                    ...c,
+                    porcentaje: String(c.porcentaje || "")
+                  })}>
+                    ✏️ Editar
+                  </button>
+
+                  <button onClick={() => abrirHistorial(c)}>
+                    📊 Historial
+                  </button>
+
+                  <button
+                    onClick={() => eliminar(c.id)}
+                    style={{
+                      background: "#e03131",
+                      color: "white",
+                      border: "none",
+                      borderRadius: 6,
+                      padding: "4px 12px"
+                    }}
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </div>
+
+            )}
 
           </div>
         ))}
@@ -146,14 +287,15 @@ export default function Clientes() {
       {modalAbierto && (
         <div style={{
           position: "fixed",
-          top: 0, left: 0,
-          width: "100%", height: "100%",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
           background: "rgba(0,0,0,0.5)",
           display: "flex",
           justifyContent: "center",
           alignItems: "center"
         }}>
-
           <div style={{
             background: "white",
             padding: 20,
@@ -163,8 +305,9 @@ export default function Clientes() {
             maxHeight: "80%",
             overflowY: "auto"
           }}>
-
-            <h2>📊 {clienteSeleccionado?.nombre} {clienteSeleccionado?.apellido}</h2>
+            <h2>
+              📊 {clienteSeleccionado?.nombre} {clienteSeleccionado?.apellido}
+            </h2>
 
             <button onClick={cerrarModal}>❌ Cerrar</button>
 
@@ -173,7 +316,7 @@ export default function Clientes() {
             {ventas.map(v => (
               <div key={v.id} style={{ marginTop: 10 }}>
                 <b>Factura #{v.id}</b>
-                <p>${v.total}</p>
+                <p>💰 ${v.total}</p>
 
                 {(v.detalle_ventas || []).map((d: any, i: number) => (
                   <div key={i}>
@@ -182,9 +325,7 @@ export default function Clientes() {
                 ))}
               </div>
             ))}
-
           </div>
-
         </div>
       )}
 
