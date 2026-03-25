@@ -33,7 +33,6 @@ export default function Ventas() {
   const [cantidad, setCantidad] = useState("1")
 
   const [carrito, setCarrito] = useState<any[]>([])
-
   const [iva, setIva] = useState("21")
 
   const [toast, setToast] = useState<any>(null)
@@ -61,6 +60,8 @@ export default function Ventas() {
 
   // ➕ AGREGAR
   function agregarAlCarrito() {
+
+    if (!productoId || !cantidad) return
 
     const producto = productos.find(p => String(p.id) === productoId)
     if (!producto) return
@@ -114,7 +115,7 @@ export default function Ventas() {
     setCarrito([])
   }
 
-  // 💸 BONIFICACIÓN
+  // 🎁 BONIFICACIÓN EN UNIDADES
   function cambiarBonificacion(i: number, valor: number) {
     const nuevo = [...carrito]
     nuevo[i].bonificacion = valor
@@ -123,8 +124,12 @@ export default function Ventas() {
 
   // 💰 SUBTOTAL
   const subtotal = carrito.reduce((acc, item) => {
-    const precioDesc = item.precio - (item.precio * (item.bonificacion || 0) / 100)
-    return acc + precioDesc * item.cantidad
+
+    const bonif = item.bonificacion || 0
+    const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
+
+    return acc + (unidadesPagas * item.precio)
+
   }, 0)
 
   const ivaNum = Number(iva)
@@ -161,6 +166,7 @@ export default function Ventas() {
 
     setCarrito([])
     setClienteId("")
+    setClienteSeleccionado(null)
   }
 
   return (
@@ -180,7 +186,7 @@ export default function Ventas() {
         ))}
       </select>
 
-      {/* PRODUCTO */}
+      {/* PRODUCTOS */}
       <div style={{ marginTop: 10 }}>
         <select value={productoId} onChange={e => setProductoId(e.target.value)}>
           <option value="">Producto</option>
@@ -191,7 +197,12 @@ export default function Ventas() {
           ))}
         </select>
 
-        <input type="number" value={cantidad} onChange={e => setCantidad(e.target.value)} style={{ width: 60 }} />
+        <input
+          type="number"
+          value={cantidad}
+          onChange={e => setCantidad(e.target.value)}
+          style={{ width: 60 }}
+        />
 
         <button onClick={agregarAlCarrito}>➕</button>
         <button onClick={vaciarCarrito}>🧹</button>
@@ -200,31 +211,42 @@ export default function Ventas() {
       {/* CARRITO */}
       <h3>🛒 Carrito</h3>
 
+      {carrito.length === 0 && <p>No hay productos</p>}
+
       {carrito.map((item, i) => {
 
-        const precioDesc = item.precio - (item.precio * item.bonificacion / 100)
+        const bonif = item.bonificacion || 0
+        const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
+        const subtotalItem = unidadesPagas * item.precio
 
         return (
           <div key={i} style={{ background: "#eee", padding: 10, marginBottom: 10 }}>
 
             <b>{item.nombre}</b>
 
-            <p>{item.cantidad} x ${precioDesc.toFixed(2)}</p>
-
-            <p>Bonificación:
-              <input
-                type="number"
-                value={item.bonificacion}
-                onChange={e => cambiarBonificacion(i, Number(e.target.value))}
-                style={{ width: 60, marginLeft: 5 }}
-              /> %
+            <p>
+              Cantidad: {item.cantidad} | Bonificadas: {bonif} | Pagan: {unidadesPagas}
             </p>
 
-            <p>Subtotal: ${(precioDesc * item.cantidad).toFixed(2)}</p>
+            <p>💰 Precio unitario: ${item.precio.toFixed(2)}</p>
 
-            <button onClick={() => sumar(i)}>➕</button>
-            <button onClick={() => restar(i)}>➖</button>
-            <button onClick={() => eliminarItem(i)}>❌</button>
+            <p>Subtotal: ${subtotalItem.toFixed(2)}</p>
+
+            <p>
+              Bonificación:
+              <input
+                type="number"
+                value={bonif}
+                onChange={e => cambiarBonificacion(i, Number(e.target.value))}
+                style={{ width: 60, marginLeft: 5 }}
+              />
+            </p>
+
+            <div style={{ display: "flex", gap: 5 }}>
+              <button onClick={() => sumar(i)}>➕</button>
+              <button onClick={() => restar(i)}>➖</button>
+              <button onClick={() => eliminarItem(i)}>❌</button>
+            </div>
 
           </div>
         )
