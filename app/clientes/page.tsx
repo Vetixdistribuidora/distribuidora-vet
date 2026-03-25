@@ -10,7 +10,6 @@ function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
       background: tipo === "ok" ? "#2f9e44" : "#e03131",
       color: "white", padding: "12px 20px",
       borderRadius: 10, fontWeight: "bold",
-      boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
       zIndex: 1000
     }}>
       {mensaje}
@@ -24,10 +23,9 @@ export default function Clientes() {
   const [cargando, setCargando] = useState(true)
   const [toast, setToast] = useState<any>(null)
 
-  // 🔍 BUSCADOR
   const [busqueda, setBusqueda] = useState("")
 
-  // ➕ AGREGAR
+  // ➕ FORM
   const [nombre, setNombre] = useState("")
   const [apellido, setApellido] = useState("")
   const [cuit, setCuit] = useState("")
@@ -38,13 +36,17 @@ export default function Clientes() {
   // ✏️ EDITAR
   const [editando, setEditando] = useState<any | null>(null)
 
+  // 🔥 MODAL HISTORIAL
+  const [modalAbierto, setModalAbierto] = useState(false)
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<any>(null)
+  const [ventas, setVentas] = useState<any[]>([])
+
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
     setTimeout(() => setToast(null), 3000)
   }
 
   async function cargar() {
-    setCargando(true)
     const { data } = await supabase.from("clientes").select("*").order("nombre")
     setClientes(data || [])
     setCargando(false)
@@ -52,69 +54,44 @@ export default function Clientes() {
 
   useEffect(() => { cargar() }, [])
 
-  // ➕ AGREGAR
-  async function agregar() {
+  // 📊 HISTORIAL
+  async function abrirHistorial(cliente: any) {
 
-    if (!nombre || !apellido) {
-      mostrarToast("⚠️ Nombre y apellido obligatorios", "error")
-      return
-    }
+    setClienteSeleccionado(cliente)
+    setModalAbierto(true)
 
-    const { error } = await supabase.from("clientes").insert([{
-      nombre,
-      apellido,
-      cuit,
-      telefono,
-      localidad,
-      porcentaje: Number(porcentaje || 0)
-    }])
+    const { data: ventasData } = await supabase
+      .from("ventas")
+      .select("id, total")
+      .eq("cliente_id", cliente.id)
+      .order("id", { ascending: false })
 
-    if (error) return mostrarToast("❌ " + error.message, "error")
+    if (!ventasData) return setVentas([])
 
-    mostrarToast("✅ Cliente agregado", "ok")
+    const conDetalle = await Promise.all(
+      ventasData.map(async (v) => {
 
-    setNombre(""); setApellido(""); setCuit("")
-    setTelefono(""); setLocalidad(""); setPorcentaje("")
+        const { data: detalles } = await supabase
+          .from("detalle_ventas")
+          .select("cantidad, precio, productos(nombre)")
+          .eq("venta_id", v.id)
 
-    cargar()
+        return {
+          ...v,
+          detalle_ventas: detalles || []
+        }
+      })
+    )
+
+    setVentas(conDetalle)
   }
 
-  // ✏️ EDITAR
-  async function guardarEdicion() {
-
-    if (!editando.nombre || !editando.apellido) {
-      mostrarToast("⚠️ Nombre y apellido obligatorios", "error")
-      return
-    }
-
-    const { error } = await supabase.from("clientes").update({
-      nombre: editando.nombre,
-      apellido: editando.apellido,
-      cuit: editando.cuit,
-      telefono: editando.telefono,
-      localidad: editando.localidad,
-      porcentaje: Number(editando.porcentaje || 0)
-    }).eq("id", editando.id)
-
-    if (error) return mostrarToast("❌ " + error.message, "error")
-
-    mostrarToast("✅ Cliente actualizado", "ok")
-    setEditando(null)
-    cargar()
+  function cerrarModal() {
+    setModalAbierto(false)
+    setVentas([])
   }
 
-  // 🗑️ ELIMINAR
-  async function eliminar(id: number) {
-    if (!confirm("¿Eliminar este cliente?")) return
-
-    const { error } = await supabase.from("clientes").delete().eq("id", id)
-    if (error) return mostrarToast("❌ " + error.message, "error")
-
-    mostrarToast("🗑️ Cliente eliminado", "ok")
-    cargar()
-  }
-
-  if (cargando) return <p style={{ padding: 30 }}>⏳ Cargando clientes...</p>
+  if (cargando) return <p style={{ padding: 30 }}>⏳ Cargando...</p>
 
   return (
     <div>
@@ -123,7 +100,6 @@ export default function Clientes() {
 
       <h1>👥 Clientes</h1>
 
-      {/* 🔍 BUSCADOR */}
       <input
         placeholder="Buscar cliente..."
         value={busqueda}
@@ -131,23 +107,8 @@ export default function Clientes() {
         style={{ marginBottom: 20, padding: 8, width: "100%" }}
       />
 
-      {/* ➕ FORMULARIO */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
-        <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
-        <input placeholder="Apellido" value={apellido} onChange={e => setApellido(e.target.value)} />
-        <input placeholder="CUIT" value={cuit} onChange={e => setCuit(e.target.value)} />
-        <input placeholder="Teléfono" value={telefono} onChange={e => setTelefono(e.target.value)} />
-        <input placeholder="Localidad" value={localidad} onChange={e => setLocalidad(e.target.value)} />
-        <input placeholder="% Margen" type="number" value={porcentaje} onChange={e => setPorcentaje(e.target.value)} />
-
-        <button onClick={agregar}>➕ Agregar</button>
-      </div>
-
-      {/* 📋 LISTA */}
       {clientes
-        .filter(c =>
-          `${c.nombre} ${c.apellido}`.toLowerCase().includes(busqueda.toLowerCase())
-        )
+        .filter(c => `${c.nombre} ${c.apellido}`.toLowerCase().includes(busqueda.toLowerCase()))
         .map(c => (
 
           <div key={c.id} style={{
@@ -157,57 +118,75 @@ export default function Clientes() {
             borderRadius: 10
           }}>
 
-            {editando?.id === c.id ? (
+            <b>{c.nombre} {c.apellido}</b>
+            <p>CUIT: {c.cuit || "-"}</p>
+            <p>📞 {c.telefono || "-"}</p>
+            <p>📍 {c.localidad || "-"}</p>
+            <p>📊 Margen: {c.porcentaje || 0}%</p>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <input value={editando.nombre} onChange={e => setEditando({ ...editando, nombre: e.target.value })} />
-                <input value={editando.apellido} onChange={e => setEditando({ ...editando, apellido: e.target.value })} />
-                <input value={editando.cuit} onChange={e => setEditando({ ...editando, cuit: e.target.value })} />
-                <input value={editando.telefono} onChange={e => setEditando({ ...editando, telefono: e.target.value })} />
-                <input value={editando.localidad} onChange={e => setEditando({ ...editando, localidad: e.target.value })} />
-                <input type="number" value={editando.porcentaje} onChange={e => setEditando({ ...editando, porcentaje: e.target.value })} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setEditando({ ...c })}>✏️ Editar</button>
 
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={guardarEdicion}>💾 Guardar</button>
-                  <button onClick={() => setEditando(null)}>✖️ Cancelar</button>
-                </div>
-              </div>
+              <button onClick={() => abrirHistorial(c)}>
+                📊 Historial
+              </button>
 
-            ) : (
-
-              <div>
-                <b>{c.nombre} {c.apellido}</b>
-                <p>CUIT: {c.cuit || "-"}</p>
-                <p>📞 {c.telefono || "-"}</p>
-                <p>📍 {c.localidad || "-"}</p>
-                <p>📊 Margen: {c.porcentaje || 0}%</p>
-
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setEditando({ ...c })}>✏️ Editar</button>
-
-                  <button onClick={() => window.location.href = `/clientes/${c.id}`}>
-                    📊 Historial
-                  </button>
-
-                  <button
-                    onClick={() => eliminar(c.id)}
-                    style={{
-                      background: "#e03131",
-                      color: "white",
-                      border: "none",
-                      borderRadius: 6,
-                      padding: "4px 12px"
-                    }}
-                  >
-                    🗑️ Eliminar
-                  </button>
-                </div>
-              </div>
-
-            )}
+              <button
+                onClick={() => supabase.from("clientes").delete().eq("id", c.id).then(() => cargar())}
+                style={{ background: "#e03131", color: "white", borderRadius: 6 }}
+              >
+                🗑️
+              </button>
+            </div>
 
           </div>
         ))}
+
+      {/* 🔥 MODAL */}
+      {modalAbierto && (
+        <div style={{
+          position: "fixed",
+          top: 0, left: 0,
+          width: "100%", height: "100%",
+          background: "rgba(0,0,0,0.5)",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center"
+        }}>
+
+          <div style={{
+            background: "white",
+            padding: 20,
+            borderRadius: 10,
+            width: "90%",
+            maxWidth: 600,
+            maxHeight: "80%",
+            overflowY: "auto"
+          }}>
+
+            <h2>📊 {clienteSeleccionado?.nombre} {clienteSeleccionado?.apellido}</h2>
+
+            <button onClick={cerrarModal}>❌ Cerrar</button>
+
+            {ventas.length === 0 && <p>Sin compras</p>}
+
+            {ventas.map(v => (
+              <div key={v.id} style={{ marginTop: 10 }}>
+                <b>Factura #{v.id}</b>
+                <p>${v.total}</p>
+
+                {(v.detalle_ventas || []).map((d: any, i: number) => (
+                  <div key={i}>
+                    • {d.productos?.nombre} → {d.cantidad} x ${d.precio}
+                  </div>
+                ))}
+              </div>
+            ))}
+
+          </div>
+
+        </div>
+      )}
 
     </div>
   )
