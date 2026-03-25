@@ -33,6 +33,9 @@ export default function Ventas() {
   const [cantidad, setCantidad] = useState("1")
 
   const [carrito, setCarrito] = useState<any[]>([])
+
+  const [iva, setIva] = useState("21")
+
   const [toast, setToast] = useState<any>(null)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
@@ -43,11 +46,11 @@ export default function Ventas() {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const { data: clientesData } = await supabase.from("clientes").select("*")
-    const { data: productosData } = await supabase.from("productos").select("*")
+    const { data: c } = await supabase.from("clientes").select("*")
+    const { data: p } = await supabase.from("productos").select("*")
 
-    setClientes(clientesData || [])
-    setProductos(productosData || [])
+    setClientes(c || [])
+    setProductos(p || [])
   }
 
   function seleccionarCliente(id: string) {
@@ -59,8 +62,6 @@ export default function Ventas() {
   // ➕ AGREGAR
   function agregarAlCarrito() {
 
-    if (!productoId || !cantidad) return
-
     const producto = productos.find(p => String(p.id) === productoId)
     if (!producto) return
 
@@ -70,7 +71,6 @@ export default function Ventas() {
     const porcentaje = clienteSeleccionado?.porcentaje || 0
     const precioFinal = base + (base * porcentaje / 100)
 
-    // 🔥 SI YA EXISTE, SUMA
     const existente = carrito.find(i => i.producto_id === producto.id)
 
     if (existente) {
@@ -84,7 +84,8 @@ export default function Ventas() {
         producto_id: producto.id,
         nombre: producto.nombre,
         cantidad: cant,
-        precio: precioFinal
+        precio: precioFinal,
+        bonificacion: 0
       }])
     }
 
@@ -92,39 +93,57 @@ export default function Ventas() {
     setCantidad("1")
   }
 
-  // ➕ SUMAR
-  function sumar(index: number) {
+  // ➕ ➖
+  function sumar(i: number) {
     const nuevo = [...carrito]
-    nuevo[index].cantidad++
+    nuevo[i].cantidad++
     setCarrito(nuevo)
   }
 
-  // ➖ RESTAR
-  function restar(index: number) {
+  function restar(i: number) {
     const nuevo = [...carrito]
-    if (nuevo[index].cantidad > 1) {
-      nuevo[index].cantidad--
-      setCarrito(nuevo)
-    }
+    if (nuevo[i].cantidad > 1) nuevo[i].cantidad--
+    setCarrito(nuevo)
   }
 
-  // ❌ ELIMINAR
-  function eliminarItem(index: number) {
-    setCarrito(carrito.filter((_, i) => i !== index))
+  function eliminarItem(i: number) {
+    setCarrito(carrito.filter((_, index) => index !== i))
   }
 
-  // 🧹 VACIAR
   function vaciarCarrito() {
     setCarrito([])
   }
 
-  const total = carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0)
+  // 💸 BONIFICACIÓN
+  function cambiarBonificacion(i: number, valor: number) {
+    const nuevo = [...carrito]
+    nuevo[i].bonificacion = valor
+    setCarrito(nuevo)
+  }
 
+  // 💰 SUBTOTAL
+  const subtotal = carrito.reduce((acc, item) => {
+    const precioDesc = item.precio - (item.precio * (item.bonificacion || 0) / 100)
+    return acc + precioDesc * item.cantidad
+  }, 0)
+
+  const ivaNum = Number(iva)
+  const total = subtotal + (subtotal * ivaNum / 100)
+
+  // 💾 GUARDAR
   async function guardarVenta() {
 
     if (!clienteId || carrito.length === 0) {
-      mostrarToast("⚠️ Seleccioná cliente y productos", "error")
+      mostrarToast("⚠️ Faltan datos", "error")
       return
+    }
+
+    // 📦 DESCONTAR STOCK
+    for (const item of carrito) {
+      await supabase.rpc("descontar_stock", {
+        p_producto_id: item.producto_id,
+        p_cantidad: item.cantidad
+      })
     }
 
     const { error } = await supabase.rpc("registrar_venta", {
@@ -142,7 +161,6 @@ export default function Ventas() {
 
     setCarrito([])
     setClienteId("")
-    setClienteSeleccionado(null)
   }
 
   return (
@@ -150,12 +168,11 @@ export default function Ventas() {
 
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 
-      <h1>💰 Ventas</h1>
+      <h1>💰 Ventas PRO</h1>
 
       {/* CLIENTE */}
-      <h3>Cliente</h3>
       <select value={clienteId} onChange={e => seleccionarCliente(e.target.value)}>
-        <option value="">Seleccionar cliente</option>
+        <option value="">Cliente</option>
         {clientes.map(c => (
           <option key={c.id} value={c.id}>
             {c.nombre} {c.apellido}
@@ -163,74 +180,72 @@ export default function Ventas() {
         ))}
       </select>
 
-      {/* PRODUCTOS */}
-      <h3>Agregar producto</h3>
+      {/* PRODUCTO */}
+      <div style={{ marginTop: 10 }}>
+        <select value={productoId} onChange={e => setProductoId(e.target.value)}>
+          <option value="">Producto</option>
+          {productos.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.nombre} - ${p.precio_venta}
+            </option>
+          ))}
+        </select>
 
-      <select value={productoId} onChange={e => setProductoId(e.target.value)}>
-        <option value="">Seleccionar producto</option>
-        {productos.map(p => (
-          <option key={p.id} value={p.id}>
-            {p.nombre} - ${p.precio_venta}
-          </option>
-        ))}
-      </select>
+        <input type="number" value={cantidad} onChange={e => setCantidad(e.target.value)} style={{ width: 60 }} />
 
-      <input
-        type="number"
-        value={cantidad}
-        onChange={e => setCantidad(e.target.value)}
-        style={{ width: 60, marginLeft: 10 }}
-      />
-
-      <button onClick={agregarAlCarrito} style={{ marginLeft: 10 }}>
-        ➕ Agregar
-      </button>
-
-      <button onClick={vaciarCarrito} style={{ marginLeft: 10 }}>
-        🧹 Vaciar
-      </button>
+        <button onClick={agregarAlCarrito}>➕</button>
+        <button onClick={vaciarCarrito}>🧹</button>
+      </div>
 
       {/* CARRITO */}
-      <h3 style={{ marginTop: 30 }}>🛒 Carrito</h3>
+      <h3>🛒 Carrito</h3>
 
-      {carrito.length === 0 && <p>No hay productos</p>}
+      {carrito.map((item, i) => {
 
-      {carrito.map((item, i) => (
-        <div key={i} style={{
-          background: "#f1f3f5",
-          padding: 10,
-          marginBottom: 10,
-          borderRadius: 8
-        }}>
-          <b>{item.nombre}</b>
+        const precioDesc = item.precio - (item.precio * item.bonificacion / 100)
 
-          <p>
-            {item.cantidad} x ${item.precio.toFixed(2)}
-          </p>
+        return (
+          <div key={i} style={{ background: "#eee", padding: 10, marginBottom: 10 }}>
 
-          <p>Subtotal: ${(item.cantidad * item.precio).toFixed(2)}</p>
+            <b>{item.nombre}</b>
 
-          <div style={{ display: "flex", gap: 5 }}>
+            <p>{item.cantidad} x ${precioDesc.toFixed(2)}</p>
+
+            <p>Bonificación:
+              <input
+                type="number"
+                value={item.bonificacion}
+                onChange={e => cambiarBonificacion(i, Number(e.target.value))}
+                style={{ width: 60, marginLeft: 5 }}
+              /> %
+            </p>
+
+            <p>Subtotal: ${(precioDesc * item.cantidad).toFixed(2)}</p>
+
             <button onClick={() => sumar(i)}>➕</button>
             <button onClick={() => restar(i)}>➖</button>
             <button onClick={() => eliminarItem(i)}>❌</button>
+
           </div>
-        </div>
-      ))}
+        )
+      })}
 
-      <h2>💰 Total: ${total.toFixed(2)}</h2>
+      {/* TOTALES */}
+      <h3>Subtotal: ${subtotal.toFixed(2)}</h3>
 
-      <button
-        onClick={guardarVenta}
-        style={{
-          background: "#2f9e44",
-          color: "white",
-          padding: "10px 20px",
-          borderRadius: 8
-        }}
-      >
-        💾 Confirmar venta
-      </button>
+      <div>
+        IVA:
+        <input
+          type="number"
+          value={iva}
+          onChange={e => setIva(e.target.value)}
+          style={{ width: 60, marginLeft: 10 }}
+        /> %
+      </div>
+
+      <h2>Total: ${total.toFixed(2)}</h2>
+
+      <button onClick={guardarVenta}>💾 Confirmar venta</button>
 
     </div>
   )
