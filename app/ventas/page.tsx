@@ -115,10 +115,17 @@ export default function Ventas() {
     setCarrito([])
   }
 
-  // 🎁 BONIFICACIÓN EN UNIDADES
+  // 🎁 BONIFICACIÓN
   function cambiarBonificacion(i: number, valor: number) {
     const nuevo = [...carrito]
     nuevo[i].bonificacion = valor
+    setCarrito(nuevo)
+  }
+
+  // 💰 PRECIO EDITABLE
+  function cambiarPrecio(i: number, valor: number) {
+    const nuevo = [...carrito]
+    nuevo[i].precio = valor
     setCarrito(nuevo)
   }
 
@@ -143,7 +150,7 @@ export default function Ventas() {
       return
     }
 
-    // 📦 DESCONTAR STOCK
+    // 📦 STOCK
     for (const item of carrito) {
       await supabase.rpc("descontar_stock", {
         p_producto_id: item.producto_id,
@@ -174,7 +181,7 @@ export default function Ventas() {
 
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 
-      <h1>💰 Ventas PRO</h1>
+      <h1>💰 Ventas</h1>
 
       {/* CLIENTE */}
       <select value={clienteId} onChange={e => seleccionarCliente(e.target.value)}>
@@ -228,7 +235,15 @@ export default function Ventas() {
               Cantidad: {item.cantidad} | Bonificadas: {bonif} | Pagan: {unidadesPagas}
             </p>
 
-            <p>💰 Precio unitario: ${item.precio.toFixed(2)}</p>
+            <p>
+              💰 Precio unitario:
+              <input
+                type="number"
+                value={item.precio}
+                onChange={e => cambiarPrecio(i, Number(e.target.value))}
+                style={{ width: 100, marginLeft: 5 }}
+              />
+            </p>
 
             <p>Subtotal: ${subtotalItem.toFixed(2)}</p>
 
