@@ -33,7 +33,6 @@ export default function Ventas() {
   const [cantidad, setCantidad] = useState("1")
 
   const [carrito, setCarrito] = useState<any[]>([])
-
   const [toast, setToast] = useState<any>(null)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
@@ -41,9 +40,7 @@ export default function Ventas() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  useEffect(() => {
-    cargar()
-  }, [])
+  useEffect(() => { cargar() }, [])
 
   async function cargar() {
     const { data: clientesData } = await supabase.from("clientes").select("*")
@@ -59,6 +56,7 @@ export default function Ventas() {
     setClienteSeleccionado(cliente)
   }
 
+  // ➕ AGREGAR
   function agregarAlCarrito() {
 
     if (!productoId || !cantidad) return
@@ -72,21 +70,52 @@ export default function Ventas() {
     const porcentaje = clienteSeleccionado?.porcentaje || 0
     const precioFinal = base + (base * porcentaje / 100)
 
-    const item = {
-      producto_id: producto.id,
-      nombre: producto.nombre,
-      cantidad: cant,
-      precio: precioFinal
+    // 🔥 SI YA EXISTE, SUMA
+    const existente = carrito.find(i => i.producto_id === producto.id)
+
+    if (existente) {
+      setCarrito(carrito.map(i =>
+        i.producto_id === producto.id
+          ? { ...i, cantidad: i.cantidad + cant }
+          : i
+      ))
+    } else {
+      setCarrito([...carrito, {
+        producto_id: producto.id,
+        nombre: producto.nombre,
+        cantidad: cant,
+        precio: precioFinal
+      }])
     }
 
-    setCarrito([...carrito, item])
     setProductoId("")
     setCantidad("1")
   }
 
-  function eliminarItem(index: number) {
-    const nuevo = carrito.filter((_, i) => i !== index)
+  // ➕ SUMAR
+  function sumar(index: number) {
+    const nuevo = [...carrito]
+    nuevo[index].cantidad++
     setCarrito(nuevo)
+  }
+
+  // ➖ RESTAR
+  function restar(index: number) {
+    const nuevo = [...carrito]
+    if (nuevo[index].cantidad > 1) {
+      nuevo[index].cantidad--
+      setCarrito(nuevo)
+    }
+  }
+
+  // ❌ ELIMINAR
+  function eliminarItem(index: number) {
+    setCarrito(carrito.filter((_, i) => i !== index))
+  }
+
+  // 🧹 VACIAR
+  function vaciarCarrito() {
+    setCarrito([])
   }
 
   const total = carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0)
@@ -157,6 +186,10 @@ export default function Ventas() {
         ➕ Agregar
       </button>
 
+      <button onClick={vaciarCarrito} style={{ marginLeft: 10 }}>
+        🧹 Vaciar
+      </button>
+
       {/* CARRITO */}
       <h3 style={{ marginTop: 30 }}>🛒 Carrito</h3>
 
@@ -170,12 +203,18 @@ export default function Ventas() {
           borderRadius: 8
         }}>
           <b>{item.nombre}</b>
-          <p>{item.cantidad} x ${item.precio.toFixed(2)}</p>
+
+          <p>
+            {item.cantidad} x ${item.precio.toFixed(2)}
+          </p>
+
           <p>Subtotal: ${(item.cantidad * item.precio).toFixed(2)}</p>
 
-          <button onClick={() => eliminarItem(i)}>
-            ❌ Quitar
-          </button>
+          <div style={{ display: "flex", gap: 5 }}>
+            <button onClick={() => sumar(i)}>➕</button>
+            <button onClick={() => restar(i)}>➖</button>
+            <button onClick={() => eliminarItem(i)}>❌</button>
+          </div>
         </div>
       ))}
 
