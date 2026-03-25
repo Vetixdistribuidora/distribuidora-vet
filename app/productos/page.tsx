@@ -23,7 +23,6 @@ export default function Productos() {
   const [cargando, setCargando] = useState(true)
   const [toast, setToast] = useState<any>(null)
 
-  // 🔍 BUSCADOR
   const [busqueda, setBusqueda] = useState("")
 
   // ➕ FORM
@@ -134,7 +133,6 @@ export default function Productos() {
 
   if (cargando) return <p style={{ padding: 30 }}>⏳ Cargando productos...</p>
 
-  // 🔍 FILTRO
   const productosFiltrados = productos.filter(p =>
     p.nombre.toLowerCase().includes(busqueda.toLowerCase())
   )
@@ -164,58 +162,75 @@ export default function Productos() {
       </div>
 
       {/* LISTA */}
-      {productosFiltrados.map(p => (
+      {productosFiltrados.map(p => {
 
-        <div key={p.id} style={{
-          background: "white",
-          padding: 15,
-          marginBottom: 10,
-          borderRadius: 10
-        }}>
+        // 🔥 cálculo en vivo
+        const costoNum = Number(editando?.costo || 0)
+        const margenNum = Number(editando?.margen || 0)
+        const precioEstimado = costoNum + (costoNum * margenNum / 100)
 
-          {editando?.id === p.id ? (
+        return (
+          <div key={p.id} style={{
+            background: "white",
+            padding: 15,
+            marginBottom: 10,
+            borderRadius: 10
+          }}>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {editando?.id === p.id ? (
 
-              <label><b>🏷️ Nombre</b></label>
-              <input value={editando.nombre || ""} onChange={e => setEditando({ ...editando, nombre: e.target.value })} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 
-              <label><b>💰 Costo</b></label>
-              <input type="number" value={editando.costo || ""} onChange={e => setEditando({ ...editando, costo: e.target.value })} />
+                <label><b>🏷️ Nombre</b></label>
+                <input value={editando.nombre || ""} onChange={e => setEditando({ ...editando, nombre: e.target.value })} />
 
-              <label><b>📊 % Margen</b></label>
-              <input type="number" value={editando.margen || ""} onChange={e => setEditando({ ...editando, margen: e.target.value })} />
+                <label><b>💰 Costo</b></label>
+                <input type="number" value={editando.costo || ""} onChange={e => setEditando({ ...editando, costo: e.target.value })} />
 
-              <label><b>📦 Stock</b></label>
-              <input type="number" value={editando.stock || ""} onChange={e => setEditando({ ...editando, stock: e.target.value })} />
+                <label><b>📊 % Margen</b></label>
+                <input type="number" value={editando.margen || ""} onChange={e => setEditando({ ...editando, margen: e.target.value })} />
 
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={guardarEdicion}>💾 Guardar</button>
-                <button onClick={() => setEditando(null)}>✖️ Cancelar</button>
+                <label><b>📦 Stock</b></label>
+                <input type="number" value={editando.stock || ""} onChange={e => setEditando({ ...editando, stock: e.target.value })} />
+
+                {/* 💥 PRECIO EN VIVO */}
+                <div style={{
+                  background: "#f1f3f5",
+                  padding: 10,
+                  borderRadius: 8,
+                  marginTop: 10
+                }}>
+                  💵 <b>Precio estimado:</b> ${precioEstimado.toFixed(2)}
+                </div>
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={guardarEdicion}>💾 Guardar</button>
+                  <button onClick={() => setEditando(null)}>✖️ Cancelar</button>
+                </div>
+
               </div>
 
-            </div>
+            ) : (
 
-          ) : (
+              <div>
+                <b>{p.nombre}</b>
 
-            <div>
-              <b>{p.nombre}</b>
+                {p.stock <= 5 && <span style={{ marginLeft: 10 }}>⚠️ Stock bajo</span>}
 
-              {p.stock <= 5 && <span style={{ marginLeft: 10 }}>⚠️ Stock bajo</span>}
+                <p>💰 Costo: ${p.costo} · 📊 Margen: {p.margen}% · 💵 Venta: ${p.precio_venta}</p>
+                <p>📦 Stock: {p.stock}</p>
 
-              <p>💰 Costo: ${p.costo} · 📊 Margen: {p.margen}% · 💵 Venta: ${p.precio_venta}</p>
-              <p>📦 Stock: {p.stock}</p>
-
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setEditando({ ...p })}>✏️ Editar</button>
-                <button onClick={() => eliminar(p.id)} style={{ background: "red", color: "white" }}>🗑️</button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setEditando({ ...p })}>✏️ Editar</button>
+                  <button onClick={() => eliminar(p.id)} style={{ background: "red", color: "white" }}>🗑️</button>
+                </div>
               </div>
-            </div>
 
-          )}
+            )}
 
-        </div>
-      ))}
+          </div>
+        )
+      })}
 
     </div>
   )
