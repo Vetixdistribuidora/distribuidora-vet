@@ -40,10 +40,15 @@ export default function Clientes() {
   // ✏️ EDITAR
   const [editando, setEditando] = useState<any | null>(null)
 
-  // 📊 HISTORIAL
+  // 📊 HISTORIAL + MÉTRICAS
   const [modalAbierto, setModalAbierto] = useState(false)
   const [clienteSeleccionado, setClienteSeleccionado] = useState<any>(null)
   const [ventas, setVentas] = useState<any[]>([])
+
+  const [totalGastado, setTotalGastado] = useState(0)
+  const [cantidadCompras, setCantidadCompras] = useState(0)
+  const [promedioCompra, setPromedioCompra] = useState(0)
+  const [productoTop, setProductoTop] = useState("")
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
@@ -138,7 +143,7 @@ export default function Clientes() {
     cargar()
   }
 
-  // 📊 HISTORIAL
+  // 📊 HISTORIAL + MÉTRICAS
   async function abrirHistorial(cliente: any) {
 
     setClienteSeleccionado(cliente)
@@ -168,6 +173,29 @@ export default function Clientes() {
     )
 
     setVentas(conDetalle)
+
+    // 💰 TOTAL
+    const total = conDetalle.reduce((acc, v) => acc + Number(v.total), 0)
+    setTotalGastado(total)
+
+    // 🧾 CANTIDAD
+    setCantidadCompras(conDetalle.length)
+
+    // 📊 PROMEDIO
+    setPromedioCompra(conDetalle.length ? total / conDetalle.length : 0)
+
+    // 🏆 PRODUCTO TOP
+    const contador: any = {}
+
+    conDetalle.forEach(v => {
+      v.detalle_ventas?.forEach((d: any) => {
+        const nombre = d.productos?.nombre || "Sin nombre"
+        contador[nombre] = (contador[nombre] || 0) + d.cantidad
+      })
+    })
+
+    const top = Object.entries(contador).sort((a: any, b: any) => b[1] - a[1])[0]
+    setProductoTop(top ? top[0] : "Ninguno")
   }
 
   function cerrarModal() {
@@ -191,7 +219,7 @@ export default function Clientes() {
         style={{ marginBottom: 20, padding: 8, width: "100%" }}
       />
 
-      {/* ➕ FORM */}
+      {/* FORM */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
         <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
         <input placeholder="Apellido" value={apellido} onChange={e => setApellido(e.target.value)} />
@@ -203,7 +231,7 @@ export default function Clientes() {
         <button onClick={agregar}>➕ Agregar</button>
       </div>
 
-      {/* 📋 LISTA */}
+      {/* LISTA */}
       {clientes
         .filter(c =>
           `${c.nombre} ${c.apellido}`.toLowerCase().includes(busqueda.toLowerCase())
@@ -214,8 +242,7 @@ export default function Clientes() {
             background: editando?.id === c.id ? "#fff9db" : "white",
             padding: 15,
             marginBottom: 10,
-            borderRadius: 10,
-            border: editando?.id === c.id ? "2px solid #ffd43b" : "none"
+            borderRadius: 10
           }}>
 
             {editando?.id === c.id ? (
@@ -226,15 +253,7 @@ export default function Clientes() {
                 <input value={editando.cuit || ""} onChange={e => setEditando({ ...editando, cuit: e.target.value })} />
                 <input value={editando.telefono || ""} onChange={e => setEditando({ ...editando, telefono: e.target.value })} />
                 <input value={editando.localidad || ""} onChange={e => setEditando({ ...editando, localidad: e.target.value })} />
-                
-                <input
-                  type="number"
-                  value={editando.porcentaje ?? ""}
-                  onChange={e => setEditando({
-                    ...editando,
-                    porcentaje: e.target.value
-                  })}
-                />
+                <input type="number" value={editando.porcentaje ?? ""} onChange={e => setEditando({ ...editando, porcentaje: e.target.value })} />
 
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={guardarEdicion}>💾 Guardar</button>
@@ -252,10 +271,7 @@ export default function Clientes() {
                 <p>📊 Margen: {c.porcentaje || 0}%</p>
 
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setEditando({
-                    ...c,
-                    porcentaje: String(c.porcentaje || "")
-                  })}>
+                  <button onClick={() => setEditando({ ...c, porcentaje: String(c.porcentaje || "") })}>
                     ✏️ Editar
                   </button>
 
@@ -263,16 +279,7 @@ export default function Clientes() {
                     📊 Historial
                   </button>
 
-                  <button
-                    onClick={() => eliminar(c.id)}
-                    style={{
-                      background: "#e03131",
-                      color: "white",
-                      border: "none",
-                      borderRadius: 6,
-                      padding: "4px 12px"
-                    }}
-                  >
+                  <button onClick={() => eliminar(c.id)} style={{ background: "#e03131", color: "white" }}>
                     🗑️
                   </button>
                 </div>
@@ -283,7 +290,7 @@ export default function Clientes() {
           </div>
         ))}
 
-      {/* 🔥 MODAL */}
+      {/* MODAL */}
       {modalAbierto && (
         <div style={{
           position: "fixed",
@@ -305,26 +312,35 @@ export default function Clientes() {
             maxHeight: "80%",
             overflowY: "auto"
           }}>
-            <h2>
-              📊 {clienteSeleccionado?.nombre} {clienteSeleccionado?.apellido}
-            </h2>
-
+            <h2>📊 {clienteSeleccionado?.nombre}</h2>
             <button onClick={cerrarModal}>❌ Cerrar</button>
 
-            {ventas.length === 0 && <p>Sin compras</p>}
+            {/* 🔥 PANEL */}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 10,
+              marginBottom: 20
+            }}>
+              <div>💰 Total: ${totalGastado.toFixed(2)}</div>
+              <div>🧾 Compras: {cantidadCompras}</div>
+              <div>📊 Promedio: ${promedioCompra.toFixed(2)}</div>
+              <div>🏆 Top: {productoTop}</div>
+            </div>
 
             {ventas.map(v => (
-              <div key={v.id} style={{ marginTop: 10 }}>
+              <div key={v.id}>
                 <b>Factura #{v.id}</b>
-                <p>💰 ${v.total}</p>
+                <p>${v.total}</p>
 
                 {(v.detalle_ventas || []).map((d: any, i: number) => (
                   <div key={i}>
-                    • {d.productos?.nombre} → {d.cantidad} x ${d.precio}
+                    • {d.productos?.nombre} x {d.cantidad}
                   </div>
                 ))}
               </div>
             ))}
+
           </div>
         </div>
       )}
