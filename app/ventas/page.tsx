@@ -3,6 +3,24 @@
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 
+function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
+  return (
+    <div style={{
+      position: "fixed",
+      bottom: 30,
+      right: 30,
+      background: tipo === "ok" ? "#2f9e44" : "#e03131",
+      color: "white",
+      padding: "12px 20px",
+      borderRadius: 10,
+      fontWeight: "bold",
+      zIndex: 1000
+    }}>
+      {mensaje}
+    </div>
+  )
+}
+
 export default function Ventas() {
 
   const [clientes, setClientes] = useState<any[]>([])
@@ -16,7 +34,13 @@ export default function Ventas() {
 
   const [carrito, setCarrito] = useState<any[]>([])
 
-  // 🔄 CARGA
+  const [toast, setToast] = useState<any>(null)
+
+  function mostrarToast(mensaje: string, tipo: "ok" | "error") {
+    setToast({ mensaje, tipo })
+    setTimeout(() => setToast(null), 3000)
+  }
+
   useEffect(() => {
     cargar()
   }, [])
@@ -29,14 +53,12 @@ export default function Ventas() {
     setProductos(productosData || [])
   }
 
-  // 👤 CLIENTE
   function seleccionarCliente(id: string) {
     setClienteId(id)
     const cliente = clientes.find(c => String(c.id) === id)
     setClienteSeleccionado(cliente)
   }
 
-  // ➕ AGREGAR AL CARRITO
   function agregarAlCarrito() {
 
     if (!productoId || !cantidad) return
@@ -46,7 +68,6 @@ export default function Ventas() {
 
     const cant = Number(cantidad)
 
-    // 💰 PRECIO CON CLIENTE
     const base = producto.precio_venta
     const porcentaje = clienteSeleccionado?.porcentaje || 0
     const precioFinal = base + (base * porcentaje / 100)
@@ -63,35 +84,32 @@ export default function Ventas() {
     setCantidad("1")
   }
 
-  // ❌ ELIMINAR ITEM
   function eliminarItem(index: number) {
     const nuevo = carrito.filter((_, i) => i !== index)
     setCarrito(nuevo)
   }
 
-  // 💰 TOTAL
   const total = carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0)
 
-  // 💾 GUARDAR VENTA
   async function guardarVenta() {
 
     if (!clienteId || carrito.length === 0) {
-      alert("Seleccionar cliente y productos")
+      mostrarToast("⚠️ Seleccioná cliente y productos", "error")
       return
     }
 
-    const { data, error } = await supabase.rpc("registrar_venta", {
+    const { error } = await supabase.rpc("registrar_venta", {
       p_cliente_id: Number(clienteId),
       p_total: total,
       p_items: carrito
     })
 
     if (error) {
-      alert("❌ Error: " + error.message)
+      mostrarToast("❌ " + error.message, "error")
       return
     }
 
-    alert("✅ Venta registrada")
+    mostrarToast("✅ Venta realizada", "ok")
 
     setCarrito([])
     setClienteId("")
@@ -100,6 +118,8 @@ export default function Ventas() {
 
   return (
     <div style={{ padding: 20 }}>
+
+      {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 
       <h1>💰 Ventas</h1>
 
@@ -137,7 +157,7 @@ export default function Ventas() {
         ➕ Agregar
       </button>
 
-      {/* 🛒 CARRITO */}
+      {/* CARRITO */}
       <h3 style={{ marginTop: 30 }}>🛒 Carrito</h3>
 
       {carrito.length === 0 && <p>No hay productos</p>}
@@ -159,7 +179,6 @@ export default function Ventas() {
         </div>
       ))}
 
-      {/* TOTAL */}
       <h2>💰 Total: ${total.toFixed(2)}</h2>
 
       <button
