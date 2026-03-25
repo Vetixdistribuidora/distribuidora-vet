@@ -58,7 +58,6 @@ export default function Ventas() {
     setClienteSeleccionado(cliente)
   }
 
-  // ➕ AGREGAR
   function agregarAlCarrito() {
 
     if (!productoId || !cantidad) return
@@ -94,7 +93,6 @@ export default function Ventas() {
     setCantidad("1")
   }
 
-  // ➕ ➖
   function sumar(i: number) {
     const nuevo = [...carrito]
     nuevo[i].cantidad++
@@ -115,34 +113,27 @@ export default function Ventas() {
     setCarrito([])
   }
 
-  // 🎁 BONIFICACIÓN
   function cambiarBonificacion(i: number, valor: number) {
     const nuevo = [...carrito]
     nuevo[i].bonificacion = valor
     setCarrito(nuevo)
   }
 
-  // 💰 PRECIO EDITABLE
   function cambiarPrecio(i: number, valor: number) {
     const nuevo = [...carrito]
     nuevo[i].precio = valor
     setCarrito(nuevo)
   }
 
-  // 💰 SUBTOTAL
   const subtotal = carrito.reduce((acc, item) => {
-
     const bonif = item.bonificacion || 0
     const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
-
     return acc + (unidadesPagas * item.precio)
-
   }, 0)
 
   const ivaNum = Number(iva)
   const total = subtotal + (subtotal * ivaNum / 100)
 
-  // 💾 GUARDAR
   async function guardarVenta() {
 
     if (!clienteId || carrito.length === 0) {
@@ -150,7 +141,6 @@ export default function Ventas() {
       return
     }
 
-    // 📦 STOCK
     for (const item of carrito) {
       await supabase.rpc("descontar_stock", {
         p_producto_id: item.producto_id,
@@ -176,114 +166,120 @@ export default function Ventas() {
     setClienteSeleccionado(null)
   }
 
-  return (
-    <div style={{ padding: 20 }}>
+  // 🧾 TICKET
+function imprimirTicket() {
 
-      {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
+  if (!clienteSeleccionado || carrito.length === 0) return
 
-      <h1>💰 Ventas</h1>
+  const fecha = new Date().toLocaleString()
 
-      {/* CLIENTE */}
-      <select value={clienteId} onChange={e => seleccionarCliente(e.target.value)}>
-        <option value="">Cliente</option>
-        {clientes.map(c => (
-          <option key={c.id} value={c.id}>
-            {c.nombre} {c.apellido}
-          </option>
-        ))}
-      </select>
+  const filas = carrito.map(item => {
+    const bonif = item.bonificacion || 0
+    const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
+    const totalItem = unidadesPagas * item.precio
 
-      {/* PRODUCTOS */}
-      <div style={{ marginTop: 10 }}>
-        <select value={productoId} onChange={e => setProductoId(e.target.value)}>
-          <option value="">Producto</option>
-          {productos.map(p => (
-            <option key={p.id} value={p.id}>
-              {p.nombre} - ${p.precio_venta}
-            </option>
-          ))}
-        </select>
+    return `
+      <tr>
+        <td>${item.producto_id}</td>
+        <td>${item.nombre}</td>
+        <td>${item.cantidad}</td>
+        <td>$${item.precio.toFixed(2)}</td>
+        <td>${bonif}</td>
+        <td>$${totalItem.toFixed(2)}</td>
+      </tr>
+    `
+  }).join("")
 
-        <input
-          type="number"
-          value={cantidad}
-          onChange={e => setCantidad(e.target.value)}
-          style={{ width: 60 }}
-        />
+  const subtotalCalc = carrito.reduce((acc, item) => {
+    const bonif = item.bonificacion || 0
+    const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
+    return acc + (unidadesPagas * item.precio)
+  }, 0)
 
-        <button onClick={agregarAlCarrito}>➕</button>
-        <button onClick={vaciarCarrito}>🧹</button>
+  const ivaNum = Number(iva)
+  const totalFinal = subtotalCalc + (subtotalCalc * ivaNum / 100)
+
+  const html = `
+  <html>
+  <head>
+    <title>Factura</title>
+    <style>
+      body { font-family: Arial; padding: 20px; }
+      .header { display: flex; justify-content: space-between; align-items: center; }
+      .logo { height: 80px; }
+      .datos { display: flex; justify-content: space-between; margin-top: 20px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+      th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+      th { background: #eee; }
+      .totales { margin-top: 20px; text-align: right; }
+    </style>
+  </head>
+
+  <body>
+
+    <div class="header">
+      <img src="/logo.png" class="logo"/>
+      <h2>Factura</h2>
+    </div>
+
+    <div class="datos">
+      <div>
+        <b>Cliente:</b><br/>
+        ${clienteSeleccionado.nombre} ${clienteSeleccionado.apellido}<br/>
+        CUIT: ${clienteSeleccionado.cuit || "-"}<br/>
+        Dirección: ${clienteSeleccionado.localidad || "-"}<br/>
+        Tel: ${clienteSeleccionado.telefono || "-"}
       </div>
-
-      {/* CARRITO */}
-      <h3>🛒 Carrito</h3>
-
-      {carrito.length === 0 && <p>No hay productos</p>}
-
-      {carrito.map((item, i) => {
-
-        const bonif = item.bonificacion || 0
-        const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
-        const subtotalItem = unidadesPagas * item.precio
-
-        return (
-          <div key={i} style={{ background: "#eee", padding: 10, marginBottom: 10 }}>
-
-            <b>{item.nombre}</b>
-
-            <p>
-              Cantidad: {item.cantidad} | Bonificadas: {bonif} | Pagan: {unidadesPagas}
-            </p>
-
-            <p>
-              💰 Precio unitario:
-              <input
-                type="number"
-                value={item.precio}
-                onChange={e => cambiarPrecio(i, Number(e.target.value))}
-                style={{ width: 100, marginLeft: 5 }}
-              />
-            </p>
-
-            <p>Subtotal: ${subtotalItem.toFixed(2)}</p>
-
-            <p>
-              Bonificación:
-              <input
-                type="number"
-                value={bonif}
-                onChange={e => cambiarBonificacion(i, Number(e.target.value))}
-                style={{ width: 60, marginLeft: 5 }}
-              />
-            </p>
-
-            <div style={{ display: "flex", gap: 5 }}>
-              <button onClick={() => sumar(i)}>➕</button>
-              <button onClick={() => restar(i)}>➖</button>
-              <button onClick={() => eliminarItem(i)}>❌</button>
-            </div>
-
-          </div>
-        )
-      })}
-
-      {/* TOTALES */}
-      <h3>Subtotal: ${subtotal.toFixed(2)}</h3>
 
       <div>
-        IVA:
-        <input
-          type="number"
-          value={iva}
-          onChange={e => setIva(e.target.value)}
-          style={{ width: 60, marginLeft: 10 }}
-        /> %
+        <b>Distribuidora:</b><br/>
+        Vetix Distribuidora<br/>
+        Dirección: Almirante Brown 620<br/>
+        Tel: 2604518157<br/>
+        Email: clauforte@gmail.com
       </div>
-
-      <h2>Total: ${total.toFixed(2)}</h2>
-
-      <button onClick={guardarVenta}>💾 Confirmar venta</button>
-
     </div>
-  )
+
+    <p><b>Fecha:</b> ${fecha}</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Artículo</th>
+          <th>Cantidad</th>
+          <th>Precio Unitario</th>
+          <th>Bonificación</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filas}
+      </tbody>
+    </table>
+
+    <div class="totales">
+      <p>Subtotal: $${subtotalCalc.toFixed(2)}</p>
+      <p>IVA (${ivaNum}%): $${(subtotalCalc * ivaNum / 100).toFixed(2)}</p>
+      <h2>Total: $${totalFinal.toFixed(2)}</h2>
+    </div>
+
+  </body>
+  </html>
+  `
+
+  // ✅ FIX TYPESCRIPT + POPUP
+  if (typeof window !== "undefined") {
+    const ventana = window.open("", "_blank")
+
+    if (!ventana) {
+      alert("⚠️ Permití ventanas emergentes para imprimir el ticket")
+      return
+    }
+
+    ventana.document.write(html)
+    ventana.document.close()
+    ventana.print()
+  }
+}
 }
