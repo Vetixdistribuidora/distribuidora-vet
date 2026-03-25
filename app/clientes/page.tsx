@@ -2,34 +2,54 @@
 
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
-import { useParams } from "next/navigation"
 
-export default function HistorialCliente() {
+function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
+  return (
+    <div style={{
+      position: "fixed", bottom: 30, right: 30,
+      background: tipo === "ok" ? "#2f9e44" : "#e03131",
+      color: "white", padding: "12px 20px",
+      borderRadius: 10
+    }}>
+      {mensaje}
+    </div>
+  )
+}
 
-  const params = useParams()
-  const id = params?.id?.toString()
+export default function Clientes() {
 
+  const [clientes, setClientes] = useState<any[]>([])
   const [ventas, setVentas] = useState<any[]>([])
-  const [cliente, setCliente] = useState<any>(null)
+  const [clienteHistorial, setClienteHistorial] = useState<any>(null)
 
-  async function cargar() {
+  const [toast, setToast] = useState<any>(null)
+  const [cargando, setCargando] = useState(true)
 
-    if (!id) return
+  // 🔁 cargar clientes
+  async function cargarClientes() {
+    const { data } = await supabase.from("clientes").select("*").order("nombre")
+    setClientes(data || [])
+    setCargando(false)
+  }
 
-    // 👤 CLIENTE
-    const { data: clienteData } = await supabase
-      .from("clientes")
-      .select("*")
-      .eq("id", id)
-      .single()
+  useEffect(() => {
+    cargarClientes()
+  }, [])
 
-    setCliente(clienteData)
+  function mostrarToast(mensaje: string, tipo: "ok" | "error") {
+    setToast({ mensaje, tipo })
+    setTimeout(() => setToast(null), 3000)
+  }
 
-    // 💰 VENTAS
+  // 📊 HISTORIAL
+  async function verHistorial(cliente: any) {
+
+    setClienteHistorial(cliente)
+
     const { data: ventasData } = await supabase
       .from("ventas")
       .select("id, total")
-      .eq("cliente_id", id)
+      .eq("cliente_id", cliente.id)
       .order("id", { ascending: false })
 
     if (!ventasData) {
@@ -37,8 +57,7 @@ export default function HistorialCliente() {
       return
     }
 
-    // 🔥 DETALLES
-    const ventasConDetalle = await Promise.all(
+    const conDetalle = await Promise.all(
       ventasData.map(async (v) => {
 
         const { data: detalles } = await supabase
@@ -53,62 +72,81 @@ export default function HistorialCliente() {
       })
     )
 
-    setVentas(ventasConDetalle)
+    setVentas(conDetalle)
   }
 
-  useEffect(() => {
-    cargar()
-  }, [id])
+  // 🔙 VOLVER
+  function volver() {
+    setClienteHistorial(null)
+    setVentas([])
+  }
+
+  if (cargando) return <p>⏳ Cargando...</p>
 
   return (
     <div>
 
-      <h1>📊 Historial</h1>
+      {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 
-      {cliente && (
-        <h2>{cliente.nombre} {cliente.apellido}</h2>
-      )}
+      {/* 🟢 VISTA HISTORIAL */}
+      {clienteHistorial ? (
+        <div>
 
-      <button onClick={() => window.history.back()}>
-        🔙 Volver
-      </button>
+          <h1>📊 Historial</h1>
+          <h2>{clienteHistorial.nombre} {clienteHistorial.apellido}</h2>
 
-      <div style={{ marginTop: 20 }}>
+          <button onClick={volver}>🔙 Volver</button>
 
-        {ventas.length === 0 && (
-          <p style={{ color: "#888" }}>
-            Este cliente no tiene compras aún.
-          </p>
-        )}
+          {ventas.map(v => (
+            <div key={v.id} style={{
+              background: "white",
+              padding: 15,
+              marginTop: 10,
+              borderRadius: 10
+            }}>
+              <b>Factura #{v.id}</b>
+              <p>Total: ${v.total}</p>
 
-        {ventas.map((v) => (
-          <div key={v.id} style={{
-            background: "white",
-            padding: 15,
-            marginBottom: 15,
-            borderRadius: 10
-          }}>
-
-            <b>Factura #{v.id}</b>
-            <p>💰 Total: ${v.total}</p>
-
-            {(v.detalle_ventas || []).length > 0 ? (
-              (v.detalle_ventas || []).map((d: any, i: number) => (
-                <div key={i} style={{ marginLeft: 10 }}>
-                  • {d.productos?.nombre || "Producto"}  
-                  → {d.cantidad} x ${d.precio}
+              {(v.detalle_ventas || []).map((d: any, i: number) => (
+                <div key={i}>
+                  • {d.productos?.nombre} → {d.cantidad} x ${d.precio}
                 </div>
-              ))
-            ) : (
-              <p style={{ color: "#888", marginLeft: 10 }}>
-                Sin productos cargados
-              </p>
-            )}
+              ))}
+            </div>
+          ))}
 
-          </div>
-        ))}
+        </div>
 
-      </div>
+      ) : (
+
+        /* 🔵 VISTA NORMAL CLIENTES */
+        <div>
+
+          <h1>👥 Clientes</h1>
+
+          {clientes.map(c => (
+            <div key={c.id} style={{
+              background: "white",
+              padding: 15,
+              marginBottom: 10,
+              borderRadius: 10
+            }}>
+
+              <b>{c.nombre} {c.apellido}</b>
+              <p>{c.telefono}</p>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => verHistorial(c)}>
+                  📊 Historial
+                </button>
+              </div>
+
+            </div>
+          ))}
+
+        </div>
+
+      )}
 
     </div>
   )
