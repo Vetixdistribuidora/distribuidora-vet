@@ -1,226 +1,93 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { supabase } from "../../lib/supabase"
+import { supabase } from "../../../lib/supabase"
+import { useParams } from "next/navigation"
 
-function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
-  return (
-    <div style={{
-      position: "fixed", bottom: 30, right: 30,
-      background: tipo === "ok" ? "#2f9e44" : "#e03131",
-      color: "white", padding: "12px 20px",
-      borderRadius: 10, fontWeight: "bold",
-      boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-      zIndex: 1000
-    }}>
-      {mensaje}
-    </div>
-  )
-}
+export default function HistorialCliente() {
 
-export default function Clientes() {
+  const { id } = useParams()
 
-  const [clientes, setClientes] = useState<any[]>([])
-  const [cargando, setCargando] = useState(true)
-  const [toast, setToast] = useState<{ mensaje: string, tipo: "ok" | "error" } | null>(null)
-
-  // 🔍 BUSCADOR
-  const [busqueda, setBusqueda] = useState("")
-
-  // ➕ AGREGAR
-  const [nombre, setNombre] = useState("")
-  const [apellido, setApellido] = useState("")
-  const [cuit, setCuit] = useState("")
-  const [telefono, setTelefono] = useState("")
-  const [localidad, setLocalidad] = useState("")
-  const [porcentaje, setPorcentaje] = useState("")
-
-  // ✏️ EDITAR
-  const [editando, setEditando] = useState<any | null>(null)
-
-  function mostrarToast(mensaje: string, tipo: "ok" | "error") {
-    setToast({ mensaje, tipo })
-    setTimeout(() => setToast(null), 3000)
-  }
+  const [ventas, setVentas] = useState<any[]>([])
+  const [cliente, setCliente] = useState<any>(null)
 
   async function cargar() {
-    setCargando(true)
-    const { data } = await supabase.from("clientes").select("*").order("nombre")
-    setClientes(data || [])
-    setCargando(false)
+
+    // 👤 Cliente
+    const { data: clienteData } = await supabase
+      .from("clientes")
+      .select("*")
+      .eq("id", id)
+      .single()
+
+    setCliente(clienteData)
+
+    // 💰 Ventas
+    const { data: ventasData } = await supabase
+      .from("ventas")
+      .select(`
+        *,
+        detalle_ventas (
+          cantidad,
+          precio,
+          productos ( nombre )
+        )
+      `)
+      .eq("cliente_id", id)
+      .order("id", { ascending: false })
+
+    setVentas(ventasData || [])
   }
 
-  useEffect(() => { cargar() }, [])
-
-  // ➕ AGREGAR CLIENTE
-  async function agregar() {
-
-    if (!nombre || !apellido) {
-      mostrarToast("⚠️ Nombre y apellido obligatorios", "error")
-      return
-    }
-
-    const { error } = await supabase.from("clientes").insert([{
-      nombre,
-      apellido,
-      cuit,
-      telefono,
-      localidad,
-      porcentaje: Number(porcentaje || 0)
-    }])
-
-    if (error) {
-      mostrarToast("❌ " + error.message, "error")
-      return
-    }
-
-    mostrarToast("✅ Cliente agregado", "ok")
-
-    setNombre("")
-    setApellido("")
-    setCuit("")
-    setTelefono("")
-    setLocalidad("")
-    setPorcentaje("")
-
-    cargar()
-  }
-
-  // 💾 GUARDAR EDICIÓN
-  async function guardarEdicion() {
-
-    if (!editando.nombre || !editando.apellido) {
-      mostrarToast("⚠️ Nombre y apellido obligatorios", "error")
-      return
-    }
-
-    if (!confirm("¿Guardar cambios?")) return
-
-    const { error } = await supabase.from("clientes").update({
-      nombre: editando.nombre,
-      apellido: editando.apellido,
-      cuit: editando.cuit,
-      telefono: editando.telefono,
-      localidad: editando.localidad,
-      porcentaje: Number(editando.porcentaje || 0)
-    }).eq("id", editando.id)
-
-    if (error) {
-      mostrarToast("❌ " + error.message, "error")
-      return
-    }
-
-    mostrarToast("✅ Cliente actualizado", "ok")
-    setEditando(null)
-    cargar()
-  }
-
-  // 🗑️ ELIMINAR
-  async function eliminar(id: number) {
-
-    if (!confirm("¿Eliminar este cliente?")) return
-
-    const { error } = await supabase.from("clientes").delete().eq("id", id)
-
-    if (error) {
-      mostrarToast("❌ " + error.message, "error")
-      return
-    }
-
-    mostrarToast("🗑️ Cliente eliminado", "ok")
-    cargar()
-  }
-
-  if (cargando) return <p style={{ padding: 30 }}>⏳ Cargando clientes...</p>
+  useEffect(() => {
+    if (id) cargar()
+  }, [id])
 
   return (
     <div>
 
-      {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
+      <h1>📊 Historial</h1>
 
-      <h1>👥 Clientes</h1>
+      {cliente && (
+        <h2>
+          {cliente.nombre} {cliente.apellido}
+        </h2>
+      )}
 
-      {/* 🔍 BUSCADOR */}
-      <input
-        placeholder="Buscar cliente..."
-        value={busqueda}
-        onChange={e => setBusqueda(e.target.value)}
-        style={{ marginBottom: 20, padding: 8, width: "100%" }}
-      />
+      <button onClick={() => window.history.back()}>
+        🔙 Volver
+      </button>
 
-      {/* ➕ FORMULARIO */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
-        <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
-        <input placeholder="Apellido" value={apellido} onChange={e => setApellido(e.target.value)} />
-        <input placeholder="CUIT" value={cuit} onChange={e => setCuit(e.target.value)} />
-        <input placeholder="Teléfono" value={telefono} onChange={e => setTelefono(e.target.value)} />
-        <input placeholder="Localidad" value={localidad} onChange={e => setLocalidad(e.target.value)} />
-        <input placeholder="% Margen" type="number" value={porcentaje} onChange={e => setPorcentaje(e.target.value)} />
+      <div style={{ marginTop: 20 }}>
 
-        <button onClick={agregar}>➕ Agregar</button>
-      </div>
-
-      {/* 📋 LISTA */}
-      {clientes
-        .filter(c =>
-          `${c.nombre} ${c.apellido}`.toLowerCase().includes(busqueda.toLowerCase())
-        )
-        .map(c => (
-
-          <div key={c.id} style={{
+        {ventas.map(v => (
+          <div key={v.id} style={{
             background: "white",
             padding: 15,
-            marginBottom: 10,
+            marginBottom: 15,
             borderRadius: 10
           }}>
 
-            {editando?.id === c.id ? (
+            <b>Factura #{v.id}</b>
+            <p>💰 Total: ${v.total}</p>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <input value={editando.nombre} onChange={e => setEditando({ ...editando, nombre: e.target.value })} />
-                <input value={editando.apellido} onChange={e => setEditando({ ...editando, apellido: e.target.value })} />
-                <input value={editando.cuit} onChange={e => setEditando({ ...editando, cuit: e.target.value })} />
-                <input value={editando.telefono} onChange={e => setEditando({ ...editando, telefono: e.target.value })} />
-                <input value={editando.localidad} onChange={e => setEditando({ ...editando, localidad: e.target.value })} />
-                <input type="number" value={editando.porcentaje} onChange={e => setEditando({ ...editando, porcentaje: e.target.value })} />
-
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={guardarEdicion}>💾 Guardar</button>
-                  <button onClick={() => setEditando(null)}>✖️ Cancelar</button>
+            <div style={{ marginTop: 10 }}>
+              {v.detalle_ventas.map((d: any, i: number) => (
+                <div key={i} style={{ marginLeft: 10 }}>
+                  • {d.productos?.nombre}  
+                  → {d.cantidad} x ${d.precio}
                 </div>
-              </div>
-
-            ) : (
-
-              <div>
-                <b>{c.nombre} {c.apellido}</b>
-                <p>CUIT: {c.cuit || "-"}</p>
-                <p>📞 {c.telefono || "-"}</p>
-                <p>📍 {c.localidad || "-"}</p>
-                <p>📊 Margen: {c.porcentaje || 0}%</p>
-
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setEditando({ ...c })}>✏️ Editar</button>
-
-                  <button
-                    onClick={() => eliminar(c.id)}
-                    style={{
-                      background: "#e03131",
-                      color: "white",
-                      border: "none",
-                      borderRadius: 6,
-                      padding: "4px 12px"
-                    }}
-                  >
-                    🗑️ Eliminar
-                  </button>
-                </div>
-              </div>
-
-            )}
+              ))}
+            </div>
 
           </div>
         ))}
+
+        {ventas.length === 0 && (
+          <p>Este cliente no tiene compras aún.</p>
+        )}
+
+      </div>
 
     </div>
   )
