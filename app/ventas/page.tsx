@@ -21,6 +21,11 @@ function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
   )
 }
 
+// ✅ Formato argentino: 1234567.89 → $1.234.567,89
+function formatearPrecio(num: number) {
+  return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 export default function Ventas() {
 
   const [clientes, setClientes] = useState<any[]>([])
@@ -164,7 +169,11 @@ export default function Ventas() {
     if (!clienteSeleccionado || carrito.length === 0) return
 
     const logoUrl = window.location.origin + "/logo.png"
-    const fecha = new Date().toLocaleDateString()
+    const fecha = new Date().toLocaleDateString("es-AR")
+
+    // Función de formato dentro del HTML generado
+    const fmt = (num: number) =>
+      "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
     const filas = carrito.map(item => {
       const bonif = item.bonificacion || 0
@@ -175,9 +184,9 @@ export default function Ventas() {
         <tr>
           <td>${item.cantidad}</td>
           <td style="text-align:left;">${item.nombre}</td>
-          <td>$${item.precio.toFixed(2)}</td>
+          <td>${fmt(item.precio)}</td>
           <td>${bonif}</td>
-          <td>$${totalItem.toFixed(2)}</td>
+          <td>${fmt(totalItem)}</td>
         </tr>
       `
     }).join("")
@@ -191,7 +200,6 @@ export default function Ventas() {
         body {
           font-family: Arial;
           padding: 20px;
-          /* Usamos flex column para empujar totales al fondo */
           display: flex;
           flex-direction: column;
           min-height: 95vh;
@@ -206,13 +214,8 @@ export default function Ventas() {
           align-items: center;
         }
 
-        .header-right {
-          text-align: center;
-        }
-
-        .header-right h2 {
-          margin: 0;
-        }
+        .header-right { text-align: center; }
+        .header-right h2 { margin: 0; }
 
         .nro-factura {
           font-size: 14px;
@@ -226,10 +229,7 @@ export default function Ventas() {
           margin-top: 20px;
         }
 
-        /* El contenido principal crece y empuja los totales abajo */
-        .contenido {
-          flex: 1;
-        }
+        .contenido { flex: 1; }
 
         table {
           width: 100%;
@@ -252,7 +252,6 @@ export default function Ventas() {
           margin-top: 40px;
           display: flex;
           justify-content: flex-end;
-          /* Se queda al fondo gracias al flex del body */
         }
 
         .box {
@@ -261,9 +260,7 @@ export default function Ventas() {
           padding-top: 10px;
         }
 
-        .box p, .box h2 {
-          margin: 6px 0;
-        }
+        .box p, .box h2 { margin: 6px 0; }
       </style>
     </head>
 
@@ -315,9 +312,9 @@ export default function Ventas() {
 
       <div class="totales">
         <div class="box">
-          <p><b>Subtotal:</b> $${subtotal.toFixed(2)}</p>
-          <p><b>IVA (${ivaNum}%):</b> $${(subtotal * ivaNum / 100).toFixed(2)}</p>
-          <h2><b>Total:</b> $${total.toFixed(2)}</h2>
+          <p><b>Subtotal:</b> ${fmt(subtotal)}</p>
+          <p><b>IVA (${ivaNum}%):</b> ${fmt(subtotal * ivaNum / 100)}</p>
+          <h2><b>Total:</b> ${fmt(total)}</h2>
         </div>
       </div>
 
@@ -369,7 +366,7 @@ export default function Ventas() {
           <option value="">Producto</option>
           {productos.map(p => (
             <option key={p.id} value={p.id}>
-              {p.nombre} - ${p.precio_venta}
+              {p.nombre} - {formatearPrecio(p.precio_venta)}
             </option>
           ))}
         </select>
@@ -398,7 +395,7 @@ export default function Ventas() {
               <input type="number" value={item.precio} onChange={e => cambiarPrecio(i, Number(e.target.value))} />
             </p>
 
-            <p>Subtotal: ${subtotalItem.toFixed(2)}</p>
+            <p>Subtotal: {formatearPrecio(subtotalItem)}</p>
 
             <p>
               Bonificación:
@@ -412,14 +409,14 @@ export default function Ventas() {
         )
       })}
 
-      <h3>Subtotal: ${subtotal.toFixed(2)}</h3>
+      <h3>Subtotal: {formatearPrecio(subtotal)}</h3>
 
       <div>
         IVA:
         <input type="number" value={iva} onChange={e => setIva(e.target.value)} />
       </div>
 
-      <h2>Total: ${total.toFixed(2)}</h2>
+      <h2>Total: {formatearPrecio(total)}</h2>
 
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={guardarVenta}>💾 Confirmar venta</button>
