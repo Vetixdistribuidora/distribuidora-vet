@@ -164,7 +164,7 @@ export default function Ventas() {
     setClienteSeleccionado(null)
   }
 
-  function imprimirTicket() {
+ function imprimirTicket() {
 
   if (!clienteSeleccionado || carrito.length === 0) return
 
@@ -193,7 +193,16 @@ export default function Ventas() {
   <html>
   <head>
     <style>
-      body { font-family: Arial; padding: 30px; }
+      @media print {
+        @page { margin: 20px; }
+      }
+
+      body {
+        font-family: Arial;
+        padding: 20px;
+        position: relative;
+        min-height: 100vh;
+      }
 
       .header {
         display: flex;
@@ -201,12 +210,18 @@ export default function Ventas() {
         align-items: center;
       }
 
-      .logo { height: 90px; }
+      .logo {
+        height: 120px; /* 🔥 MÁS GRANDE */
+      }
 
       .datos {
         display: flex;
         justify-content: space-between;
         margin-top: 20px;
+      }
+
+      .cliente {
+        text-align: left; /* 🔥 alineado izquierda */
       }
 
       table {
@@ -226,10 +241,14 @@ export default function Ventas() {
         text-align: center;
       }
 
+      /* 🔥 TOTALES ABAJO DE TODO */
       .totales {
-        margin-top: 20px;
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
         text-align: right;
       }
+
     </style>
   </head>
 
@@ -244,6 +263,8 @@ export default function Ventas() {
     </div>
 
     <div class="datos">
+
+      <!-- EMPRESA -->
       <div>
         <b>VETIX Distribuidora</b><br/>
         Almirante Brown 620<br/>
@@ -251,13 +272,15 @@ export default function Ventas() {
         Email: clauforte@gmail.com
       </div>
 
-      <div style="text-align:right;">
+      <!-- CLIENTE -->
+      <div class="cliente">
         <b>Cliente:</b><br/>
         ${clienteSeleccionado.nombre} ${clienteSeleccionado.apellido}<br/>
         CUIT: ${clienteSeleccionado.cuit || "-"}<br/>
         Dirección: ${clienteSeleccionado.localidad || "-"}<br/>
         Tel: ${clienteSeleccionado.telefono || "-"}
       </div>
+
     </div>
 
     <p><b>Fecha:</b> ${fecha}</p>
@@ -272,6 +295,7 @@ export default function Ventas() {
           <th>Total</th>
         </tr>
       </thead>
+
       <tbody>
         ${filas}
       </tbody>
