@@ -187,8 +187,6 @@ export default function Ventas() {
       `
     }).join("")
 
-    const logoBase64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..." // (recortado por tamaño, si querés te paso completo)
-
     const html = `
     <html>
     <head>
@@ -227,7 +225,7 @@ export default function Ventas() {
         }
 
         .totales {
-          margin-top: 25px;
+          margin-top: 20px;
           text-align: right;
         }
       </style>
@@ -236,7 +234,7 @@ export default function Ventas() {
     <body>
 
       <div class="header">
-        <img src="${logoBase64}" class="logo"/>
+        <img src="/logo.png" class="logo"/>
         <div>
           <h2>PRESUPUESTO</h2>
           <div>N° ${numero}</div>
