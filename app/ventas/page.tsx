@@ -187,27 +187,13 @@ export default function Ventas() {
       `
     }).join("")
 
-    // 🔥 PEGAR BASE64 ACA
-    const logoBase64 = "data:image/png;base64,PEGAR_BASE64_ACA"
+    const logoBase64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..." // (recortado por tamaño, si querés te paso completo)
 
     const html = `
     <html>
     <head>
-      <title>Presupuesto</title>
-
       <style>
-        @media print {
-          @page { margin: 0; }
-          body { margin: 20px; }
-        }
-
-        body {
-          font-family: Arial;
-          padding: 30px;
-          min-height: 100vh;
-          display: flex;
-          flex-direction: column;
-        }
+        body { font-family: Arial; padding: 30px; }
 
         .header {
           display: flex;
@@ -215,18 +201,7 @@ export default function Ventas() {
           align-items: center;
         }
 
-        .logo {
-          height: 90px;
-        }
-
-        .logo-text {
-          font-weight: bold;
-          font-size: 14px;
-        }
-
-        .titulo {
-          text-align: right;
-        }
+        .logo { height: 90px; }
 
         .datos {
           display: flex;
@@ -251,8 +226,8 @@ export default function Ventas() {
           text-align: center;
         }
 
-        .footer {
-          margin-top: auto;
+        .totales {
+          margin-top: 25px;
           text-align: right;
         }
       </style>
@@ -261,12 +236,8 @@ export default function Ventas() {
     <body>
 
       <div class="header">
+        <img src="${logoBase64}" class="logo"/>
         <div>
-          <img src="${logoBase64}" class="logo"/>
-          <div class="logo-text">DISTRIBUIDORA</div>
-        </div>
-
-        <div class="titulo">
           <h2>PRESUPUESTO</h2>
           <div>N° ${numero}</div>
         </div>
@@ -274,18 +245,18 @@ export default function Ventas() {
 
       <div class="datos">
         <div>
+          <b>VETIX Distribuidora</b><br/>
+          Almirante Brown 620<br/>
+          Tel: 2604518157<br/>
+          Email: clauforte@gmail.com
+        </div>
+
+        <div style="text-align:right;">
           <b>Cliente:</b><br/>
           ${clienteSeleccionado.nombre} ${clienteSeleccionado.apellido}<br/>
           CUIT: ${clienteSeleccionado.cuit || "-"}<br/>
           Dirección: ${clienteSeleccionado.localidad || "-"}<br/>
           Tel: ${clienteSeleccionado.telefono || "-"}
-        </div>
-
-        <div>
-          <b>VETIX Distribuidora</b><br/>
-          Almirante Brown 620<br/>
-          Tel: 2604518157<br/>
-          Email: clauforte@gmail.com
         </div>
       </div>
 
@@ -301,13 +272,12 @@ export default function Ventas() {
             <th>Total</th>
           </tr>
         </thead>
-
         <tbody>
           ${filas}
         </tbody>
       </table>
 
-      <div class="footer">
+      <div class="totales">
         <p><b>Subtotal:</b> $${subtotal.toFixed(2)}</p>
         <p><b>IVA (${ivaNum}%):</b> $${(subtotal * ivaNum / 100).toFixed(2)}</p>
         <h2><b>Total:</b> $${total.toFixed(2)}</h2>
@@ -318,18 +288,12 @@ export default function Ventas() {
     `
 
     const ventana = window.open("", "_blank")
-
-    if (!ventana) {
-      alert("⚠️ Habilitá ventanas emergentes")
-      return
-    }
+    if (!ventana) return
 
     ventana.document.write(html)
     ventana.document.close()
 
-    setTimeout(() => {
-      ventana.print()
-    }, 500)
+    setTimeout(() => ventana.print(), 500)
   }
 
   return (
@@ -366,49 +330,30 @@ export default function Ventas() {
 
       <h3>🛒 Carrito</h3>
 
-      {carrito.map((item, i) => {
-        const bonif = item.bonificacion || 0
-        const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
-        const subtotalItem = unidadesPagas * item.precio
+      {carrito.map((item, i) => (
+        <div key={i} style={{ background: "#eee", padding: 10, marginBottom: 10 }}>
+          <b>{item.nombre}</b>
 
-        return (
-          <div key={i} style={{ background: "#eee", padding: 10, marginBottom: 10 }}>
-            <b>{item.nombre}</b>
+          <p>Cantidad: {item.cantidad} | Bonif: {item.bonificacion}</p>
 
-            <p>Cantidad: {item.cantidad} | Bonificadas: {bonif} | Pagan: {unidadesPagas}</p>
+          <input type="number" value={item.precio} onChange={e => cambiarPrecio(i, Number(e.target.value))} />
+          <input type="number" value={item.bonificacion} onChange={e => cambiarBonificacion(i, Number(e.target.value))} />
 
-            <p>
-              Precio:
-              <input type="number" value={item.precio} onChange={e => cambiarPrecio(i, Number(e.target.value))} />
-            </p>
-
-            <p>Subtotal: ${subtotalItem.toFixed(2)}</p>
-
-            <p>
-              Bonificación:
-              <input type="number" value={bonif} onChange={e => cambiarBonificacion(i, Number(e.target.value))} />
-            </p>
-
-            <button onClick={() => sumar(i)}>➕</button>
-            <button onClick={() => restar(i)}>➖</button>
-            <button onClick={() => eliminarItem(i)}>❌</button>
-          </div>
-        )
-      })}
+          <button onClick={() => sumar(i)}>➕</button>
+          <button onClick={() => restar(i)}>➖</button>
+          <button onClick={() => eliminarItem(i)}>❌</button>
+        </div>
+      ))}
 
       <h3>Subtotal: ${subtotal.toFixed(2)}</h3>
 
-      <div>
-        IVA:
-        <input type="number" value={iva} onChange={e => setIva(e.target.value)} />
-      </div>
+      IVA:
+      <input type="number" value={iva} onChange={e => setIva(e.target.value)} />
 
       <h2>Total: ${total.toFixed(2)}</h2>
 
-      <div style={{ display: "flex", gap: 10 }}>
-        <button onClick={guardarVenta}>💾 Confirmar venta</button>
-        <button onClick={imprimirTicket}>🧾 Imprimir / PDF</button>
-      </div>
+      <button onClick={guardarVenta}>💾 Confirmar venta</button>
+      <button onClick={imprimirTicket}>🧾 Imprimir</button>
 
     </div>
   )
