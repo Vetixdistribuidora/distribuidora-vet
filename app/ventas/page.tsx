@@ -166,133 +166,135 @@ export default function Ventas() {
 
   function imprimirTicket() {
 
-    if (!clienteSeleccionado || carrito.length === 0) return
+  if (!clienteSeleccionado || carrito.length === 0) return
 
-    const fecha = new Date().toLocaleString()
-    const numero = Math.floor(Math.random() * 100000)
+  const fecha = new Date().toLocaleString()
+  const numero = Math.floor(Math.random() * 100000)
 
-    const filas = carrito.map(item => {
-      const bonif = item.bonificacion || 0
-      const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
-      const totalItem = unidadesPagas * item.precio
+  const filas = carrito.map(item => {
+    const bonif = item.bonificacion || 0
+    const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
+    const totalItem = unidadesPagas * item.precio
 
-      return `
-        <tr>
-          <td>${item.cantidad}</td>
-          <td style="text-align:left;">${item.nombre}</td>
-          <td>$${item.precio.toFixed(2)}</td>
-          <td>${bonif}</td>
-          <td>$${totalItem.toFixed(2)}</td>
-        </tr>
-      `
-    }).join("")
-
-    const html = `
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial; padding: 30px; }
-
-        .header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .logo { height: 90px; }
-
-        .datos {
-          display: flex;
-          justify-content: space-between;
-          margin-top: 20px;
-        }
-
-        table {
-          width: 100%;
-          margin-top: 30px;
-          border-collapse: collapse;
-        }
-
-        th {
-          border: 1px solid #ccc;
-          padding: 8px;
-          background: #eee;
-        }
-
-        td {
-          padding: 6px;
-          text-align: center;
-        }
-
-        .totales {
-          margin-top: 20px;
-          text-align: right;
-        }
-      </style>
-    </head>
-
-    <body>
-
-      <div class="header">
-        <img src="/logo.png" class="logo"/>
-        <div>
-          <h2>PRESUPUESTO</h2>
-          <div>N° ${numero}</div>
-        </div>
-      </div>
-
-      <div class="datos">
-        <div>
-          <b>VETIX Distribuidora</b><br/>
-          Almirante Brown 620<br/>
-          Tel: 2604518157<br/>
-          Email: clauforte@gmail.com
-        </div>
-
-        <div style="text-align:right;">
-          <b>Cliente:</b><br/>
-          ${clienteSeleccionado.nombre} ${clienteSeleccionado.apellido}<br/>
-          CUIT: ${clienteSeleccionado.cuit || "-"}<br/>
-          Dirección: ${clienteSeleccionado.localidad || "-"}<br/>
-          Tel: ${clienteSeleccionado.telefono || "-"}
-        </div>
-      </div>
-
-      <p><b>Fecha:</b> ${fecha}</p>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Cant.</th>
-            <th style="width:40%">Descripción</th>
-            <th>Precio U.</th>
-            <th>Bonif.</th>
-            <th>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${filas}
-        </tbody>
-      </table>
-
-      <div class="totales">
-        <p><b>Subtotal:</b> $${subtotal.toFixed(2)}</p>
-        <p><b>IVA (${ivaNum}%):</b> $${(subtotal * ivaNum / 100).toFixed(2)}</p>
-        <h2><b>Total:</b> $${total.toFixed(2)}</h2>
-      </div>
-
-    </body>
-    </html>
+    return `
+      <tr>
+        <td>${item.cantidad}</td>
+        <td style="text-align:left;">${item.nombre}</td>
+        <td>$${item.precio.toFixed(2)}</td>
+        <td>${bonif}</td>
+        <td>$${totalItem.toFixed(2)}</td>
+      </tr>
     `
+  }).join("")
 
-    const ventana = window.open("", "_blank")
-    if (!ventana) return
+  const logoUrl = window.location.origin + "/logo.png"
 
-    ventana.document.write(html)
-    ventana.document.close()
+  const html = `
+  <html>
+  <head>
+    <style>
+      body { font-family: Arial; padding: 30px; }
 
-    setTimeout(() => ventana.print(), 500)
-  }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .logo { height: 90px; }
+
+      .datos {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 20px;
+      }
+
+      table {
+        width: 100%;
+        margin-top: 30px;
+        border-collapse: collapse;
+      }
+
+      th {
+        border: 1px solid #ccc;
+        padding: 8px;
+        background: #eee;
+      }
+
+      td {
+        padding: 6px;
+        text-align: center;
+      }
+
+      .totales {
+        margin-top: 20px;
+        text-align: right;
+      }
+    </style>
+  </head>
+
+  <body>
+
+    <div class="header">
+      <img src="${logoUrl}" class="logo"/>
+      <div>
+        <h2>PRESUPUESTO</h2>
+        <div>N° ${numero}</div>
+      </div>
+    </div>
+
+    <div class="datos">
+      <div>
+        <b>VETIX Distribuidora</b><br/>
+        Almirante Brown 620<br/>
+        Tel: 2604518157<br/>
+        Email: clauforte@gmail.com
+      </div>
+
+      <div style="text-align:right;">
+        <b>Cliente:</b><br/>
+        ${clienteSeleccionado.nombre} ${clienteSeleccionado.apellido}<br/>
+        CUIT: ${clienteSeleccionado.cuit || "-"}<br/>
+        Dirección: ${clienteSeleccionado.localidad || "-"}<br/>
+        Tel: ${clienteSeleccionado.telefono || "-"}
+      </div>
+    </div>
+
+    <p><b>Fecha:</b> ${fecha}</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Cant.</th>
+          <th style="width:40%">Descripción</th>
+          <th>Precio U.</th>
+          <th>Bonif.</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filas}
+      </tbody>
+    </table>
+
+    <div class="totales">
+      <p><b>Subtotal:</b> $${subtotal.toFixed(2)}</p>
+      <p><b>IVA (${ivaNum}%):</b> $${(subtotal * ivaNum / 100).toFixed(2)}</p>
+      <h2><b>Total:</b> $${total.toFixed(2)}</h2>
+    </div>
+
+  </body>
+  </html>
+  `
+
+  const ventana = window.open("", "_blank")
+  if (!ventana) return
+
+  ventana.document.write(html)
+  ventana.document.close()
+
+  setTimeout(() => ventana.print(), 500)
+}
 
   return (
     <div style={{ padding: 20 }}>
