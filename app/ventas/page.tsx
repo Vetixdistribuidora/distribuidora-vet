@@ -169,6 +169,7 @@ export default function Ventas() {
     if (!clienteSeleccionado || carrito.length === 0) return
 
     const fecha = new Date().toLocaleString()
+    const numero = Math.floor(Math.random() * 100000)
 
     const filas = carrito.map(item => {
       const bonif = item.bonificacion || 0
@@ -186,11 +187,19 @@ export default function Ventas() {
       `
     }).join("")
 
+    const logoUrl = window.location.origin + "/logo.png"
+
     const html = `
     <html>
     <head>
       <title>Presupuesto</title>
+
       <style>
+        @media print {
+          @page { margin: 0; }
+          body { margin: 20px; }
+        }
+
         body {
           font-family: Arial;
           padding: 30px;
@@ -216,6 +225,15 @@ export default function Ventas() {
 
         .logo-text {
           font-weight: bold;
+          font-size: 14px;
+          margin-top: 5px;
+        }
+
+        .titulo {
+          text-align: right;
+        }
+
+        .numero {
           font-size: 14px;
           margin-top: 5px;
         }
@@ -253,12 +271,17 @@ export default function Ventas() {
     <body>
 
       <div class="header">
+
         <div class="logo-container">
-          <img src="/logo.png" class="logo"/>
+          <img src="${logoUrl}" class="logo"/>
           <div class="logo-text">DISTRIBUIDORA</div>
         </div>
 
-        <h2>PRESUPUESTO</h2>
+        <div class="titulo">
+          <h2>PRESUPUESTO</h2>
+          <div class="numero">N° ${numero}</div>
+        </div>
+
       </div>
 
       <div class="datos">
@@ -306,18 +329,19 @@ export default function Ventas() {
     </html>
     `
 
-    if (typeof window !== "undefined") {
-      const ventana = window.open("", "_blank")
+    const ventana = window.open("", "_blank")
 
-      if (!ventana) {
-        alert("⚠️ Habilitá ventanas emergentes")
-        return
-      }
-
-      ventana.document.write(html)
-      ventana.document.close()
-      ventana.print()
+    if (!ventana) {
+      alert("⚠️ Habilitá ventanas emergentes")
+      return
     }
+
+    ventana.document.write(html)
+    ventana.document.close()
+
+    setTimeout(() => {
+      ventana.print()
+    }, 500)
   }
 
   return (
