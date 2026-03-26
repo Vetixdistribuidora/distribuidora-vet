@@ -187,7 +187,8 @@ export default function Ventas() {
       `
     }).join("")
 
-    const logoUrl = window.location.origin + "/logo.png"
+    // 🔥 PEGAR BASE64 ACA
+    const logoBase64 = "data:image/png;base64,PEGAR_BASE64_ACA"
 
     const html = `
     <html>
@@ -203,20 +204,15 @@ export default function Ventas() {
         body {
           font-family: Arial;
           padding: 30px;
+          min-height: 100vh;
           display: flex;
           flex-direction: column;
-          min-height: 100vh;
         }
 
         .header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-        }
-
-        .logo-container {
-          display: flex;
-          flex-direction: column;
         }
 
         .logo {
@@ -226,16 +222,10 @@ export default function Ventas() {
         .logo-text {
           font-weight: bold;
           font-size: 14px;
-          margin-top: 5px;
         }
 
         .titulo {
           text-align: right;
-        }
-
-        .numero {
-          font-size: 14px;
-          margin-top: 5px;
         }
 
         .datos {
@@ -246,8 +236,8 @@ export default function Ventas() {
 
         table {
           width: 100%;
-          border-collapse: collapse;
           margin-top: 30px;
+          border-collapse: collapse;
         }
 
         th {
@@ -271,17 +261,15 @@ export default function Ventas() {
     <body>
 
       <div class="header">
-
-        <div class="logo-container">
-          <img src="${logoUrl}" class="logo"/>
+        <div>
+          <img src="${logoBase64}" class="logo"/>
           <div class="logo-text">DISTRIBUIDORA</div>
         </div>
 
         <div class="titulo">
           <h2>PRESUPUESTO</h2>
-          <div class="numero">N° ${numero}</div>
+          <div>N° ${numero}</div>
         </div>
-
       </div>
 
       <div class="datos">
@@ -320,9 +308,9 @@ export default function Ventas() {
       </table>
 
       <div class="footer">
-        <p>Subtotal: $${subtotal.toFixed(2)}</p>
-        <p>IVA (${ivaNum}%): $${(subtotal * ivaNum / 100).toFixed(2)}</p>
-        <h2>Total: $${total.toFixed(2)}</h2>
+        <p><b>Subtotal:</b> $${subtotal.toFixed(2)}</p>
+        <p><b>IVA (${ivaNum}%):</b> $${(subtotal * ivaNum / 100).toFixed(2)}</p>
+        <h2><b>Total:</b> $${total.toFixed(2)}</h2>
       </div>
 
     </body>
