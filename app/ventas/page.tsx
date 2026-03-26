@@ -177,9 +177,8 @@ export default function Ventas() {
 
       return `
         <tr>
-          <td>${item.producto_id}</td>
-          <td>${item.nombre}</td>
           <td>${item.cantidad}</td>
+          <td style="text-align:left;">${item.nombre}</td>
           <td>$${item.precio.toFixed(2)}</td>
           <td>${bonif}</td>
           <td>$${totalItem.toFixed(2)}</td>
@@ -190,24 +189,76 @@ export default function Ventas() {
     const html = `
     <html>
     <head>
-      <title>Factura</title>
+      <title>Presupuesto</title>
       <style>
-        body { font-family: Arial; padding: 20px; }
-        .header { display: flex; justify-content: space-between; align-items: center; }
-        .logo { height: 80px; }
-        .datos { display: flex; justify-content: space-between; margin-top: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
-        th { background: #eee; }
-        .totales { margin-top: 20px; text-align: right; }
+        body {
+          font-family: Arial;
+          padding: 30px;
+          display: flex;
+          flex-direction: column;
+          min-height: 100vh;
+        }
+
+        .header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .logo-container {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .logo {
+          height: 90px;
+        }
+
+        .logo-text {
+          font-weight: bold;
+          font-size: 14px;
+          margin-top: 5px;
+        }
+
+        .datos {
+          display: flex;
+          justify-content: space-between;
+          margin-top: 20px;
+        }
+
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 30px;
+        }
+
+        th {
+          border: 1px solid #ccc;
+          padding: 8px;
+          background: #eee;
+        }
+
+        td {
+          padding: 6px;
+          text-align: center;
+        }
+
+        .footer {
+          margin-top: auto;
+          text-align: right;
+        }
       </style>
     </head>
 
     <body>
 
       <div class="header">
-        <img src="/logo.png" class="logo"/>
-        <h2>Factura</h2>
+        <div class="logo-container">
+          <img src="/logo.png" class="logo"/>
+          <div class="logo-text">DISTRIBUIDORA</div>
+        </div>
+
+        <h2>PRESUPUESTO</h2>
       </div>
 
       <div class="datos">
@@ -220,9 +271,8 @@ export default function Ventas() {
         </div>
 
         <div>
-          <b>Distribuidora:</b><br/>
-          Vetix Distribuidora<br/>
-          Dirección: Almirante Brown 620<br/>
+          <b>VETIX Distribuidora</b><br/>
+          Almirante Brown 620<br/>
           Tel: 2604518157<br/>
           Email: clauforte@gmail.com
         </div>
@@ -233,20 +283,20 @@ export default function Ventas() {
       <table>
         <thead>
           <tr>
-            <th>Código</th>
-            <th>Artículo</th>
-            <th>Cantidad</th>
-            <th>Precio Unitario</th>
-            <th>Bonificación</th>
+            <th>Cant.</th>
+            <th style="width:40%">Descripción</th>
+            <th>Precio U.</th>
+            <th>Bonif.</th>
             <th>Total</th>
           </tr>
         </thead>
+
         <tbody>
           ${filas}
         </tbody>
       </table>
 
-      <div class="totales">
+      <div class="footer">
         <p>Subtotal: $${subtotal.toFixed(2)}</p>
         <p>IVA (${ivaNum}%): $${(subtotal * ivaNum / 100).toFixed(2)}</p>
         <h2>Total: $${total.toFixed(2)}</h2>
