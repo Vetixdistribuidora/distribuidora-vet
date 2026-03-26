@@ -17,6 +17,11 @@ function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
   )
 }
 
+// ✅ Formatea números con puntos: 1234567.89 → $1.234.567,89
+function formatearPrecio(num: number) {
+  return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 export default function Productos() {
 
   const [productos, setProductos] = useState<any[]>([])
@@ -25,13 +30,11 @@ export default function Productos() {
 
   const [busqueda, setBusqueda] = useState("")
 
-  // ➕ FORM
   const [nombre, setNombre] = useState("")
   const [costo, setCosto] = useState("")
   const [margen, setMargen] = useState("")
   const [stock, setStock] = useState("")
 
-  // ✏️ EDITAR
   const [editando, setEditando] = useState<any | null>(null)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
@@ -53,7 +56,6 @@ export default function Productos() {
     cargar()
   }, [])
 
-  // ➕ AGREGAR
   async function agregar() {
 
     if (!nombre || !costo || !margen || !stock) {
@@ -76,16 +78,13 @@ export default function Productos() {
     if (error) return mostrarToast("❌ " + error.message, "error")
 
     mostrarToast("✅ Producto agregado", "ok")
-
     setNombre("")
     setCosto("")
     setMargen("")
     setStock("")
-
     cargar()
   }
 
-  // ✏️ GUARDAR
   async function guardarEdicion() {
 
     if (!editando.nombre || !editando.costo || !editando.margen) {
@@ -115,7 +114,6 @@ export default function Productos() {
     cargar()
   }
 
-  // 🗑️ ELIMINAR
   async function eliminar(id: number) {
 
     if (!confirm("¿Eliminar este producto?")) return
@@ -144,7 +142,6 @@ export default function Productos() {
 
       <h1>📦 Productos</h1>
 
-      {/* 🔍 BUSCADOR */}
       <input
         placeholder="Buscar producto..."
         value={busqueda}
@@ -152,7 +149,6 @@ export default function Productos() {
         style={{ width: "100%", marginBottom: 20, padding: 10 }}
       />
 
-      {/* ➕ FORM */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 30 }}>
         <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
         <input placeholder="Costo" type="number" value={costo} onChange={e => setCosto(e.target.value)} />
@@ -161,10 +157,8 @@ export default function Productos() {
         <button onClick={agregar}>➕ Agregar</button>
       </div>
 
-      {/* LISTA */}
       {productosFiltrados.map(p => {
 
-        // 🔥 cálculo en vivo
         const costoNum = Number(editando?.costo || 0)
         const margenNum = Number(editando?.margen || 0)
         const precioEstimado = costoNum + (costoNum * margenNum / 100)
@@ -193,14 +187,14 @@ export default function Productos() {
                 <label><b>📦 Stock</b></label>
                 <input type="number" value={editando.stock || ""} onChange={e => setEditando({ ...editando, stock: e.target.value })} />
 
-                {/* 💥 PRECIO EN VIVO */}
+                {/* 💥 PRECIO EN VIVO con formato */}
                 <div style={{
                   background: "#f1f3f5",
                   padding: 10,
                   borderRadius: 8,
                   marginTop: 10
                 }}>
-                  💵 <b>Precio estimado:</b> ${precioEstimado.toFixed(2)}
+                  💵 <b>Precio estimado:</b> {formatearPrecio(precioEstimado)}
                 </div>
 
                 <div style={{ display: "flex", gap: 8 }}>
@@ -217,7 +211,9 @@ export default function Productos() {
 
                 {p.stock <= 5 && <span style={{ marginLeft: 10 }}>⚠️ Stock bajo</span>}
 
-                <p>💰 Costo: ${p.costo} · 📊 Margen: {p.margen}% · 💵 Venta: ${p.precio_venta}</p>
+                <p>
+                  💰 Costo: {formatearPrecio(p.costo)} · 📊 Margen: {p.margen}% · 💵 Venta: {formatearPrecio(p.precio_venta)}
+                </p>
                 <p>📦 Stock: {p.stock}</p>
 
                 <div style={{ display: "flex", gap: 8 }}>
