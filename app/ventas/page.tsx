@@ -40,8 +40,6 @@ export default function Ventas() {
   const [iva, setIva] = useState("21")
   const [nroFactura, setNroFactura] = useState("0001")
 
-  const [tipoPago, setTipoPago] = useState("pagado") // 🔥 NUEVO
-
   const [toast, setToast] = useState<any>(null)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
@@ -71,6 +69,7 @@ export default function Ventas() {
 
     const cant = Number(cantidad)
 
+    // ✅ Validar stock considerando lo que ya está en el carrito
     const enCarrito = carrito.find(i => i.producto_id === producto.id)
     const cantidadEnCarrito = enCarrito?.cantidad || 0
     const stockDisponible = producto.stock - cantidadEnCarrito
@@ -109,6 +108,7 @@ export default function Ventas() {
     const nuevo = [...carrito]
     const item = nuevo[i]
 
+    // ✅ No dejar superar el stock
     if (item.cantidad >= item.stockDisponible) {
       mostrarToast(`⚠️ Stock máximo: ${item.stockDisponible}`, "error")
       return
@@ -159,7 +159,7 @@ export default function Ventas() {
       return
     }
 
-    // stock
+    // ✅ Descontar stock con update directo
     for (const item of carrito) {
       const producto = productos.find(p => p.id === item.producto_id)
       if (!producto) continue
@@ -182,7 +182,6 @@ export default function Ventas() {
       }
     }
 
-    // venta
     const { error } = await supabase.rpc("registrar_venta", {
       p_cliente_id: Number(clienteId),
       p_total: total,
@@ -194,37 +193,15 @@ export default function Ventas() {
       return
     }
 
-    // 🔥 CUENTA CORRIENTE (AGREGADO)
-    if (tipoPago === "cta_cte") {
-      const { error: errorCta } = await supabase
-        .from("cuenta_corriente")
-        .insert([{
-          cliente_id: Number(clienteId),
-          tipo: "venta",
-          monto: total,
-          descripcion: `Venta Nº ${nroFactura}`
-        }])
-
-      if (errorCta) {
-        mostrarToast("❌ Error en cuenta corriente", "error")
-        return
-      }
-    }
-
     mostrarToast("✅ Venta realizada", "ok")
-
     setCarrito([])
     setClienteId("")
     setClienteSeleccionado(null)
-    setTipoPago("pagado")
-
     cargar()
   }
 
   function imprimirTicket() {
     if (!clienteSeleccionado || carrito.length === 0) return
-
-    const estadoPago = tipoPago === "cta_cte" ? "CUENTA CORRIENTE" : "PAGADO" // 🔥 NUEVO
 
     const logoUrl = window.location.origin + "/logo.png"
     const fecha = new Date().toLocaleDateString("es-AR")
@@ -250,23 +227,144 @@ export default function Ventas() {
 
     const html = `
     <html>
+    <head>
+      <style>
+        @page { margin: 20px; }
+
+        body {
+          font-family: Arial;
+          padding: 20px;
+          display: flex;
+          flex-direction: column;
+          min-height: 95vh;
+          box-sizing: border-box;
+        }
+
+        .logo { height: 120px; }
+
+        .header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .header-right { text-align: center; }
+        .header-right h2 { margin: 0; }
+
+        .nro-factura {
+          font-size: 14px;
+          color: #555;
+          margin-top: 4px;
+        }
+
+        .datos {
+          display: flex;
+          justify-content: space-between;
+          margin-top: 20px;
+        }
+
+        .contenido { flex: 1; }
+
+        table {
+          width: 100%;
+          margin-top: 30px;
+          border-collapse: collapse;
+        }
+
+        th {
+          border: 1px solid #ccc;
+          padding: 8px;
+          background: #eee;
+        }
+
+        td {
+          padding: 6px;
+          text-align: center;
+        }
+
+        .totales {
+          margin-top: 40px;
+          display: flex;
+          justify-content: flex-end;
+        }
+
+        .box {
+          width: 280px;
+          border-top: 2px solid #ccc;
+          padding-top: 10px;
+        }
+
+        .box p, .box h2 { margin: 6px 0; }
+      </style>
+    </head>
+
     <body>
-      <h2>PRESUPUESTO</h2>
-      <p><b>Estado:</b> ${estadoPago}</p>
-      <p><b>Nº:</b> ${nroFactura}</p>
-      <p><b>Cliente:</b> ${clienteSeleccionado.nombre}</p>
-      <table border="1" width="100%">
-        ${filas}
-      </table>
-      <h2>Total: ${fmt(total)}</h2>
+
+      <div class="contenido">
+
+        <div class="header">
+          <img src="${logoUrl}" class="logo"/>
+          <div class="header-right">
+            <h2>PRESUPUESTO</h2>
+            <div class="nro-factura">Nº ${nroFactura} &nbsp;|&nbsp; Fecha: ${fecha}</div>
+          </div>
+        </div>
+
+        <div class="datos">
+          <div>
+            <b>VETIX Distribuidora</b><br/>
+            Almirante Brown 620<br/>
+            Tel: 2604518157<br/>
+            Email: vetix.cf@gmail.com
+          </div>
+
+          <div style="text-align:left;">
+            <b>Cliente:</b><br/>
+            ${clienteSeleccionado.nombre} ${clienteSeleccionado.apellido}<br/>
+            CUIT: ${clienteSeleccionado.cuit || "-"}<br/>
+            Dirección: ${clienteSeleccionado.localidad || "-"}<br/>
+            Tel: ${clienteSeleccionado.telefono || "-"}
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Cant.</th>
+              <th style="width:40%">Descripción</th>
+              <th>Precio U.</th>
+              <th>Bonif.</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filas}
+          </tbody>
+        </table>
+
+      </div>
+
+      <div class="totales">
+        <div class="box">
+          <p><b>Subtotal:</b> ${fmt(subtotal)}</p>
+          <p><b>IVA (${ivaNum}%):</b> ${fmt(subtotal * ivaNum / 100)}</p>
+          <h2><b>Total:</b> ${fmt(total)}</h2>
+        </div>
+      </div>
+
     </body>
     </html>
     `
 
     const ventana = window.open("", "_blank")
-    ventana?.document.write(html)
-    ventana?.document.close()
-    setTimeout(() => ventana?.print(), 500)
+    if (!ventana) {
+      alert("⚠️ Habilitá ventanas emergentes")
+      return
+    }
+
+    ventana.document.write(html)
+    ventana.document.close()
+    setTimeout(() => ventana.print(), 500)
   }
 
   return (
@@ -276,7 +374,7 @@ export default function Ventas() {
 
       <h1>💰 Ventas</h1>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
         <select value={clienteId} onChange={e => seleccionarCliente(e.target.value)}>
           <option value="">Cliente</option>
           {clientes.map(c => (
@@ -286,17 +384,81 @@ export default function Ventas() {
           ))}
         </select>
 
-        {/* 🔥 NUEVO */}
-        <select value={tipoPago} onChange={e => setTipoPago(e.target.value)}>
-          <option value="pagado">💵 Pagado</option>
-          <option value="cta_cte">📒 Cuenta corriente</option>
+        <label>
+          Nº Presupuesto:
+          <input
+            type="text"
+            value={nroFactura}
+            onChange={e => setNroFactura(e.target.value)}
+            style={{ width: 80, marginLeft: 6 }}
+          />
+        </label>
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        <select value={productoId} onChange={e => setProductoId(e.target.value)}>
+          <option value="">Producto</option>
+          {productos.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.nombre} - {formatearPrecio(p.precio_venta)} {p.stock === 0 ? "(sin stock)" : `(stock: ${p.stock})`}
+            </option>
+          ))}
         </select>
+
+        <input type="number" value={cantidad} onChange={e => setCantidad(e.target.value)} style={{ width: 60 }} />
+
+        <button onClick={agregarAlCarrito}>➕</button>
+        <button onClick={vaciarCarrito}>🧹</button>
+      </div>
+
+      <h3>🛒 Carrito</h3>
+
+      {carrito.map((item, i) => {
+        const bonif = item.bonificacion || 0
+        const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
+        const subtotalItem = unidadesPagas * item.precio
+
+        return (
+          <div key={i} style={{ background: "#eee", padding: 10, marginBottom: 10 }}>
+            <b>{item.nombre}</b>
+            <span style={{ marginLeft: 10, fontSize: 13, color: "#555" }}>
+              (stock: {item.stockDisponible})
+            </span>
+
+            <p>Cantidad: {item.cantidad} | Bonificadas: {bonif} | Pagan: {unidadesPagas}</p>
+
+            <p>
+              Precio:
+              <input type="number" value={item.precio} onChange={e => cambiarPrecio(i, Number(e.target.value))} />
+            </p>
+
+            <p>Subtotal: {formatearPrecio(subtotalItem)}</p>
+
+            <p>
+              Bonificación:
+              <input type="number" value={bonif} onChange={e => cambiarBonificacion(i, Number(e.target.value))} />
+            </p>
+
+            <button onClick={() => sumar(i)}>➕</button>
+            <button onClick={() => restar(i)}>➖</button>
+            <button onClick={() => eliminarItem(i)}>❌</button>
+          </div>
+        )
+      })}
+
+      <h3>Subtotal: {formatearPrecio(subtotal)}</h3>
+
+      <div>
+        IVA:
+        <input type="number" value={iva} onChange={e => setIva(e.target.value)} />
       </div>
 
       <h2>Total: {formatearPrecio(total)}</h2>
 
-      <button onClick={guardarVenta}>💾 Confirmar venta</button>
-      <button onClick={imprimirTicket}>🧾 Imprimir</button>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={guardarVenta}>💾 Confirmar venta</button>
+        <button onClick={imprimirTicket}>🧾 Imprimir / PDF</button>
+      </div>
 
     </div>
   )
