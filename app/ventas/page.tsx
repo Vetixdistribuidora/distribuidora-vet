@@ -177,7 +177,7 @@ export default function Ventas() {
         .eq("id", item.producto_id)
 
       if (error) {
-        mostrarToast("❌ Error al actualizar stock", "error")
+        mostrarToast("❌ Error al actualizar stock: " + error.message, "error")
         return
       }
     }
@@ -194,14 +194,21 @@ export default function Ventas() {
       return
     }
 
-    // 🔥 CUENTA CORRIENTE
+    // 🔥 CUENTA CORRIENTE (AGREGADO)
     if (tipoPago === "cta_cte") {
-      await supabase.from("cuenta_corriente").insert([{
-        cliente_id: Number(clienteId),
-        tipo: "venta",
-        monto: total,
-        descripcion: "Venta"
-      }])
+      const { error: errorCta } = await supabase
+        .from("cuenta_corriente")
+        .insert([{
+          cliente_id: Number(clienteId),
+          tipo: "venta",
+          monto: total,
+          descripcion: `Venta Nº ${nroFactura}`
+        }])
+
+      if (errorCta) {
+        mostrarToast("❌ Error en cuenta corriente", "error")
+        return
+      }
     }
 
     mostrarToast("✅ Venta realizada", "ok")
@@ -214,6 +221,54 @@ export default function Ventas() {
     cargar()
   }
 
+  function imprimirTicket() {
+    if (!clienteSeleccionado || carrito.length === 0) return
+
+    const estadoPago = tipoPago === "cta_cte" ? "CUENTA CORRIENTE" : "PAGADO" // 🔥 NUEVO
+
+    const logoUrl = window.location.origin + "/logo.png"
+    const fecha = new Date().toLocaleDateString("es-AR")
+
+    const fmt = (num: number) =>
+      "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+    const filas = carrito.map(item => {
+      const bonif = item.bonificacion || 0
+      const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
+      const totalItem = unidadesPagas * item.precio
+
+      return `
+        <tr>
+          <td>${item.cantidad}</td>
+          <td style="text-align:left;">${item.nombre}</td>
+          <td>${fmt(item.precio)}</td>
+          <td>${bonif}</td>
+          <td>${fmt(totalItem)}</td>
+        </tr>
+      `
+    }).join("")
+
+    const html = `
+    <html>
+    <body>
+      <h2>PRESUPUESTO</h2>
+      <p><b>Estado:</b> ${estadoPago}</p>
+      <p><b>Nº:</b> ${nroFactura}</p>
+      <p><b>Cliente:</b> ${clienteSeleccionado.nombre}</p>
+      <table border="1" width="100%">
+        ${filas}
+      </table>
+      <h2>Total: ${fmt(total)}</h2>
+    </body>
+    </html>
+    `
+
+    const ventana = window.open("", "_blank")
+    ventana?.document.write(html)
+    ventana?.document.close()
+    setTimeout(() => ventana?.print(), 500)
+  }
+
   return (
     <div style={{ padding: 20 }}>
 
@@ -221,7 +276,7 @@ export default function Ventas() {
 
       <h1>💰 Ventas</h1>
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <select value={clienteId} onChange={e => seleccionarCliente(e.target.value)}>
           <option value="">Cliente</option>
           {clientes.map(c => (
@@ -238,10 +293,10 @@ export default function Ventas() {
         </select>
       </div>
 
-      {/* resto igual */}
       <h2>Total: {formatearPrecio(total)}</h2>
 
       <button onClick={guardarVenta}>💾 Confirmar venta</button>
+      <button onClick={imprimirTicket}>🧾 Imprimir</button>
 
     </div>
   )
