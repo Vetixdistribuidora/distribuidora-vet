@@ -21,7 +21,6 @@ function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
   )
 }
 
-// ✅ Formato argentino: 1234567.89 → $1.234.567,89
 function formatearPrecio(num: number) {
   return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -69,12 +68,22 @@ export default function Ventas() {
     if (!producto) return
 
     const cant = Number(cantidad)
+
+    // ✅ Verificar stock disponible considerando lo que ya está en el carrito
+    const enCarrito = carrito.find(i => i.producto_id === producto.id)
+    const cantidadEnCarrito = enCarrito?.cantidad || 0
+    const stockDisponible = producto.stock - cantidadEnCarrito
+
+    if (cant > stockDisponible) {
+      mostrarToast(`⚠️ Stock insuficiente. Disponible: ${stockDisponible}`, "error")
+      return
+    }
+
     const base = producto.precio_venta
     const porcentaje = clienteSeleccionado?.porcentaje || 0
     const precioFinal = base + (base * porcentaje / 100)
 
-    const existente = carrito.find(i => i.producto_id === producto.id)
-    if (existente) {
+    if (enCarrito) {
       setCarrito(carrito.map(i =>
         i.producto_id === producto.id
           ? { ...i, cantidad: i.cantidad + cant }
@@ -86,7 +95,8 @@ export default function Ventas() {
         nombre: producto.nombre,
         cantidad: cant,
         precio: precioFinal,
-        bonificacion: 0
+        bonificacion: 0,
+        stockDisponible: producto.stock  // guardamos el stock para validar después
       }])
     }
 
@@ -96,14 +106,22 @@ export default function Ventas() {
 
   function sumar(i: number) {
     const nuevo = [...carrito]
-    nuevo[i].cantidad++
-    setCarrito(nuevo)
+    const item = nuevo[i]
+
+    // ✅ No dejar superar el stock
+    if (item.cantidad >= item.stockDisponible) {
+      mostrarToast(`⚠️ Stock máximo: ${item.stockDisponible}`, "error")
+      return
+    }
+
+    item.cantidad++
+    setCarrito([...nuevo])
   }
 
   function restar(i: number) {
     const nuevo = [...carrito]
     if (nuevo[i].cantidad > 1) nuevo[i].cantidad--
-    setCarrito(nuevo)
+    setCarrito([...nuevo])
   }
 
   function eliminarItem(i: number) {
@@ -117,13 +135,13 @@ export default function Ventas() {
   function cambiarBonificacion(i: number, valor: number) {
     const nuevo = [...carrito]
     nuevo[i].bonificacion = valor
-    setCarrito(nuevo)
+    setCarrito([...nuevo])
   }
 
   function cambiarPrecio(i: number, valor: number) {
     const nuevo = [...carrito]
     nuevo[i].precio = valor
-    setCarrito(nuevo)
+    setCarrito([...nuevo])
   }
 
   const subtotal = carrito.reduce((acc, item) => {
@@ -141,13 +159,30 @@ export default function Ventas() {
       return
     }
 
+    // ✅ Descontar stock con update directo
     for (const item of carrito) {
-      await supabase.rpc("descontar_stock", {
-        p_producto_id: item.producto_id,
-        p_cantidad: item.cantidad
-      })
+      const producto = productos.find(p => p.id === item.producto_id)
+      if (!producto) continue
+
+      const nuevoStock = producto.stock - item.cantidad
+
+      if (nuevoStock < 0) {
+        mostrarToast(`❌ Sin stock para: ${item.nombre}`, "error")
+        return
+      }
+
+      const { error } = await supabase
+        .from("productos")
+        .update({ stock: nuevoStock })
+        .eq("id", item.producto_id)
+
+      if (error) {
+        mostrarToast("❌ Error al actualizar stock: " + error.message, "error")
+        return
+      }
     }
 
+    // ✅ Registrar la venta
     const { error } = await supabase.rpc("registrar_venta", {
       p_cliente_id: Number(clienteId),
       p_total: total,
@@ -163,6 +198,7 @@ export default function Ventas() {
     setCarrito([])
     setClienteId("")
     setClienteSeleccionado(null)
+    cargar() // recargar productos con stock actualizado
   }
 
   function imprimirTicket() {
@@ -171,7 +207,6 @@ export default function Ventas() {
     const logoUrl = window.location.origin + "/logo.png"
     const fecha = new Date().toLocaleDateString("es-AR")
 
-    // Función de formato dentro del HTML generado
     const fmt = (num: number) =>
       "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -196,7 +231,6 @@ export default function Ventas() {
     <head>
       <style>
         @page { margin: 20px; }
-
         body {
           font-family: Arial;
           padding: 20px;
@@ -205,69 +239,23 @@ export default function Ventas() {
           min-height: 95vh;
           box-sizing: border-box;
         }
-
         .logo { height: 120px; }
-
-        .header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
+        .header { display: flex; justify-content: space-between; align-items: center; }
         .header-right { text-align: center; }
         .header-right h2 { margin: 0; }
-
-        .nro-factura {
-          font-size: 14px;
-          color: #555;
-          margin-top: 4px;
-        }
-
-        .datos {
-          display: flex;
-          justify-content: space-between;
-          margin-top: 20px;
-        }
-
+        .nro-factura { font-size: 14px; color: #555; margin-top: 4px; }
+        .datos { display: flex; justify-content: space-between; margin-top: 20px; }
         .contenido { flex: 1; }
-
-        table {
-          width: 100%;
-          margin-top: 30px;
-          border-collapse: collapse;
-        }
-
-        th {
-          border: 1px solid #ccc;
-          padding: 8px;
-          background: #eee;
-        }
-
-        td {
-          padding: 6px;
-          text-align: center;
-        }
-
-        .totales {
-          margin-top: 40px;
-          display: flex;
-          justify-content: flex-end;
-        }
-
-        .box {
-          width: 280px;
-          border-top: 2px solid #ccc;
-          padding-top: 10px;
-        }
-
+        table { width: 100%; margin-top: 30px; border-collapse: collapse; }
+        th { border: 1px solid #ccc; padding: 8px; background: #eee; }
+        td { padding: 6px; text-align: center; }
+        .totales { margin-top: 40px; display: flex; justify-content: flex-end; }
+        .box { width: 280px; border-top: 2px solid #ccc; padding-top: 10px; }
         .box p, .box h2 { margin: 6px 0; }
       </style>
     </head>
-
     <body>
-
       <div class="contenido">
-
         <div class="header">
           <img src="${logoUrl}" class="logo"/>
           <div class="header-right">
@@ -275,7 +263,6 @@ export default function Ventas() {
             <div class="nro-factura">Nº ${nroFactura} &nbsp;|&nbsp; Fecha: ${fecha}</div>
           </div>
         </div>
-
         <div class="datos">
           <div>
             <b>VETIX Distribuidora</b><br/>
@@ -283,7 +270,6 @@ export default function Ventas() {
             Tel: 2604518157<br/>
             Email: clauforte@gmail.com
           </div>
-
           <div style="text-align:left;">
             <b>Cliente:</b><br/>
             ${clienteSeleccionado.nombre} ${clienteSeleccionado.apellido}<br/>
@@ -292,7 +278,6 @@ export default function Ventas() {
             Tel: ${clienteSeleccionado.telefono || "-"}
           </div>
         </div>
-
         <table>
           <thead>
             <tr>
@@ -303,13 +288,9 @@ export default function Ventas() {
               <th>Total</th>
             </tr>
           </thead>
-          <tbody>
-            ${filas}
-          </tbody>
+          <tbody>${filas}</tbody>
         </table>
-
       </div>
-
       <div class="totales">
         <div class="box">
           <p><b>Subtotal:</b> ${fmt(subtotal)}</p>
@@ -317,7 +298,6 @@ export default function Ventas() {
           <h2><b>Total:</b> ${fmt(total)}</h2>
         </div>
       </div>
-
     </body>
     </html>
     `
@@ -365,8 +345,10 @@ export default function Ventas() {
         <select value={productoId} onChange={e => setProductoId(e.target.value)}>
           <option value="">Producto</option>
           {productos.map(p => (
-            <option key={p.id} value={p.id}>
-              {p.nombre} - {formatearPrecio(p.precio_venta)}
+            <option key={p.id} value={p.id}
+              style={{ color: p.stock === 0 ? "#aaa" : "black" }}
+            >
+              {p.nombre} - {formatearPrecio(p.precio_venta)} {p.stock === 0 ? "(sin stock)" : `(stock: ${p.stock})`}
             </option>
           ))}
         </select>
@@ -387,6 +369,9 @@ export default function Ventas() {
         return (
           <div key={i} style={{ background: "#eee", padding: 10, marginBottom: 10 }}>
             <b>{item.nombre}</b>
+            <span style={{ marginLeft: 10, fontSize: 13, color: "#555" }}>
+              (stock disponible: {item.stockDisponible})
+            </span>
 
             <p>Cantidad: {item.cantidad} | Bonificadas: {bonif} | Pagan: {unidadesPagas}</p>
 
