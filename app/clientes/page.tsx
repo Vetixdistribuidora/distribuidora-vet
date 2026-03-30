@@ -231,13 +231,19 @@ export default function Clientes() {
     await cargar()
   }
 
-  function reimprimirFactura(venta: any) {
-    const facturas = JSON.parse(localStorage.getItem("facturas") || "[]")
-    const factura = facturas.find((f: any) => f.nroFactura === venta.nro_factura)
-    if (!factura) {
-      mostrarToast("Factura no encontrada en este dispositivo", "error")
-      return
-    }
+ async function reimprimirFactura(venta: any) {
+  const { data, error } = await supabase
+    .from("facturas_impresion")
+    .select("datos")
+    .eq("nro_factura", venta.nro_factura)
+    .single()
+
+  if (error || !data) {
+    mostrarToast("Factura no encontrada", "error")
+    return
+  }
+
+  const factura = data.datos
     const fmt = (num: number) =>
       "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const logoUrl = window.location.origin + "/logo.png"

@@ -171,17 +171,19 @@ export default function Ventas() {
       mostrarToast("Error: " + error.message, "error")
       return
     }
-    const facturas = JSON.parse(localStorage.getItem("facturas") || "[]")
-    facturas.push({
-      nroFactura,
-      fecha: new Date().toLocaleDateString("es-AR"),
-      cliente: clienteSeleccionado,
-      carrito,
-      subtotal,
-      iva: ivaNum,
-      total
-    })
-    localStorage.setItem("facturas", JSON.stringify(facturas))
+await supabase.from("facturas_impresion").insert([{
+  nro_factura: nroFactura,
+  cliente_id: Number(clienteId),
+  datos: {
+    nroFactura,
+    fecha: new Date().toLocaleDateString("es-AR"),
+    cliente: clienteSeleccionado,
+    carrito,
+    subtotal,
+    iva: ivaNum,
+    total
+  }
+}])
     mostrarToast(esCuentaCorriente ? "Venta guardada en cuenta corriente" : "Venta cobrada", "ok")
     setCarrito([])
     setClienteId("")
