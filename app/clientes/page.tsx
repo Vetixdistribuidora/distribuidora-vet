@@ -236,7 +236,9 @@ export default function Clientes() {
     .from("facturas_impresion")
     .select("datos")
     .eq("nro_factura", venta.nro_factura)
-    .single()
+    .order("id", { ascending: false })
+.limit(1)
+.maybeSingle()
 
   if (error || !data) {
     mostrarToast("Factura no encontrada", "error")

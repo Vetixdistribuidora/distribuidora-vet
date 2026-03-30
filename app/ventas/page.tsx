@@ -171,7 +171,7 @@ export default function Ventas() {
       mostrarToast("Error: " + error.message, "error")
       return
     }
-await supabase.from("facturas_impresion").insert([{
+await supabase.from("facturas_impresion").upsert([{
   nro_factura: nroFactura,
   cliente_id: Number(clienteId),
   datos: {
@@ -192,8 +192,22 @@ await supabase.from("facturas_impresion").insert([{
     cargar()
   }
 
-  function imprimirTicket() {
-    if (!clienteSeleccionado || carrito.length === 0) return
+    async function imprimirTicket() {
+  if (!clienteSeleccionado || carrito.length === 0) return
+
+  await supabase.from("facturas_impresion").upsert([{
+    nro_factura: nroFactura,
+    cliente_id: Number(clienteId) || null,
+    datos: {
+      nroFactura,
+      fecha: new Date().toLocaleDateString("es-AR"),
+      cliente: clienteSeleccionado,
+      carrito,
+      subtotal,
+      iva: ivaNum,
+      total
+    }
+  }])
     const logoUrl = window.location.origin + "/logo.png"
     const fecha = new Date().toLocaleDateString("es-AR")
     const fmt = (num: number) =>
