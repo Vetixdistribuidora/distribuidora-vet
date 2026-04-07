@@ -25,6 +25,92 @@ function formatearPrecio(num: number) {
   return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+interface DatosImpresion {
+  nroFactura: string
+  clienteSeleccionado: any
+  carrito: any[]
+  subtotal: number
+  ivaNum: number
+  total: number
+  esCuentaCorriente: boolean
+}
+
+function generarHTMLEImprimir(datos: DatosImpresion) {
+  const { nroFactura, clienteSeleccionado, carrito, subtotal, ivaNum, total, esCuentaCorriente } = datos
+
+  const logoUrl = window.location.origin + "/logo.png"
+  const fecha = new Date().toLocaleDateString("es-AR")
+  const fmt = (num: number) =>
+    "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const filas = carrito.map(item => {
+    const bonif = item.bonificacion || 0
+    const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
+    const totalItem = unidadesPagas * item.precio
+    return (
+      "<tr><td>" + item.cantidad + "</td>" +
+      "<td style='text-align:left;'>" + item.nombre + "</td>" +
+      "<td>" + fmt(item.precio) + "</td>" +
+      "<td>" + bonif + "</td>" +
+      "<td>" + fmt(totalItem) + "</td></tr>"
+    )
+  }).join("")
+
+  const badgeCC = esCuentaCorriente
+    ? "<div style='background:#e67700;color:white;padding:6px 14px;border-radius:6px;font-weight:bold;display:inline-block;margin-top:8px;'>CUENTA CORRIENTE - PENDIENTE DE PAGO</div>"
+    : ""
+
+  const html =
+    "<!DOCTYPE html><html><head><style>" +
+    "@page{margin:20px}" +
+    "body{font-family:Arial;padding:20px;display:flex;flex-direction:column;min-height:95vh;box-sizing:border-box}" +
+    ".logo{height:120px}" +
+    ".header{display:flex;justify-content:space-between;align-items:center}" +
+    ".header-right{text-align:center}" +
+    ".header-right h2{margin:0}" +
+    ".nro-factura{font-size:14px;color:#555;margin-top:4px}" +
+    ".datos{display:flex;justify-content:space-between;margin-top:20px}" +
+    ".contenido{flex:1}" +
+    "table{width:100%;margin-top:30px;border-collapse:collapse}" +
+    "th{border:1px solid #ccc;padding:8px;background:#eee}" +
+    "td{padding:6px;text-align:center}" +
+    ".totales{margin-top:40px;display:flex;justify-content:flex-end}" +
+    ".box{width:280px;border-top:2px solid #ccc;padding-top:10px}" +
+    ".box p,.box h2{margin:6px 0}" +
+    "</style></head><body>" +
+    "<div class='contenido'>" +
+    "<div class='header'>" +
+    "<img src='" + logoUrl + "' class='logo'/>" +
+    "<div class='header-right'>" +
+    "<h2>PRESUPUESTO</h2>" +
+    "<div class='nro-factura'>N " + nroFactura + " | Fecha: " + fecha + "</div>" +
+    badgeCC +
+    "</div></div>" +
+    "<div class='datos'>" +
+    "<div><b>VETIX Distribuidora</b><br/>Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div>" +
+    "<div style='text-align:left;'><b>Cliente:</b><br/>" +
+    clienteSeleccionado.nombre + " " + clienteSeleccionado.apellido + "<br/>" +
+    "CUIT: " + (clienteSeleccionado.cuit || "-") + "<br/>" +
+    "Direccion: " + (clienteSeleccionado.localidad || "-") + "<br/>" +
+    "Tel: " + (clienteSeleccionado.telefono || "-") + "</div>" +
+    "</div>" +
+    "<table><thead><tr>" +
+    "<th>Cant.</th><th style='width:40%'>Descripcion</th><th>Precio U.</th><th>Bonif.</th><th>Total</th>" +
+    "</tr></thead><tbody>" + filas + "</tbody></table>" +
+    "</div>" +
+    "<div class='totales'><div class='box'>" +
+    "<p><b>Subtotal:</b> " + fmt(subtotal) + "</p>" +
+    "<p><b>IVA (" + ivaNum + "%):</b> " + fmt(subtotal * ivaNum / 100) + "</p>" +
+    "<h2><b>Total:</b> " + fmt(total) + "</h2>" +
+    "</div></div></body></html>"
+
+  const ventana = window.open("", "_blank")
+  if (!ventana) { alert("Habilita ventanas emergentes"); return }
+  ventana.document.write(html)
+  ventana.document.close()
+  setTimeout(() => ventana.print(), 500)
+}
+
 export default function Ventas() {
 
   const [clientes, setClientes] = useState<any[]>([])
@@ -143,6 +229,7 @@ export default function Ventas() {
       mostrarToast("Faltan datos", "error")
       return
     }
+
     for (const item of carrito) {
       const producto = productos.find(p => p.id === item.producto_id)
       if (!producto) continue
@@ -160,6 +247,7 @@ export default function Ventas() {
         return
       }
     }
+
     const { error } = await supabase.rpc("registrar_venta", {
       p_cliente_id: Number(clienteId),
       p_total: total,
@@ -167,66 +255,59 @@ export default function Ventas() {
       p_estado: esCuentaCorriente ? "cuenta_corriente" : "cobrada",
       p_nro_factura: nroFactura
     })
+
     if (error) {
       mostrarToast("Error: " + error.message, "error")
       return
     }
-await supabase.from("facturas_impresion").upsert([{
-  nro_factura: nroFactura,
-  cliente_id: Number(clienteId),
-  datos: {
-    nroFactura,
-    fecha: new Date().toLocaleDateString("es-AR"),
-    cliente: clienteSeleccionado,
-    carrito,
-    subtotal,
-    iva: ivaNum,
-    total
-  }
-}])
+
+    const datosImpresion: DatosImpresion = {
+      nroFactura,
+      clienteSeleccionado,
+      carrito: [...carrito],
+      subtotal,
+      ivaNum,
+      total,
+      esCuentaCorriente
+    }
+
+    await supabase.from("facturas_impresion").upsert([{
+      nro_factura: nroFactura,
+      cliente_id: Number(clienteId),
+      datos: datosImpresion
+    }])
+
     mostrarToast(esCuentaCorriente ? "Venta guardada en cuenta corriente" : "Venta cobrada", "ok")
+
     setCarrito([])
     setClienteId("")
     setClienteSeleccionado(null)
     setEsCuentaCorriente(false)
     cargar()
+
+    generarHTMLEImprimir(datosImpresion)
   }
 
-    async function imprimirTicket() {
-  if (!clienteSeleccionado || carrito.length === 0) return
+  async function imprimirTicket() {
+    if (!clienteSeleccionado || carrito.length === 0) return
 
-  await supabase.from("facturas_impresion").upsert([{
-    nro_factura: nroFactura,
-    cliente_id: Number(clienteId) || null,
-    datos: {
+    const datosImpresion: DatosImpresion = {
       nroFactura,
-      fecha: new Date().toLocaleDateString("es-AR"),
-      cliente: clienteSeleccionado,
-      carrito,
+      clienteSeleccionado,
+      carrito: [...carrito],
       subtotal,
-      iva: ivaNum,
-      total
+      ivaNum,
+      total,
+      esCuentaCorriente
     }
-  }])
-    const logoUrl = window.location.origin + "/logo.png"
-    const fecha = new Date().toLocaleDateString("es-AR")
-    const fmt = (num: number) =>
-      "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    const filas = carrito.map(item => {
-      const bonif = item.bonificacion || 0
-      const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
-      const totalItem = unidadesPagas * item.precio
-      return "<tr><td>" + item.cantidad + "</td><td style='text-align:left;'>" + item.nombre + "</td><td>" + fmt(item.precio) + "</td><td>" + bonif + "</td><td>" + fmt(totalItem) + "</td></tr>"
-    }).join("")
-    const badgeCC = esCuentaCorriente
-      ? "<div style='background:#e67700;color:white;padding:6px 14px;border-radius:6px;font-weight:bold;display:inline-block;margin-top:8px;'>CUENTA CORRIENTE - PENDIENTE DE PAGO</div>"
-      : ""
-    const html = "<!DOCTYPE html><html><head><style>@page{margin:20px}body{font-family:Arial;padding:20px;display:flex;flex-direction:column;min-height:95vh;box-sizing:border-box}.logo{height:120px}.header{display:flex;justify-content:space-between;align-items:center}.header-right{text-align:center}.header-right h2{margin:0}.nro-factura{font-size:14px;color:#555;margin-top:4px}.datos{display:flex;justify-content:space-between;margin-top:20px}.contenido{flex:1}table{width:100%;margin-top:30px;border-collapse:collapse}th{border:1px solid #ccc;padding:8px;background:#eee}td{padding:6px;text-align:center}.totales{margin-top:40px;display:flex;justify-content:flex-end}.box{width:280px;border-top:2px solid #ccc;padding-top:10px}.box p,.box h2{margin:6px 0}</style></head><body><div class='contenido'><div class='header'><img src='" + logoUrl + "' class='logo'/><div class='header-right'><h2>PRESUPUESTO</h2><div class='nro-factura'>N " + nroFactura + " | Fecha: " + fecha + "</div>" + badgeCC + "</div></div><div class='datos'><div><b>VETIX Distribuidora</b><br/>Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div><div style='text-align:left;'><b>Cliente:</b><br/>" + clienteSeleccionado.nombre + " " + clienteSeleccionado.apellido + "<br/>CUIT: " + (clienteSeleccionado.cuit || "-") + "<br/>Direccion: " + (clienteSeleccionado.localidad || "-") + "<br/>Tel: " + (clienteSeleccionado.telefono || "-") + "</div></div><table><thead><tr><th>Cant.</th><th style='width:40%'>Descripcion</th><th>Precio U.</th><th>Bonif.</th><th>Total</th></tr></thead><tbody>" + filas + "</tbody></table></div><div class='totales'><div class='box'><p><b>Subtotal:</b> " + fmt(subtotal) + "</p><p><b>IVA (" + ivaNum + "%):</b> " + fmt(subtotal * ivaNum / 100) + "</p><h2><b>Total:</b> " + fmt(total) + "</h2></div></div></body></html>"
-    const ventana = window.open("", "_blank")
-    if (!ventana) { alert("Habilita ventanas emergentes"); return }
-    ventana.document.write(html)
-    ventana.document.close()
-    setTimeout(() => ventana.print(), 500)
+
+    await supabase.from("facturas_impresion").upsert([{
+      nro_factura: nroFactura,
+      cliente_id: Number(clienteId) || null,
+      datos: datosImpresion
+    }])
+
+    generarHTMLEImprimir(datosImpresion)
   }
 
   return (
