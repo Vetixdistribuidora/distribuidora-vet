@@ -204,32 +204,111 @@ export default function Clientes() {
     setModalPago(true)
   }
 
-  async function registrarPago() {
-    if (!montoPago || Number(montoPago) <= 0) {
-      mostrarToast("Ingresa un monto valido", "error")
-      return
-    }
-    const monto = Number(montoPago)
-    if (monto > ventaParaPagar.saldo) {
-      mostrarToast("El monto supera el saldo pendiente", "error")
-      return
-    }
-    const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
-      cliente_id: clienteSeleccionado.id,
-      venta_id: ventaParaPagar.id,
-      monto,
-      nota: notaPago
-    }])
-    if (error) return mostrarToast("Error: " + error.message, "error")
-    if (monto >= ventaParaPagar.saldo) {
-      await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaParaPagar.id)
-    }
-    mostrarToast("Pago registrado", "ok")
-    setModalPago(false)
-    setVentaParaPagar(null)
-    await cargarVentasCliente(clienteSeleccionado.id)
-    await cargar()
+  function imprimirRecibo(datos: {
+  cliente: any
+  nroFactura: string
+  montoTotal: number
+  montoPagado: number
+  saldoAnterior: number
+  saldoRestante: number
+  nota: string
+  fecha: string
+}) {
+  const fmt = (num: number) =>
+    "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const logoUrl = window.location.origin + "/logo.png"
+
+  const html =
+    "<!DOCTYPE html><html><head><style>" +
+    "@page{margin:20px;size:A5}" +
+    "body{font-family:Arial;padding:20px;box-sizing:border-box}" +
+    ".logo{height:80px}" +
+    ".header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #333;padding-bottom:12px;margin-bottom:16px}" +
+    ".titulo{font-size:22px;font-weight:bold}" +
+    ".subtitulo{font-size:13px;color:#555}" +
+    ".fila{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:14px}" +
+    ".fila b{color:#333}" +
+    ".total{display:flex;justify-content:space-between;padding:10px 0;font-size:16px;font-weight:bold;border-top:2px solid #333;margin-top:8px}" +
+    ".saldo{background:#fff3cd;border:1px solid #e67700;border-radius:6px;padding:10px;margin-top:12px;font-size:14px}" +
+    ".pagado{background:#d3f9d8;border:1px solid #2f9e44;border-radius:6px;padding:10px;margin-top:8px;font-size:15px;font-weight:bold;text-align:center}" +
+    "</style></head><body>" +
+    "<div class='header'>" +
+    "<img src='" + logoUrl + "' class='logo'/>" +
+    "<div style='text-align:right'>" +
+    "<div class='titulo'>RECIBO DE PAGO</div>" +
+    "<div class='subtitulo'>Fecha: " + datos.fecha + "</div>" +
+    "</div>" +
+    "</div>" +
+    "<div class='fila'><span><b>Cliente:</b></span><span>" + datos.cliente.nombre + " " + datos.cliente.apellido + "</span></div>" +
+    "<div class='fila'><span><b>CUIT:</b></span><span>" + (datos.cliente.cuit || "-") + "</span></div>" +
+    "<div class='fila'><span><b>Tel:</b></span><span>" + (datos.cliente.telefono || "-") + "</span></div>" +
+    "<div class='fila'><span><b>Factura N°:</b></span><span>" + datos.nroFactura + "</span></div>" +
+    "<div class='fila'><span><b>Total factura:</b></span><span>" + fmt(datos.montoTotal) + "</span></div>" +
+    "<div class='fila'><span><b>Saldo anterior:</b></span><span>" + fmt(datos.saldoAnterior) + "</span></div>" +
+    (datos.nota ? "<div class='fila'><span><b>Nota:</b></span><span>" + datos.nota + "</span></div>" : "") +
+    "<div class='pagado'>Monto pagado: " + fmt(datos.montoPagado) + "</div>" +
+    "<div class='saldo'>" +
+    (datos.saldoRestante > 0
+      ? "Saldo restante: <b>" + fmt(datos.saldoRestante) + "</b>"
+      : "<span style='color:#2f9e44;font-weight:bold'>✓ Factura saldada completamente</span>") +
+    "</div>" +
+    "<div style='margin-top:40px;font-size:11px;color:#aaa;text-align:center'>VETIX Distribuidora — Almirante Brown 620 — Tel: 2604518157</div>" +
+    "</body></html>"
+
+  const ventana = window.open("", "_blank")
+  if (!ventana) { alert("Habilita ventanas emergentes"); return }
+  ventana.document.write(html)
+  ventana.document.close()
+  setTimeout(() => ventana.print(), 500)
+}
+
+async function registrarPago() {
+  if (!montoPago || Number(montoPago) <= 0) {
+    mostrarToast("Ingresa un monto valido", "error")
+    return
   }
+  const monto = Number(montoPago)
+  if (monto > ventaParaPagar.saldo) {
+    mostrarToast("El monto supera el saldo pendiente", "error")
+    return
+  }
+
+  const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
+    cliente_id: clienteSeleccionado.id,
+    venta_id: ventaParaPagar.id,
+    monto,
+    nota: notaPago
+  }])
+  if (error) return mostrarToast("Error: " + error.message, "error")
+
+  if (monto >= ventaParaPagar.saldo) {
+    await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaParaPagar.id)
+  }
+
+  mostrarToast("Pago registrado", "ok")
+
+  // Datos para el recibo
+  const datosRecibo = {
+    cliente: clienteSeleccionado,
+    nroFactura: ventaParaPagar.nro_factura || String(ventaParaPagar.id),
+    montoTotal: Number(ventaParaPagar.total),
+    montoPagado: monto,
+    saldoAnterior: ventaParaPagar.saldo,
+    saldoRestante: Math.max(0, ventaParaPagar.saldo - monto),
+    nota: notaPago,
+    fecha: new Date().toLocaleDateString("es-AR")
+  }
+
+  setModalPago(false)
+  setVentaParaPagar(null)
+  await cargarVentasCliente(clienteSeleccionado.id)
+  await cargar()
+
+  // Pregunta si quiere imprimir el recibo
+  if (confirm("¿Deseas imprimir el recibo de pago?")) {
+    imprimirRecibo(datosRecibo)
+  }
+}
 
  async function reimprimirFactura(venta: any) {
   const { data, error } = await supabase
