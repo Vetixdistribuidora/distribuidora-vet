@@ -248,7 +248,7 @@ export default function Ventas() {
       }
     }
 
-    const { error } = await supabase.rpc("registrar_venta", {
+    const { data: ventaData, error } = await supabase.rpc("registrar_venta", {
       p_cliente_id: Number(clienteId),
       p_total: total,
       p_items: carrito,
@@ -261,6 +261,17 @@ export default function Ventas() {
       return
     }
 
+    // Buscar el id de la venta recién creada por nro_factura
+    const { data: ventaCreada } = await supabase
+      .from("ventas")
+      .select("id")
+      .eq("nro_factura", nroFactura)
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const ventaId = ventaCreada?.id || null
+
     const datosImpresion: DatosImpresion = {
       nroFactura,
       clienteSeleccionado,
@@ -271,9 +282,11 @@ export default function Ventas() {
       esCuentaCorriente
     }
 
-    await supabase.from("facturas_impresion").upsert([{
+    // Guardar con venta_id como clave principal
+    await supabase.from("facturas_impresion").insert([{
       nro_factura: nroFactura,
       cliente_id: Number(clienteId),
+      venta_id: ventaId,
       datos: datosImpresion
     }])
 
@@ -285,7 +298,7 @@ export default function Ventas() {
     setEsCuentaCorriente(false)
     cargar()
 
-    generarHTMLEImprimir(datosImpresion)
+    // NO imprime automáticamente — el usuario usa el botón "Imprimir / PDF"
   }
 
   async function imprimirTicket() {
@@ -300,12 +313,6 @@ export default function Ventas() {
       total,
       esCuentaCorriente
     }
-
-    await supabase.from("facturas_impresion").upsert([{
-      nro_factura: nroFactura,
-      cliente_id: Number(clienteId) || null,
-      datos: datosImpresion
-    }])
 
     generarHTMLEImprimir(datosImpresion)
   }

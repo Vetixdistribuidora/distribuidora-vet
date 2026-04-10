@@ -235,10 +235,8 @@ export default function Clientes() {
   const { data, error } = await supabase
     .from("facturas_impresion")
     .select("datos")
-    .eq("nro_factura", venta.nro_factura)
-    .order("id", { ascending: false })
-.limit(1)
-.maybeSingle()
+    .eq("venta_id", venta.id)
+    .maybeSingle()
 
   if (error || !data) {
     mostrarToast("Factura no encontrada", "error")
@@ -246,25 +244,76 @@ export default function Clientes() {
   }
 
   const factura = data.datos
-    const fmt = (num: number) =>
-      "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    const logoUrl = window.location.origin + "/logo.png"
-    const filas = factura.carrito.map((item: any) => {
-      const bonif = item.bonificacion || 0
-      const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
-      const totalItem = unidadesPagas * item.precio
-      return "<tr><td>" + item.cantidad + "</td><td style='text-align:left;'>" + item.nombre + "</td><td>" + fmt(item.precio) + "</td><td>" + bonif + "</td><td>" + fmt(totalItem) + "</td></tr>"
-    }).join("")
-    const badgeCC = venta.estado === "cuenta_corriente"
-      ? "<div style='background:#e67700;color:white;padding:6px 14px;border-radius:6px;font-weight:bold;display:inline-block;margin-top:8px;'>CUENTA CORRIENTE - PENDIENTE DE PAGO</div>"
-      : ""
-    const html = "<!DOCTYPE html><html><head><style>@page{margin:20px}body{font-family:Arial;padding:20px;display:flex;flex-direction:column;min-height:95vh;box-sizing:border-box}.logo{height:120px}.header{display:flex;justify-content:space-between;align-items:center}.header-right{text-align:center}.nro-factura{font-size:14px;color:#555;margin-top:4px}.datos{display:flex;justify-content:space-between;margin-top:20px}.contenido{flex:1}table{width:100%;margin-top:30px;border-collapse:collapse}th{border:1px solid #ccc;padding:8px;background:#eee}td{padding:6px;text-align:center}.totales{margin-top:40px;display:flex;justify-content:flex-end}.box{width:280px;border-top:2px solid #ccc;padding-top:10px}.box p,.box h2{margin:6px 0}</style></head><body><div class='contenido'><div class='header'><img src='" + logoUrl + "' class='logo'/><div class='header-right'><h2>PRESUPUESTO</h2><div class='nro-factura'>N " + factura.nroFactura + " | Fecha: " + factura.fecha + "</div>" + badgeCC + "</div></div><div class='datos'><div><b>VETIX Distribuidora</b><br/>Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div><div style='text-align:left;'><b>Cliente:</b><br/>" + factura.cliente.nombre + " " + factura.cliente.apellido + "<br/>CUIT: " + (factura.cliente.cuit || "-") + "<br/>Direccion: " + (factura.cliente.localidad || "-") + "<br/>Tel: " + (factura.cliente.telefono || "-") + "</div></div><table><thead><tr><th>Cant.</th><th style='width:40%'>Descripcion</th><th>Precio U.</th><th>Bonif.</th><th>Total</th></tr></thead><tbody>" + filas + "</tbody></table></div><div class='totales'><div class='box'><p><b>Subtotal:</b> " + fmt(factura.subtotal) + "</p><p><b>IVA (" + factura.iva + "%):</b> " + fmt(factura.subtotal * factura.iva / 100) + "</p><h2><b>Total:</b> " + fmt(factura.total) + "</h2></div></div></body></html>"
-    const ventana = window.open("", "_blank")
-    if (!ventana) { alert("Habilita ventanas emergentes"); return }
-    ventana.document.write(html)
-    ventana.document.close()
-    setTimeout(() => ventana.print(), 500)
-  }
+  const fmt = (num: number) =>
+    "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const logoUrl = window.location.origin + "/logo.png"
+  const filas = factura.carrito.map((item: any) => {
+    const bonif = item.bonificacion || 0
+    const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
+    const totalItem = unidadesPagas * item.precio
+    return (
+      "<tr><td>" + item.cantidad + "</td>" +
+      "<td style='text-align:left;'>" + item.nombre + "</td>" +
+      "<td>" + fmt(item.precio) + "</td>" +
+      "<td>" + bonif + "</td>" +
+      "<td>" + fmt(totalItem) + "</td></tr>"
+    )
+  }).join("")
+
+  const badgeCC = venta.estado === "cuenta_corriente"
+    ? "<div style='background:#e67700;color:white;padding:6px 14px;border-radius:6px;font-weight:bold;display:inline-block;margin-top:8px;'>CUENTA CORRIENTE - PENDIENTE DE PAGO</div>"
+    : ""
+
+  const html =
+    "<!DOCTYPE html><html><head><style>" +
+    "@page{margin:20px}" +
+    "body{font-family:Arial;padding:20px;display:flex;flex-direction:column;min-height:95vh;box-sizing:border-box}" +
+    ".logo{height:120px}" +
+    ".header{display:flex;justify-content:space-between;align-items:center}" +
+    ".header-right{text-align:center}" +
+    ".header-right h2{margin:0}" +
+    ".nro-factura{font-size:14px;color:#555;margin-top:4px}" +
+    ".datos{display:flex;justify-content:space-between;margin-top:20px}" +
+    ".contenido{flex:1}" +
+    "table{width:100%;margin-top:30px;border-collapse:collapse}" +
+    "th{border:1px solid #ccc;padding:8px;background:#eee}" +
+    "td{padding:6px;text-align:center}" +
+    ".totales{margin-top:40px;display:flex;justify-content:flex-end}" +
+    ".box{width:280px;border-top:2px solid #ccc;padding-top:10px}" +
+    ".box p,.box h2{margin:6px 0}" +
+    "</style></head><body>" +
+    "<div class='contenido'>" +
+    "<div class='header'>" +
+    "<img src='" + logoUrl + "' class='logo'/>" +
+    "<div class='header-right'>" +
+    "<h2>PRESUPUESTO</h2>" +
+    "<div class='nro-factura'>N " + factura.nroFactura + " | Fecha: " + factura.fecha + "</div>" +
+    badgeCC +
+    "</div></div>" +
+    "<div class='datos'>" +
+    "<div><b>VETIX Distribuidora</b><br/>Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div>" +
+    "<div style='text-align:left;'><b>Cliente:</b><br/>" +
+    factura.clienteSeleccionado.nombre + " " + factura.clienteSeleccionado.apellido + "<br/>" +
+    "CUIT: " + (factura.clienteSeleccionado.cuit || "-") + "<br/>" +
+    "Direccion: " + (factura.clienteSeleccionado.localidad || "-") + "<br/>" +
+    "Tel: " + (factura.clienteSeleccionado.telefono || "-") + "</div>" +
+    "</div>" +
+    "<table><thead><tr>" +
+    "<th>Cant.</th><th style='width:40%'>Descripcion</th><th>Precio U.</th><th>Bonif.</th><th>Total</th>" +
+    "</tr></thead><tbody>" + filas + "</tbody></table>" +
+    "</div>" +
+    "<div class='totales'><div class='box'>" +
+    "<p><b>Subtotal:</b> " + fmt(factura.subtotal) + "</p>" +
+    "<p><b>IVA (" + factura.ivaNum + "%):</b> " + fmt(factura.subtotal * factura.ivaNum / 100) + "</p>" +
+    "<h2><b>Total:</b> " + fmt(factura.total) + "</h2>" +
+    "</div></div></body></html>"
+
+  const ventana = window.open("", "_blank")
+  if (!ventana) { alert("Habilita ventanas emergentes"); return }
+  ventana.document.write(html)
+  ventana.document.close()
+  setTimeout(() => ventana.print(), 500)
+}
 
   if (cargando) return <p style={{ padding: 30 }}>Cargando clientes...</p>
 
