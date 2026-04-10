@@ -204,19 +204,15 @@ export default function Clientes() {
     setModalPago(true)
   }
 
-  function imprimirRecibo(datos: {
-  cliente: any
-  nroFactura: string
-  montoTotal: number
-  montoPagado: number
-  saldoAnterior: number
-  saldoRestante: number
-  nota: string
-  fecha: string
-}) {
+  function imprimirRecibo(pago: any, venta: any) {
   const fmt = (num: number) =>
     "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const logoUrl = window.location.origin + "/logo.png"
+  const fecha = pago.fecha
+    ? new Date(pago.fecha).toLocaleDateString("es-AR")
+    : new Date().toLocaleDateString("es-AR")
+  const saldoAnterior = Number(venta.total) - (Number(venta.totalPagado) - Number(pago.monto))
+  const saldoRestante = Math.max(0, saldoAnterior - Number(pago.monto))
 
   const html =
     "<!DOCTYPE html><html><head><style>" +
@@ -228,28 +224,27 @@ export default function Clientes() {
     ".subtitulo{font-size:13px;color:#555}" +
     ".fila{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:14px}" +
     ".fila b{color:#333}" +
-    ".total{display:flex;justify-content:space-between;padding:10px 0;font-size:16px;font-weight:bold;border-top:2px solid #333;margin-top:8px}" +
-    ".saldo{background:#fff3cd;border:1px solid #e67700;border-radius:6px;padding:10px;margin-top:12px;font-size:14px}" +
-    ".pagado{background:#d3f9d8;border:1px solid #2f9e44;border-radius:6px;padding:10px;margin-top:8px;font-size:15px;font-weight:bold;text-align:center}" +
+    ".pagado{background:#d3f9d8;border:1px solid #2f9e44;border-radius:6px;padding:10px;margin-top:12px;font-size:15px;font-weight:bold;text-align:center}" +
+    ".saldo{background:#fff3cd;border:1px solid #e67700;border-radius:6px;padding:10px;margin-top:8px;font-size:14px}" +
     "</style></head><body>" +
     "<div class='header'>" +
     "<img src='" + logoUrl + "' class='logo'/>" +
     "<div style='text-align:right'>" +
     "<div class='titulo'>RECIBO DE PAGO</div>" +
-    "<div class='subtitulo'>Fecha: " + datos.fecha + "</div>" +
+    "<div class='subtitulo'>Fecha: " + fecha + "</div>" +
     "</div>" +
     "</div>" +
-    "<div class='fila'><span><b>Cliente:</b></span><span>" + datos.cliente.nombre + " " + datos.cliente.apellido + "</span></div>" +
-    "<div class='fila'><span><b>CUIT:</b></span><span>" + (datos.cliente.cuit || "-") + "</span></div>" +
-    "<div class='fila'><span><b>Tel:</b></span><span>" + (datos.cliente.telefono || "-") + "</span></div>" +
-    "<div class='fila'><span><b>Factura N°:</b></span><span>" + datos.nroFactura + "</span></div>" +
-    "<div class='fila'><span><b>Total factura:</b></span><span>" + fmt(datos.montoTotal) + "</span></div>" +
-    "<div class='fila'><span><b>Saldo anterior:</b></span><span>" + fmt(datos.saldoAnterior) + "</span></div>" +
-    (datos.nota ? "<div class='fila'><span><b>Nota:</b></span><span>" + datos.nota + "</span></div>" : "") +
-    "<div class='pagado'>Monto pagado: " + fmt(datos.montoPagado) + "</div>" +
+    "<div class='fila'><span><b>Cliente:</b></span><span>" + clienteSeleccionado.nombre + " " + clienteSeleccionado.apellido + "</span></div>" +
+    "<div class='fila'><span><b>CUIT:</b></span><span>" + (clienteSeleccionado.cuit || "-") + "</span></div>" +
+    "<div class='fila'><span><b>Tel:</b></span><span>" + (clienteSeleccionado.telefono || "-") + "</span></div>" +
+    "<div class='fila'><span><b>Factura N°:</b></span><span>" + (venta.nro_factura || venta.id) + "</span></div>" +
+    "<div class='fila'><span><b>Total factura:</b></span><span>" + fmt(Number(venta.total)) + "</span></div>" +
+    "<div class='fila'><span><b>Saldo anterior:</b></span><span>" + fmt(saldoAnterior) + "</span></div>" +
+    (pago.nota ? "<div class='fila'><span><b>Nota:</b></span><span>" + pago.nota + "</span></div>" : "") +
+    "<div class='pagado'>Monto pagado: " + fmt(Number(pago.monto)) + "</div>" +
     "<div class='saldo'>" +
-    (datos.saldoRestante > 0
-      ? "Saldo restante: <b>" + fmt(datos.saldoRestante) + "</b>"
+    (saldoRestante > 0
+      ? "Saldo restante: <b>" + fmt(saldoRestante) + "</b>"
       : "<span style='color:#2f9e44;font-weight:bold'>✓ Factura saldada completamente</span>") +
     "</div>" +
     "<div style='margin-top:40px;font-size:11px;color:#aaa;text-align:center'>VETIX Distribuidora — Almirante Brown 620 — Tel: 2604518157</div>" +
@@ -286,30 +281,11 @@ async function registrarPago() {
   }
 
   mostrarToast("Pago registrado", "ok")
-
-  // Datos para el recibo
-  const datosRecibo = {
-    cliente: clienteSeleccionado,
-    nroFactura: ventaParaPagar.nro_factura || String(ventaParaPagar.id),
-    montoTotal: Number(ventaParaPagar.total),
-    montoPagado: monto,
-    saldoAnterior: ventaParaPagar.saldo,
-    saldoRestante: Math.max(0, ventaParaPagar.saldo - monto),
-    nota: notaPago,
-    fecha: new Date().toLocaleDateString("es-AR")
-  }
-
   setModalPago(false)
   setVentaParaPagar(null)
   await cargarVentasCliente(clienteSeleccionado.id)
   await cargar()
-
-  // Pregunta si quiere imprimir el recibo
-  if (confirm("¿Deseas imprimir el recibo de pago?")) {
-    imprimirRecibo(datosRecibo)
-  }
 }
-
  async function reimprimirFactura(venta: any) {
   const { data, error } = await supabase
     .from("facturas_impresion")
@@ -594,13 +570,24 @@ async function registrarPago() {
                       </div>
                     ))}
                     {v.pagos.length > 0 && (
-                      <div style={{ marginTop: 8, fontSize: 13, color: "#555" }}>
-                        <b>Pagos:</b>
-                        {v.pagos.map((p: any, i: number) => (
-                          <div key={i}>Pago: {formatearPrecio(Number(p.monto))}{p.nota ? " - " + p.nota : ""}</div>
-                        ))}
-                      </div>
-                    )}
+  <div style={{ marginTop: 8, fontSize: 13, color: "#555" }}>
+    <b>Pagos:</b>
+    {v.pagos.map((p: any, i: number) => (
+      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px solid #eee" }}>
+        <span>
+          {new Date(p.fecha).toLocaleDateString("es-AR")} — {formatearPrecio(Number(p.monto))}
+          {p.nota ? " — " + p.nota : ""}
+        </span>
+        <button
+          onClick={() => imprimirRecibo(p, v)}
+          style={{ background: "#1971c2", color: "white", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12 }}
+        >
+          Recibo
+        </button>
+      </div>
+    ))}
+  </div>
+)}
                     <div style={{
                       marginTop: 8, background: "#fff3cd", borderRadius: 6,
                       padding: "6px 10px", fontWeight: "bold", color: "#e67700", fontSize: 15
