@@ -121,7 +121,7 @@ export default function Ventas() {
   const [cantidad, setCantidad] = useState("1")
   const [carrito, setCarrito] = useState<any[]>([])
   const [iva, setIva] = useState("21")
-  const [nroFactura, setNroFactura] = useState("0001")
+  const [nroFactura, setNroFactura] = useState("")
   const [esCuentaCorriente, setEsCuentaCorriente] = useState(false)
   const [toast, setToast] = useState<any>(null)
 
@@ -132,12 +132,30 @@ export default function Ventas() {
 
   useEffect(() => { cargar() }, [])
 
-  async function cargar() {
-    const { data: c } = await supabase.from("clientes").select("*")
-    const { data: p } = await supabase.from("productos").select("*")
-    setClientes(c || [])
-    setProductos(p || [])
+ async function cargar() {
+  const { data: c } = await supabase.from("clientes").select("*")
+  const { data: p } = await supabase.from("productos").select("*")
+  setClientes(c || [])
+  setProductos(p || [])
+
+  // Busca el último nro_factura y suma 1
+  const { data: ultima } = await supabase
+    .from("ventas")
+    .select("nro_factura")
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (ultima?.nro_factura) {
+    const num = parseInt(ultima.nro_factura, 10)
+    if (!isNaN(num)) {
+      const siguiente = String(num + 1).padStart(5, "0")
+      setNroFactura(siguiente)
+    }
+  } else {
+    setNroFactura("10047")
   }
+}
 
   function seleccionarCliente(id: string) {
     setClienteId(id)
