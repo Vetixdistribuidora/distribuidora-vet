@@ -205,170 +205,180 @@ export default function Clientes() {
   }
 
   function imprimirRecibo(pago: any, venta: any) {
-  const fmt = (num: number) =>
-    "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const logoUrl = window.location.origin + "/logo.png"
-  const fecha = pago.fecha
-    ? new Date(pago.fecha).toLocaleDateString("es-AR")
-    : new Date().toLocaleDateString("es-AR")
-  const saldoAnterior = Number(venta.total) - (Number(venta.totalPagado) - Number(pago.monto))
-  const saldoRestante = Math.max(0, saldoAnterior - Number(pago.monto))
+    const fmt = (num: number) =>
+      "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const logoUrl = window.location.origin + "/logo.png"
+    const fecha = pago.fecha
+      ? new Date(pago.fecha).toLocaleDateString("es-AR")
+      : new Date().toLocaleDateString("es-AR")
+    const saldoAnterior = Number(venta.total) - (Number(venta.totalPagado) - Number(pago.monto))
+    const saldoRestante = Math.max(0, saldoAnterior - Number(pago.monto))
 
-  const html =
-    "<!DOCTYPE html><html><head><style>" +
-    "@page{margin:20px;size:A5}" +
-    "body{font-family:Arial;padding:20px;box-sizing:border-box}" +
-    ".logo{height:80px}" +
-    ".header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #333;padding-bottom:12px;margin-bottom:16px}" +
-    ".titulo{font-size:22px;font-weight:bold}" +
-    ".subtitulo{font-size:13px;color:#555}" +
-    ".fila{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:14px}" +
-    ".fila b{color:#333}" +
-    ".pagado{background:#d3f9d8;border:1px solid #2f9e44;border-radius:6px;padding:10px;margin-top:12px;font-size:15px;font-weight:bold;text-align:center}" +
-    ".saldo{background:#fff3cd;border:1px solid #e67700;border-radius:6px;padding:10px;margin-top:8px;font-size:14px}" +
-    "</style></head><body>" +
-    "<div class='header'>" +
-    "<img src='" + logoUrl + "' class='logo'/>" +
-    "<div style='text-align:right'>" +
-    "<div class='titulo'>RECIBO DE PAGO</div>" +
-    "<div class='subtitulo'>Fecha: " + fecha + "</div>" +
-    "</div>" +
-    "</div>" +
-    "<div class='fila'><span><b>Cliente:</b></span><span>" + clienteSeleccionado.nombre + " " + clienteSeleccionado.apellido + "</span></div>" +
-    "<div class='fila'><span><b>CUIT:</b></span><span>" + (clienteSeleccionado.cuit || "-") + "</span></div>" +
-    "<div class='fila'><span><b>Tel:</b></span><span>" + (clienteSeleccionado.telefono || "-") + "</span></div>" +
-    "<div class='fila'><span><b>Factura N°:</b></span><span>" + (venta.nro_factura || venta.id) + "</span></div>" +
-    "<div class='fila'><span><b>Total factura:</b></span><span>" + fmt(Number(venta.total)) + "</span></div>" +
-    "<div class='fila'><span><b>Saldo anterior:</b></span><span>" + fmt(saldoAnterior) + "</span></div>" +
-    (pago.nota ? "<div class='fila'><span><b>Nota:</b></span><span>" + pago.nota + "</span></div>" : "") +
-    "<div class='pagado'>Monto pagado: " + fmt(Number(pago.monto)) + "</div>" +
-    "<div class='saldo'>" +
-    (saldoRestante > 0
-      ? "Saldo restante: <b>" + fmt(saldoRestante) + "</b>"
-      : "<span style='color:#2f9e44;font-weight:bold'>✓ Factura saldada completamente</span>") +
-    "</div>" +
-    "<div style='margin-top:40px;font-size:11px;color:#aaa;text-align:center'>VETIX Distribuidora — Almirante Brown 620 — Tel: 2604518157</div>" +
-    "</body></html>"
+    const html =
+      "<!DOCTYPE html><html><head><style>" +
+      "@page{margin:20px;size:A5}" +
+      "body{font-family:Arial;padding:20px;box-sizing:border-box}" +
+      ".logo{height:80px}" +
+      ".header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #333;padding-bottom:12px;margin-bottom:16px}" +
+      ".titulo{font-size:22px;font-weight:bold}" +
+      ".subtitulo{font-size:13px;color:#555}" +
+      ".fila{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:14px}" +
+      ".fila b{color:#333}" +
+      ".pagado{background:#d3f9d8;border:1px solid #2f9e44;border-radius:6px;padding:10px;margin-top:12px;font-size:15px;font-weight:bold;text-align:center}" +
+      ".saldo{background:#fff3cd;border:1px solid #e67700;border-radius:6px;padding:10px;margin-top:8px;font-size:14px}" +
+      "</style></head><body>" +
+      "<div class='header'>" +
+      "<img src='" + logoUrl + "' class='logo'/>" +
+      "<div style='text-align:right'>" +
+      "<div class='titulo'>RECIBO DE PAGO</div>" +
+      "<div class='subtitulo'>Fecha: " + fecha + "</div>" +
+      "</div>" +
+      "</div>" +
+      "<div class='fila'><span><b>Cliente:</b></span><span>" + clienteSeleccionado.nombre + " " + clienteSeleccionado.apellido + "</span></div>" +
+      "<div class='fila'><span><b>CUIT:</b></span><span>" + (clienteSeleccionado.cuit || "-") + "</span></div>" +
+      "<div class='fila'><span><b>Tel:</b></span><span>" + (clienteSeleccionado.telefono || "-") + "</span></div>" +
+      "<div class='fila'><span><b>Factura N°:</b></span><span>" + (venta.nro_factura || venta.id) + "</span></div>" +
+      "<div class='fila'><span><b>Total factura:</b></span><span>" + fmt(Number(venta.total)) + "</span></div>" +
+      "<div class='fila'><span><b>Saldo anterior:</b></span><span>" + fmt(saldoAnterior) + "</span></div>" +
+      (pago.nota ? "<div class='fila'><span><b>Nota:</b></span><span>" + pago.nota + "</span></div>" : "") +
+      "<div class='pagado'>Monto pagado: " + fmt(Number(pago.monto)) + "</div>" +
+      "<div class='saldo'>" +
+      (saldoRestante > 0
+        ? "Saldo restante: <b>" + fmt(saldoRestante) + "</b>"
+        : "<span style='color:#2f9e44;font-weight:bold'>✓ Factura saldada completamente</span>") +
+      "</div>" +
+      "<div style='margin-top:40px;font-size:11px;color:#aaa;text-align:center'>VETIX Distribuidora — Almirante Brown 620 — Tel: 2604518157</div>" +
+      "</body></html>"
 
-  const ventana = window.open("", "_blank")
-  if (!ventana) { alert("Habilita ventanas emergentes"); return }
-  ventana.document.write(html)
-  ventana.document.close()
-  setTimeout(() => ventana.print(), 500)
-}
-
-async function registrarPago() {
-  if (!montoPago || Number(montoPago) <= 0) {
-    mostrarToast("Ingresa un monto valido", "error")
-    return
-  }
-  const monto = Number(montoPago)
-  if (monto > ventaParaPagar.saldo) {
-    mostrarToast("El monto supera el saldo pendiente", "error")
-    return
+    const ventana = window.open("", "_blank")
+    if (!ventana) { alert("Habilita ventanas emergentes"); return }
+    ventana.document.write(html)
+    ventana.document.close()
+    setTimeout(() => ventana.print(), 500)
   }
 
-  const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
-    cliente_id: clienteSeleccionado.id,
-    venta_id: ventaParaPagar.id,
-    monto,
-    nota: notaPago
-  }])
-  if (error) return mostrarToast("Error: " + error.message, "error")
-
-  if (monto >= ventaParaPagar.saldo) {
-    await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaParaPagar.id)
+  async function registrarPago() {
+    if (!montoPago || Number(montoPago) <= 0) {
+      mostrarToast("Ingresa un monto valido", "error")
+      return
+    }
+    const monto = Number(montoPago)
+    if (monto > ventaParaPagar.saldo) {
+      mostrarToast("El monto supera el saldo pendiente", "error")
+      return
+    }
+    const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
+      cliente_id: clienteSeleccionado.id,
+      venta_id: ventaParaPagar.id,
+      monto,
+      nota: notaPago
+    }])
+    if (error) return mostrarToast("Error: " + error.message, "error")
+    if (monto >= ventaParaPagar.saldo) {
+      await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaParaPagar.id)
+    }
+    mostrarToast("Pago registrado", "ok")
+    setModalPago(false)
+    setVentaParaPagar(null)
+    await cargarVentasCliente(clienteSeleccionado.id)
+    await cargar()
   }
 
-  mostrarToast("Pago registrado", "ok")
-  setModalPago(false)
-  setVentaParaPagar(null)
-  await cargarVentasCliente(clienteSeleccionado.id)
-  await cargar()
-}
- async function reimprimirFactura(venta: any) {
-  const { data, error } = await supabase
-    .from("facturas_impresion")
-    .select("datos")
-    .eq("venta_id", venta.id)
-    .maybeSingle()
+  async function reimprimirFactura(venta: any) {
+    let { data, error } = await supabase
+      .from("facturas_impresion")
+      .select("datos")
+      .eq("venta_id", venta.id)
+      .maybeSingle()
 
-  if (error || !data) {
-    mostrarToast("Factura no encontrada", "error")
-    return
+    if (!data) {
+      const res = await supabase
+        .from("facturas_impresion")
+        .select("datos")
+        .eq("nro_factura", venta.nro_factura)
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      data = res.data
+      error = res.error
+    }
+
+    if (error || !data) {
+      mostrarToast("Factura no encontrada", "error")
+      return
+    }
+
+    const factura = data.datos
+    const fmt = (num: number) =>
+      "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const logoUrl = window.location.origin + "/logo.png"
+    const filas = factura.carrito.map((item: any) => {
+      const bonif = item.bonificacion || 0
+      const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
+      const totalItem = unidadesPagas * item.precio
+      return (
+        "<tr><td>" + item.cantidad + "</td>" +
+        "<td style='text-align:left;'>" + item.nombre + "</td>" +
+        "<td>" + fmt(item.precio) + "</td>" +
+        "<td>" + bonif + "</td>" +
+        "<td>" + fmt(totalItem) + "</td></tr>"
+      )
+    }).join("")
+
+    const badgeCC = venta.estado === "cuenta_corriente"
+      ? "<div style='background:#e67700;color:white;padding:6px 14px;border-radius:6px;font-weight:bold;display:inline-block;margin-top:8px;'>CUENTA CORRIENTE - PENDIENTE DE PAGO</div>"
+      : ""
+
+    const html =
+      "<!DOCTYPE html><html><head><style>" +
+      "@page{margin:20px}" +
+      "body{font-family:Arial;padding:20px;display:flex;flex-direction:column;min-height:95vh;box-sizing:border-box}" +
+      ".logo{height:120px}" +
+      ".header{display:flex;justify-content:space-between;align-items:center}" +
+      ".header-right{text-align:center}" +
+      ".header-right h2{margin:0}" +
+      ".nro-factura{font-size:14px;color:#555;margin-top:4px}" +
+      ".datos{display:flex;justify-content:space-between;margin-top:20px}" +
+      ".contenido{flex:1}" +
+      "table{width:100%;margin-top:30px;border-collapse:collapse}" +
+      "th{border:1px solid #ccc;padding:8px;background:#eee}" +
+      "td{padding:6px;text-align:center}" +
+      ".totales{margin-top:40px;display:flex;justify-content:flex-end}" +
+      ".box{width:280px;border-top:2px solid #ccc;padding-top:10px}" +
+      ".box p,.box h2{margin:6px 0}" +
+      "</style></head><body>" +
+      "<div class='contenido'>" +
+      "<div class='header'>" +
+      "<img src='" + logoUrl + "' class='logo'/>" +
+      "<div class='header-right'>" +
+      "<h2>PRESUPUESTO</h2>" +
+      "<div class='nro-factura'>N " + factura.nroFactura + " | Fecha: " + factura.fecha + "</div>" +
+      badgeCC +
+      "</div></div>" +
+      "<div class='datos'>" +
+      "<div><b>VETIX Distribuidora</b><br/>Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div>" +
+      "<div style='text-align:left;'><b>Cliente:</b><br/>" +
+      factura.clienteSeleccionado.nombre + " " + factura.clienteSeleccionado.apellido + "<br/>" +
+      "CUIT: " + (factura.clienteSeleccionado.cuit || "-") + "<br/>" +
+      "Direccion: " + (factura.clienteSeleccionado.localidad || "-") + "<br/>" +
+      "Tel: " + (factura.clienteSeleccionado.telefono || "-") + "</div>" +
+      "</div>" +
+      "<table><thead><tr>" +
+      "<th>Cant.</th><th style='width:40%'>Descripcion</th><th>Precio U.</th><th>Bonif.</th><th>Total</th>" +
+      "</tr></thead><tbody>" + filas + "</tbody></table>" +
+      "</div>" +
+      "<div class='totales'><div class='box'>" +
+      "<p><b>Subtotal:</b> " + fmt(factura.subtotal) + "</p>" +
+      "<p><b>IVA (" + factura.ivaNum + "%):</b> " + fmt(factura.subtotal * factura.ivaNum / 100) + "</p>" +
+      "<h2><b>Total:</b> " + fmt(factura.total) + "</h2>" +
+      "</div></div></body></html>"
+
+    const ventana = window.open("", "_blank")
+    if (!ventana) { alert("Habilita ventanas emergentes"); return }
+    ventana.document.write(html)
+    ventana.document.close()
+    setTimeout(() => ventana.print(), 500)
   }
-
-  const factura = data.datos
-  const fmt = (num: number) =>
-    "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const logoUrl = window.location.origin + "/logo.png"
-  const filas = factura.carrito.map((item: any) => {
-    const bonif = item.bonificacion || 0
-    const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
-    const totalItem = unidadesPagas * item.precio
-    return (
-      "<tr><td>" + item.cantidad + "</td>" +
-      "<td style='text-align:left;'>" + item.nombre + "</td>" +
-      "<td>" + fmt(item.precio) + "</td>" +
-      "<td>" + bonif + "</td>" +
-      "<td>" + fmt(totalItem) + "</td></tr>"
-    )
-  }).join("")
-
-  const badgeCC = venta.estado === "cuenta_corriente"
-    ? "<div style='background:#e67700;color:white;padding:6px 14px;border-radius:6px;font-weight:bold;display:inline-block;margin-top:8px;'>CUENTA CORRIENTE - PENDIENTE DE PAGO</div>"
-    : ""
-
-  const html =
-    "<!DOCTYPE html><html><head><style>" +
-    "@page{margin:20px}" +
-    "body{font-family:Arial;padding:20px;display:flex;flex-direction:column;min-height:95vh;box-sizing:border-box}" +
-    ".logo{height:120px}" +
-    ".header{display:flex;justify-content:space-between;align-items:center}" +
-    ".header-right{text-align:center}" +
-    ".header-right h2{margin:0}" +
-    ".nro-factura{font-size:14px;color:#555;margin-top:4px}" +
-    ".datos{display:flex;justify-content:space-between;margin-top:20px}" +
-    ".contenido{flex:1}" +
-    "table{width:100%;margin-top:30px;border-collapse:collapse}" +
-    "th{border:1px solid #ccc;padding:8px;background:#eee}" +
-    "td{padding:6px;text-align:center}" +
-    ".totales{margin-top:40px;display:flex;justify-content:flex-end}" +
-    ".box{width:280px;border-top:2px solid #ccc;padding-top:10px}" +
-    ".box p,.box h2{margin:6px 0}" +
-    "</style></head><body>" +
-    "<div class='contenido'>" +
-    "<div class='header'>" +
-    "<img src='" + logoUrl + "' class='logo'/>" +
-    "<div class='header-right'>" +
-    "<h2>PRESUPUESTO</h2>" +
-    "<div class='nro-factura'>N " + factura.nroFactura + " | Fecha: " + factura.fecha + "</div>" +
-    badgeCC +
-    "</div></div>" +
-    "<div class='datos'>" +
-    "<div><b>VETIX Distribuidora</b><br/>Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div>" +
-    "<div style='text-align:left;'><b>Cliente:</b><br/>" +
-    factura.clienteSeleccionado.nombre + " " + factura.clienteSeleccionado.apellido + "<br/>" +
-    "CUIT: " + (factura.clienteSeleccionado.cuit || "-") + "<br/>" +
-    "Direccion: " + (factura.clienteSeleccionado.localidad || "-") + "<br/>" +
-    "Tel: " + (factura.clienteSeleccionado.telefono || "-") + "</div>" +
-    "</div>" +
-    "<table><thead><tr>" +
-    "<th>Cant.</th><th style='width:40%'>Descripcion</th><th>Precio U.</th><th>Bonif.</th><th>Total</th>" +
-    "</tr></thead><tbody>" + filas + "</tbody></table>" +
-    "</div>" +
-    "<div class='totales'><div class='box'>" +
-    "<p><b>Subtotal:</b> " + fmt(factura.subtotal) + "</p>" +
-    "<p><b>IVA (" + factura.ivaNum + "%):</b> " + fmt(factura.subtotal * factura.ivaNum / 100) + "</p>" +
-    "<h2><b>Total:</b> " + fmt(factura.total) + "</h2>" +
-    "</div></div></body></html>"
-
-  const ventana = window.open("", "_blank")
-  if (!ventana) { alert("Habilita ventanas emergentes"); return }
-  ventana.document.write(html)
-  ventana.document.close()
-  setTimeout(() => ventana.print(), 500)
-}
 
   if (cargando) return <p style={{ padding: 30 }}>Cargando clientes...</p>
 
@@ -394,6 +404,7 @@ async function registrarPago() {
         <input placeholder="% Margen" type="number" value={porcentaje} onChange={e => setPorcentaje(e.target.value)} />
         <button onClick={agregar}>Agregar</button>
       </div>
+
       {clientes
         .filter(c => (c.nombre + " " + c.apellido).toLowerCase().includes(busqueda.toLowerCase()))
         .map(c => (
@@ -488,6 +499,7 @@ async function registrarPago() {
                 </div>
               )}
             </div>
+
             <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
               <button
                 onClick={() => setTabActiva("historial")}
@@ -552,9 +564,10 @@ async function registrarPago() {
 
             {tabActiva === "cuentaCorriente" && (
               <div>
-                {ventasPendientes.length === 0 && (
+                {ventasPendientes.length === 0 && ventasCobradas.filter(v => v.pagos?.length > 0).length === 0 && (
                   <p style={{ color: "#2f9e44", fontWeight: "bold" }}>Sin deudas pendientes</p>
                 )}
+
                 {ventasPendientes.map(v => (
                   <div key={v.id} style={{
                     border: "2px solid #e67700", borderRadius: 8,
@@ -570,24 +583,24 @@ async function registrarPago() {
                       </div>
                     ))}
                     {v.pagos.length > 0 && (
-  <div style={{ marginTop: 8, fontSize: 13, color: "#555" }}>
-    <b>Pagos:</b>
-    {v.pagos.map((p: any, i: number) => (
-      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px solid #eee" }}>
-        <span>
-          {new Date(p.fecha).toLocaleDateString("es-AR")} — {formatearPrecio(Number(p.monto))}
-          {p.nota ? " — " + p.nota : ""}
-        </span>
-        <button
-          onClick={() => imprimirRecibo(p, v)}
-          style={{ background: "#1971c2", color: "white", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12 }}
-        >
-          Recibo
-        </button>
-      </div>
-    ))}
-  </div>
-)}
+                      <div style={{ marginTop: 8, fontSize: 13, color: "#555" }}>
+                        <b>Pagos:</b>
+                        {v.pagos.map((p: any, i: number) => (
+                          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px solid #eee" }}>
+                            <span>
+                              {new Date(p.fecha).toLocaleDateString("es-AR")} — {formatearPrecio(Number(p.monto))}
+                              {p.nota ? " — " + p.nota : ""}
+                            </span>
+                            <button
+                              onClick={() => imprimirRecibo(p, v)}
+                              style={{ background: "#1971c2", color: "white", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12 }}
+                            >
+                              Recibo
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div style={{
                       marginTop: 8, background: "#fff3cd", borderRadius: 6,
                       padding: "6px 10px", fontWeight: "bold", color: "#e67700", fontSize: 15
@@ -610,9 +623,31 @@ async function registrarPago() {
                     </div>
                   </div>
                 ))}
+
                 {ventasCobradas.filter(v => v.pagos?.length > 0).map(v => (
-                  <div key={v.id} style={{ border: "1px solid #dee2e6", borderRadius: 8, padding: 10, marginBottom: 8, opacity: 0.7 }}>
-                    <b>Factura #{v.nro_factura || v.id}</b> - {formatearPrecio(Number(v.total))} - Saldada
+                  <div key={v.id} style={{ border: "1px solid #dee2e6", borderRadius: 8, padding: 10, marginBottom: 8, opacity: 0.8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <b>Factura #{v.nro_factura || v.id}</b>
+                      <span style={{ background: "#2f9e44", color: "white", fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>Saldada</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>Total: {formatearPrecio(Number(v.total))}</div>
+                    <div style={{ marginTop: 8, fontSize: 13, color: "#555" }}>
+                      <b>Pagos:</b>
+                      {v.pagos.map((p: any, i: number) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px solid #eee" }}>
+                          <span>
+                            {new Date(p.fecha).toLocaleDateString("es-AR")} — {formatearPrecio(Number(p.monto))}
+                            {p.nota ? " — " + p.nota : ""}
+                          </span>
+                          <button
+                            onClick={() => imprimirRecibo(p, v)}
+                            style={{ background: "#1971c2", color: "white", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 12 }}
+                          >
+                            Recibo
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
