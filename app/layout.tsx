@@ -21,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   <a href="/clientes" style={{ color: "white" }}>👥 Clientes</a>
   <a href="/ventas" style={{ color: "white" }}>💰 Ventas</a>
   <a href="/proveedores" style={{ color: "white" }}>🚚 Proveedores</a>
+  <a href="/compras" style={{ color: "white" }}>🛒 Compras</a>
 </nav>
 
         <div style={{ padding: "30px", maxWidth: "900px", margin: "auto" }}>
