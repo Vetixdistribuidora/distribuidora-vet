@@ -58,7 +58,7 @@ export default function Dashboard() {
 
     // 🔹 Top productos (desde ventas_detalle)
     const { data: detalle } = await supabase
-      .from("ventas_detalle")
+      .from("detalle_ventas")
       .select("producto_id, cantidad")
 
     if (detalle) {
