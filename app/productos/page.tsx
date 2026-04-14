@@ -36,12 +36,6 @@ export default function Productos() {
 
   const [editando, setEditando] = useState<any | null>(null)
 
-  // 🆕 archivo CSV
-  const [archivo, setArchivo] = useState<File | null>(null)
-
-  // 🆕 margen configurable (VACÍO)
-  const [margenImportacion, setMargenImportacion] = useState("")
-
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
     setTimeout(() => setToast(null), 3000)
@@ -61,6 +55,7 @@ export default function Productos() {
     cargar()
   }, [])
 
+  // 🟢 AGREGAR PRODUCTO
   async function agregar() {
 
     if (!nombre || !costo || !margen || !stock) {
@@ -72,17 +67,25 @@ export default function Productos() {
     const margenNum = Number(margen)
     const precioVenta = costoNum + (costoNum * margenNum / 100)
 
-    const { error } = await supabase.from("productos").insert([{
+    const { data, error } = await supabase.from("productos").insert([{
       nombre,
       costo: costoNum,
       margen: margenNum,
       precio_venta: precioVenta,
       stock: Number(stock)
-    }])
+    }]).select()
 
     if (error) return mostrarToast("❌ " + error.message, "error")
 
+    // 🔥 AUDITORÍA
+    await supabase.rpc("registrar_auditoria", {
+      accion: "crear",
+      tabla: "productos",
+      registro_id: data?.[0]?.id || 0
+    })
+
     mostrarToast("✅ Producto agregado", "ok")
+
     setNombre("")
     setCosto("")
     setMargen("")
@@ -90,12 +93,8 @@ export default function Productos() {
     cargar()
   }
 
+  // ✏️ EDITAR
   async function guardarEdicion() {
-
-    if (!editando.nombre || !editando.costo || !editando.margen) {
-      mostrarToast("⚠️ Completá todos los campos", "error")
-      return
-    }
 
     const costoNum = Number(editando.costo)
     const margenNum = Number(editando.margen)
@@ -114,11 +113,19 @@ export default function Productos() {
 
     if (error) return mostrarToast("❌ " + error.message, "error")
 
+    // 🔥 AUDITORÍA
+    await supabase.rpc("registrar_auditoria", {
+      accion: "editar",
+      tabla: "productos",
+      registro_id: editando.id
+    })
+
     mostrarToast("✅ Producto actualizado", "ok")
     setEditando(null)
     cargar()
   }
 
+  // 🗑️ ELIMINAR
   async function eliminar(id: number) {
 
     if (!confirm("¿Eliminar este producto?")) return
@@ -130,87 +137,18 @@ export default function Productos() {
 
     if (error) return mostrarToast("❌ " + error.message, "error")
 
+    // 🔥 AUDITORÍA
+    await supabase.rpc("registrar_auditoria", {
+      accion: "eliminar",
+      tabla: "productos",
+      registro_id: id
+    })
+
     mostrarToast("🗑️ Producto eliminado", "ok")
     cargar()
   }
 
-  // 🆕 IMPORTAR CSV
-  async function importarCSV() {
-
-    if (!archivo) {
-      mostrarToast("⚠️ Seleccioná un archivo", "error")
-      return
-    }
-
-    if (!margenImportacion) {
-      mostrarToast("⚠️ Ingresá un margen antes de importar", "error")
-      return
-    }
-
-    const texto = await archivo.text()
-    const lineas = texto.split("\n").slice(1)
-
-    let nuevos = 0
-    let actualizados = 0
-
-    const margenDefault = Number(margenImportacion)
-
-    for (let linea of lineas) {
-
-      if (!linea.trim()) continue
-
-      const separador = linea.includes(";") ? ";" : ","
-      const [producto, precio] = linea.split(separador)
-
-      const nombre = producto?.trim()
-      const costo = Number(precio)
-
-      if (!nombre || !costo) continue
-
-      const { data: existente } = await supabase
-        .from("productos")
-        .select("*")
-        .eq("nombre", nombre)
-        .maybeSingle()
-
-      if (existente) {
-
-        const precioVenta = costo + (costo * existente.margen / 100)
-
-        await supabase
-          .from("productos")
-          .update({
-            costo,
-            precio_venta: precioVenta
-          })
-          .eq("id", existente.id)
-
-        actualizados++
-
-      } else {
-
-        const precioVenta = costo + (costo * margenDefault / 100)
-
-        await supabase
-          .from("productos")
-          .insert([{
-            nombre,
-            costo,
-            margen: margenDefault,
-            precio_venta: precioVenta,
-            stock: 0
-          }])
-
-        nuevos++
-      }
-    }
-
-    mostrarToast(`✅ ${nuevos} nuevos · ${actualizados} actualizados`, "ok")
-    setArchivo(null)
-    cargar()
-  }
-
-  if (cargando) return <p style={{ padding: 30 }}>⏳ Cargando productos...</p>
+  if (cargando) return <p style={{ padding: 30 }}>⏳ Cargando...</p>
 
   const productosFiltrados = productos.filter(p =>
     p.nombre.toLowerCase().includes(busqueda.toLowerCase())
@@ -223,30 +161,8 @@ export default function Productos() {
 
       <h1>📦 Productos</h1>
 
-      {/* IMPORTADOR */}
-      <div style={{ marginBottom: 20 }}>
-        
-        <input
-          type="number"
-          placeholder="% Margen (ej: 40)"
-          value={margenImportacion}
-          onChange={(e) => setMargenImportacion(e.target.value)}
-          style={{ width: 180, marginRight: 10 }}
-        />
-
-        <input 
-          type="file" 
-          accept=".csv"
-          onChange={(e) => setArchivo(e.target.files?.[0] || null)}
-        />
-
-        <button onClick={importarCSV}>
-          📥 Importar CSV
-        </button>
-      </div>
-
       <input
-        placeholder="Buscar producto..."
+        placeholder="Buscar..."
         value={busqueda}
         onChange={(e) => setBusqueda(e.target.value)}
         style={{ width: "100%", marginBottom: 20, padding: 10 }}
@@ -278,31 +194,17 @@ export default function Productos() {
 
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 
-                <label><b>🏷️ Nombre</b></label>
-                <input value={editando.nombre || ""} onChange={e => setEditando({ ...editando, nombre: e.target.value })} />
+                <input value={editando.nombre} onChange={e => setEditando({ ...editando, nombre: e.target.value })} />
+                <input type="number" value={editando.costo} onChange={e => setEditando({ ...editando, costo: e.target.value })} />
+                <input type="number" value={editando.margen} onChange={e => setEditando({ ...editando, margen: e.target.value })} />
+                <input type="number" value={editando.stock} onChange={e => setEditando({ ...editando, stock: e.target.value })} />
 
-                <label><b>💰 Costo</b></label>
-                <input type="number" value={editando.costo || ""} onChange={e => setEditando({ ...editando, costo: e.target.value })} />
-
-                <label><b>📊 % Margen</b></label>
-                <input type="number" value={editando.margen || ""} onChange={e => setEditando({ ...editando, margen: e.target.value })} />
-
-                <label><b>📦 Stock</b></label>
-                <input type="number" value={editando.stock || ""} onChange={e => setEditando({ ...editando, stock: e.target.value })} />
-
-                <div style={{
-                  background: "#f1f3f5",
-                  padding: 10,
-                  borderRadius: 8,
-                  marginTop: 10
-                }}>
-                  💵 <b>Precio estimado:</b> {formatearPrecio(precioEstimado)}
+                <div style={{ background: "#f1f3f5", padding: 10 }}>
+                  💵 {formatearPrecio(precioEstimado)}
                 </div>
 
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={guardarEdicion}>💾 Guardar</button>
-                  <button onClick={() => setEditando(null)}>✖️ Cancelar</button>
-                </div>
+                <button onClick={guardarEdicion}>💾 Guardar</button>
+                <button onClick={() => setEditando(null)}>❌ Cancelar</button>
 
               </div>
 
@@ -311,17 +213,15 @@ export default function Productos() {
               <div>
                 <b>{p.nombre}</b>
 
-                {p.stock <= 5 && <span style={{ marginLeft: 10 }}>⚠️ Stock bajo</span>}
-
                 <p>
-                  💰 Costo: {formatearPrecio(p.costo)} · 📊 Margen: {p.margen}% · 💵 Venta: {formatearPrecio(p.precio_venta)}
+                  💰 {formatearPrecio(p.costo)} · 📊 {p.margen}% · 💵 {formatearPrecio(p.precio_venta)}
                 </p>
-                <p>📦 Stock: {p.stock}</p>
 
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setEditando({ ...p })}>✏️ Editar</button>
-                  <button onClick={() => eliminar(p.id)} style={{ background: "red", color: "white" }}>🗑️</button>
-                </div>
+                <p>📦 {p.stock}</p>
+
+                <button onClick={() => setEditando({ ...p })}>✏️</button>
+                <button onClick={() => eliminar(p.id)}>🗑️</button>
+
               </div>
 
             )}

@@ -2,11 +2,16 @@
 
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { useRouter } from "next/navigation"
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer
 } from "recharts"
 
 export default function Dashboard() {
+
+  const router = useRouter()
+
+  const [loading, setLoading] = useState(true)
 
   const [ventasHoy, setVentasHoy] = useState(0)
   const [ventasMes, setVentasMes] = useState(0)
@@ -22,8 +27,20 @@ export default function Dashboard() {
   const [masRentables, setMasRentables] = useState<any[]>([])
 
   useEffect(() => {
-    cargarDatos()
+    iniciar()
   }, [])
+
+  async function iniciar() {
+  const { data } = await supabase.auth.getSession()
+
+  if (!data.session) {
+    router.push("/login")
+    return
+  }
+
+  await cargarDatos()
+  setLoading(false)
+}
 
   async function cargarDatos() {
 
@@ -32,9 +49,7 @@ export default function Dashboard() {
     inicioMes.setDate(1)
 
     // 🔹 Ventas
-    const { data: ventas } = await supabase
-      .from("ventas")
-      .select("*")
+    const { data: ventas } = await supabase.from("ventas").select("*")
 
     const ventasHoyData = ventas?.filter(v => v.fecha.startsWith(hoy)) || []
     const ventasMesData = ventas?.filter(v => v.fecha >= inicioMes.toISOString()) || []
@@ -50,16 +65,16 @@ export default function Dashboard() {
       setTicketPromedio(totalMes / ventasMesData.length)
     }
 
-    // 🔹 Ganancia REAL
-    let ganancia = 0
+    // 🔹 Productos
+    const { data: productos } = await supabase.from("productos").select("*")
 
+    // 🔹 Detalle ventas
     const { data: detalleVentas } = await supabase
       .from("detalle_ventas")
       .select("producto_id, cantidad")
 
-    const { data: productos } = await supabase
-      .from("productos")
-      .select("*")
+    // 🔹 Ganancia REAL
+    let ganancia = 0
 
     if (detalleVentas && productos) {
       detalleVentas.forEach(d => {
@@ -92,10 +107,9 @@ export default function Dashboard() {
       setTopProductos(top)
     }
 
-    // 🔹 Productos sin ventas
+    // 🔹 Sin ventas
     const vendidosIds = new Set(detalleVentas?.map(d => d.producto_id))
-    const sinVenta = productos?.filter(p => !vendidosIds.has(p.id)) || []
-    setSinVentas(sinVenta)
+    setSinVentas(productos?.filter(p => !vendidosIds.has(p.id)) || [])
 
     // 🔹 Más rentables
     const rentables = productos
@@ -108,7 +122,7 @@ export default function Dashboard() {
 
     setMasRentables(rentables || [])
 
-    // 🔹 Gráfico (7 días)
+    // 🔹 Gráfico
     const ultimos7 = [...Array(7)].map((_, i) => {
       const fecha = new Date()
       fecha.setDate(fecha.getDate() - i)
@@ -124,14 +138,25 @@ export default function Dashboard() {
     setVentasGrafico(ultimos7)
   }
 
+  async function logout() {
+    await supabase.auth.signOut()
+    window.location.href = "/login"
+  }
+
   function formato(num: number) {
     return "$" + num.toLocaleString("es-AR", { maximumFractionDigits: 0 })
   }
 
+  if (loading) return <p style={{ padding: 30 }}>🔐 Cargando...</p>
+
   return (
     <div style={{ padding: 20, background: "#f8f9fa", minHeight: "100vh" }}>
 
-      <h1 style={{ marginBottom: 20 }}>📊 Dashboard</h1>
+      <button onClick={logout} style={{ marginBottom: 20 }}>
+        🚪 Cerrar sesión
+      </button>
+
+      <h1>📊 Dashboard</h1>
 
       {/* KPIs */}
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
@@ -156,66 +181,54 @@ export default function Dashboard() {
         </ResponsiveContainer>
       </div>
 
-      {/* STOCK BAJO */}
-      <div style={cardGrande}>
-        <h3>⚠️ Stock bajo</h3>
-        {stockBajo.length === 0 && <p>Todo en orden 👍</p>}
-        {stockBajo.slice(0, 5).map(p => (
-          <p key={p.id}>{p.nombre} — {p.stock}</p>
-        ))}
-      </div>
-
-      {/* MÁS VENDIDOS */}
-      <div style={cardGrande}>
-        <h3>🥇 Más vendidos</h3>
-        {topProductos.map(p => (
-          <p key={p.id}>{p.nombre}</p>
-        ))}
-      </div>
-
-      {/* SIN VENTAS */}
-      <div style={cardGrande}>
-        <h3>🟡 Sin ventas</h3>
-        {sinVentas.length === 0 && <p>Todo rota bien 👍</p>}
-        {sinVentas.slice(0, 5).map(p => (
-          <p key={p.id}>{p.nombre}</p>
-        ))}
-      </div>
-
-      {/* MÁS RENTABLES */}
-      <div style={cardGrande}>
-        <h3>🟢 Más rentables</h3>
-        {masRentables.map(p => (
-          <p key={p.id}>
-            {p.nombre} — 💰 {formato(p.ganancia)}
-          </p>
-        ))}
-      </div>
-
+      {/* BLOQUES */}
+      <Bloque titulo="⚠️ Stock bajo" lista={stockBajo} />
+      <Bloque titulo="🥇 Más vendidos" lista={topProductos} />
+      <Bloque titulo="🟡 Sin ventas" lista={sinVentas} />
+      <Bloque titulo="🟢 Más rentables" lista={masRentables} mostrarGanancia />
     </div>
   )
 }
 
-// 🎨 CARD PRO
+// 🎨 COMPONENTES
+
 function Card({ titulo, valor }: any) {
 
   let color = "#333"
-
   if (titulo.includes("Ganancia")) color = "#2f9e44"
   if (titulo.includes("Stock")) color = "#e03131"
 
   return (
-    <div style={{
-      background: "white",
-      padding: 20,
-      borderRadius: 12,
-      minWidth: 180,
-      boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
-    }}>
+    <div style={card}>
       <p style={{ color: "#666" }}>{titulo}</p>
       <h2 style={{ color }}>{valor}</h2>
     </div>
   )
+}
+
+function Bloque({ titulo, lista, mostrarGanancia }: any) {
+  return (
+    <div style={cardGrande}>
+      <h3>{titulo}</h3>
+
+      {lista.length === 0 && <p>Todo en orden 👍</p>}
+
+      {lista.slice(0, 5).map((p: any) => (
+        <p key={p.id}>
+          {p.nombre}
+          {mostrarGanancia && ` — 💰 $${Math.round(p.ganancia)}`}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+const card = {
+  background: "white",
+  padding: 20,
+  borderRadius: 12,
+  minWidth: 180,
+  boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
 }
 
 const cardGrande = {
