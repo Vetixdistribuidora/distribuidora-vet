@@ -17,7 +17,6 @@ function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
   )
 }
 
-// ✅ Formatea números
 function formatearPrecio(num: number) {
   return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -39,6 +38,9 @@ export default function Productos() {
 
   // 🆕 archivo CSV
   const [archivo, setArchivo] = useState<File | null>(null)
+
+  // 🆕 margen configurable
+  const [margenImportacion, setMargenImportacion] = useState("30")
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
@@ -146,11 +148,14 @@ export default function Productos() {
     let nuevos = 0
     let actualizados = 0
 
+    const margenDefault = Number(margenImportacion) || 30
+
     for (let linea of lineas) {
 
       if (!linea.trim()) continue
 
-      const [producto, precio] = linea.split(",")
+      const separador = linea.includes(";") ? ";" : ","
+      const [producto, precio] = linea.split(separador)
 
       const nombre = producto?.trim()
       const costo = Number(precio)
@@ -162,8 +167,6 @@ export default function Productos() {
         .select("*")
         .eq("nombre", nombre)
         .maybeSingle()
-
-      const margenDefault = 30
 
       if (existente) {
 
@@ -217,11 +220,21 @@ export default function Productos() {
 
       {/* 🆕 IMPORTADOR */}
       <div style={{ marginBottom: 20 }}>
+        
+        <input
+          type="number"
+          placeholder="% Margen importación"
+          value={margenImportacion}
+          onChange={(e) => setMargenImportacion(e.target.value)}
+          style={{ width: 150, marginRight: 10 }}
+        />
+
         <input 
           type="file" 
           accept=".csv"
           onChange={(e) => setArchivo(e.target.files?.[0] || null)}
         />
+
         <button onClick={importarCSV}>
           📥 Importar CSV
         </button>
