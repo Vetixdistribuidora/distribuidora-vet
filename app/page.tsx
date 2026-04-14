@@ -13,9 +13,13 @@ export default function Dashboard() {
   const [gananciaMes, setGananciaMes] = useState(0)
   const [cantidadVentas, setCantidadVentas] = useState(0)
   const [ticketPromedio, setTicketPromedio] = useState(0)
+
   const [stockBajo, setStockBajo] = useState<any[]>([])
   const [topProductos, setTopProductos] = useState<any[]>([])
   const [ventasGrafico, setVentasGrafico] = useState<any[]>([])
+
+  const [sinVentas, setSinVentas] = useState<any[]>([])
+  const [masRentables, setMasRentables] = useState<any[]>([])
 
   useEffect(() => {
     cargarDatos()
@@ -46,44 +50,36 @@ export default function Dashboard() {
       setTicketPromedio(totalMes / ventasMesData.length)
     }
 
-    // 🔹 Ganancia estimada (usando margen)
+    // 🔹 Ganancia REAL
     let ganancia = 0
 
-const { data: detalleVentas } = await supabase
-  .from("detalle_ventas")
-  .select("producto_id, cantidad")
-
-if (detalleVentas) {
-
-  const { data: productos } = await supabase
-    .from("productos")
-    .select("id, costo, precio_venta")
-
-  detalleVentas.forEach(d => {
-    const prod = productos?.find(p => p.id === d.producto_id)
-
-    if (prod) {
-      const gananciaProducto = (prod.precio_venta - prod.costo) * d.cantidad
-      ganancia += gananciaProducto
-    }
-  })
-}
-
-setGananciaMes(ganancia)
-
-    // 🔹 Stock bajo
-    const { data: productos } = await supabase.from("productos").select("*")
-    {stockBajo.length === 0 && <p>Todo en orden 👍</p>}
-
-    // 🔹 Top productos
-    const { data: detalle } = await supabase
+    const { data: detalleVentas } = await supabase
       .from("detalle_ventas")
       .select("producto_id, cantidad")
 
-    if (detalle) {
+    const { data: productos } = await supabase
+      .from("productos")
+      .select("*")
+
+    if (detalleVentas && productos) {
+      detalleVentas.forEach(d => {
+        const prod = productos.find(p => p.id === d.producto_id)
+        if (prod) {
+          ganancia += (prod.precio_venta - prod.costo) * d.cantidad
+        }
+      })
+    }
+
+    setGananciaMes(ganancia)
+
+    // 🔹 Stock bajo
+    setStockBajo(productos?.filter(p => p.stock <= 5) || [])
+
+    // 🔹 Top productos
+    if (detalleVentas) {
       const conteo: any = {}
 
-      detalle.forEach(d => {
+      detalleVentas.forEach(d => {
         conteo[d.producto_id] = (conteo[d.producto_id] || 0) + d.cantidad
       })
 
@@ -92,15 +88,27 @@ setGananciaMes(ganancia)
         .slice(0, 5)
         .map(d => Number(d[0]))
 
-      const { data: productosTop } = await supabase
-        .from("productos")
-        .select("*")
-        .in("id", topIds)
-
-      setTopProductos(productosTop || [])
+      const top = productos?.filter(p => topIds.includes(p.id)) || []
+      setTopProductos(top)
     }
 
-    // 🔹 Datos gráfico (últimos 7 días)
+    // 🔹 Productos sin ventas
+    const vendidosIds = new Set(detalleVentas?.map(d => d.producto_id))
+    const sinVenta = productos?.filter(p => !vendidosIds.has(p.id)) || []
+    setSinVentas(sinVenta)
+
+    // 🔹 Más rentables
+    const rentables = productos
+      ?.map(p => ({
+        ...p,
+        ganancia: p.precio_venta - p.costo
+      }))
+      .sort((a, b) => b.ganancia - a.ganancia)
+      .slice(0, 5)
+
+    setMasRentables(rentables || [])
+
+    // 🔹 Gráfico (7 días)
     const ultimos7 = [...Array(7)].map((_, i) => {
       const fecha = new Date()
       fecha.setDate(fecha.getDate() - i)
@@ -127,14 +135,12 @@ setGananciaMes(ganancia)
 
       {/* KPIs */}
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-
         <Card titulo="Ventas hoy" valor={formato(ventasHoy)} />
         <Card titulo="Ventas mes" valor={formato(ventasMes)} />
-        <Card titulo="Ganancia estimada" valor={formato(gananciaMes)} />
-        <Card titulo="Ventas" valor={cantidadVentas} />
+        <Card titulo="Ganancia real" valor={formato(gananciaMes)} />
         <Card titulo="Ticket promedio" valor={formato(ticketPromedio)} />
+        <Card titulo="Cantidad ventas" valor={cantidadVentas} />
         <Card titulo="Stock bajo" valor={stockBajo.length} />
-
       </div>
 
       {/* GRÁFICO */}
@@ -153,12 +159,13 @@ setGananciaMes(ganancia)
       {/* STOCK BAJO */}
       <div style={cardGrande}>
         <h3>⚠️ Stock bajo</h3>
+        {stockBajo.length === 0 && <p>Todo en orden 👍</p>}
         {stockBajo.slice(0, 5).map(p => (
           <p key={p.id}>{p.nombre} — {p.stock}</p>
         ))}
       </div>
 
-      {/* TOP PRODUCTOS */}
+      {/* MÁS VENDIDOS */}
       <div style={cardGrande}>
         <h3>🥇 Más vendidos</h3>
         {topProductos.map(p => (
@@ -166,10 +173,30 @@ setGananciaMes(ganancia)
         ))}
       </div>
 
+      {/* SIN VENTAS */}
+      <div style={cardGrande}>
+        <h3>🟡 Sin ventas</h3>
+        {sinVentas.length === 0 && <p>Todo rota bien 👍</p>}
+        {sinVentas.slice(0, 5).map(p => (
+          <p key={p.id}>{p.nombre}</p>
+        ))}
+      </div>
+
+      {/* MÁS RENTABLES */}
+      <div style={cardGrande}>
+        <h3>🟢 Más rentables</h3>
+        {masRentables.map(p => (
+          <p key={p.id}>
+            {p.nombre} — 💰 {formato(p.ganancia)}
+          </p>
+        ))}
+      </div>
+
     </div>
   )
 }
 
+// 🎨 CARD PRO
 function Card({ titulo, valor }: any) {
 
   let color = "#333"
