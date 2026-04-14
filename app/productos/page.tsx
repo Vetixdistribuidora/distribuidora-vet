@@ -17,7 +17,7 @@ function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
   )
 }
 
-// ✅ Formatea números con puntos: 1234567.89 → $1.234.567,89
+// ✅ Formatea números
 function formatearPrecio(num: number) {
   return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -36,6 +36,9 @@ export default function Productos() {
   const [stock, setStock] = useState("")
 
   const [editando, setEditando] = useState<any | null>(null)
+
+  // 🆕 archivo CSV
+  const [archivo, setArchivo] = useState<File | null>(null)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
@@ -129,6 +132,76 @@ export default function Productos() {
     cargar()
   }
 
+  // 🆕 IMPORTAR CSV
+  async function importarCSV() {
+
+    if (!archivo) {
+      mostrarToast("⚠️ Seleccioná un archivo", "error")
+      return
+    }
+
+    const texto = await archivo.text()
+    const lineas = texto.split("\n").slice(1)
+
+    let nuevos = 0
+    let actualizados = 0
+
+    for (let linea of lineas) {
+
+      if (!linea.trim()) continue
+
+      const [producto, precio] = linea.split(",")
+
+      const nombre = producto?.trim()
+      const costo = Number(precio)
+
+      if (!nombre || !costo) continue
+
+      const { data: existente } = await supabase
+        .from("productos")
+        .select("*")
+        .eq("nombre", nombre)
+        .maybeSingle()
+
+      const margenDefault = 30
+
+      if (existente) {
+
+        const precioVenta = costo + (costo * existente.margen / 100)
+
+        await supabase
+          .from("productos")
+          .update({
+            costo,
+            precio_venta: precioVenta
+          })
+          .eq("id", existente.id)
+
+        actualizados++
+
+      } else {
+
+        const precioVenta = costo + (costo * margenDefault / 100)
+
+        await supabase
+          .from("productos")
+          .insert([{
+            nombre,
+            costo,
+            margen: margenDefault,
+            precio_venta: precioVenta,
+            stock: 0
+          }])
+
+        nuevos++
+      }
+    }
+
+    mostrarToast(`✅ ${nuevos} nuevos · ${actualizados} actualizados`, "ok")
+    setArchivo(null)
+    cargar()
+  }
+
   if (cargando) return <p style={{ padding: 30 }}>⏳ Cargando productos...</p>
 
   const productosFiltrados = productos.filter(p =>
@@ -141,6 +214,18 @@ export default function Productos() {
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 
       <h1>📦 Productos</h1>
+
+      {/* 🆕 IMPORTADOR */}
+      <div style={{ marginBottom: 20 }}>
+        <input 
+          type="file" 
+          accept=".csv"
+          onChange={(e) => setArchivo(e.target.files?.[0] || null)}
+        />
+        <button onClick={importarCSV}>
+          📥 Importar CSV
+        </button>
+      </div>
 
       <input
         placeholder="Buscar producto..."
@@ -187,7 +272,6 @@ export default function Productos() {
                 <label><b>📦 Stock</b></label>
                 <input type="number" value={editando.stock || ""} onChange={e => setEditando({ ...editando, stock: e.target.value })} />
 
-                {/* 💥 PRECIO EN VIVO con formato */}
                 <div style={{
                   background: "#f1f3f5",
                   padding: 10,
