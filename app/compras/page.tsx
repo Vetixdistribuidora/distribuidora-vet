@@ -18,6 +18,7 @@ interface Compra {
   estado: string;
   incluye_iva: boolean;
   monto_iva: number;
+  porcentaje_iva: number;
   proveedores: { nombre: string } | null;
 }
 interface DetalleCompra {
@@ -39,9 +40,9 @@ function fmt(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
 }
 
-function calcularTotales(items: ItemForm[], incluyeIva: boolean) {
+function calcularTotales(items: ItemForm[], incluyeIva: boolean, porcentajeIva: number) {
   const subtotal = items.reduce((s, it) => s + it.cantidad * it.precio_unitario, 0);
-  const iva = incluyeIva ? Math.round(subtotal * 0.21 * 100) / 100 : 0;
+  const iva = incluyeIva && porcentajeIva > 0 ? Math.round(subtotal * (porcentajeIva / 100) * 100) / 100 : 0;
   return { subtotal, iva, total: subtotal + iva };
 }
 
@@ -53,31 +54,26 @@ export default function ComprasPage() {
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("todos");
 
-  // Modal nueva compra
   const [modalNueva, setModalNueva] = useState(false);
   const [form, setForm] = useState({
     proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
     numero_remito: "", fecha_vencimiento: "", metodo_pago: "Efectivo",
-    notas: "", pago_inicial: "", incluye_iva: false,
+    notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
   });
   const [items, setItems] = useState<ItemForm[]>([]);
   const [productoSel, setProductoSel] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [errorForm, setErrorForm] = useState<string | null>(null);
 
-  // Modal detalle
   const [compraVer, setCompraVer] = useState<Compra | null>(null);
   const [detalle, setDetalle] = useState<DetalleCompra[]>([]);
   const [pagos, setPagos] = useState<PagoCompra[]>([]);
   const [loadingDetalle, setLoadingDetalle] = useState(false);
   const [tabDetalle, setTabDetalle] = useState<"detalle" | "pagos">("detalle");
 
-  // Modal pago
   const [modalPago, setModalPago] = useState(false);
   const [formPago, setFormPago] = useState({ monto: "", metodo_pago: "Efectivo", notas: "" });
   const [guardandoPago, setGuardandoPago] = useState(false);
-
-  // Cancelar compra completa
   const [cancelando, setCancelando] = useState(false);
 
   useEffect(() => { cargarTodo(); }, []);
@@ -95,11 +91,12 @@ export default function ComprasPage() {
     setLoading(false);
   }
 
-  // ── NUEVA COMPRA ──────────────────────────────────────────
   function abrirNueva() {
-    setForm({ proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
+    setForm({
+      proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
       numero_remito: "", fecha_vencimiento: "", metodo_pago: "Efectivo",
-      notas: "", pago_inicial: "", incluye_iva: false });
+      notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
+    });
     setItems([]);
     setProductoSel("");
     setErrorForm(null);
@@ -124,6 +121,8 @@ export default function ComprasPage() {
     if (!form.proveedor_id) { setErrorForm("Seleccioná un proveedor."); return; }
     if (items.length === 0) { setErrorForm("Agregá al menos un producto."); return; }
     if (items.some(it => it.precio_unitario <= 0)) { setErrorForm("Todos los productos deben tener precio mayor a 0."); return; }
+    const pctIva = parseFloat(form.porcentaje_iva) || 0;
+    if (form.incluye_iva && (pctIva <= 0 || pctIva > 100)) { setErrorForm("El porcentaje de IVA debe estar entre 1 y 100."); return; }
     setGuardando(true); setErrorForm(null);
     const { error } = await supabase.rpc("registrar_compra", {
       p_proveedor_id: Number(form.proveedor_id),
@@ -135,6 +134,7 @@ export default function ComprasPage() {
       p_pago_inicial: parseFloat(form.pago_inicial) || 0,
       p_items: items.map(it => ({ producto_id: it.producto_id, cantidad: it.cantidad, precio_unitario: it.precio_unitario })),
       p_incluye_iva: form.incluye_iva,
+      p_porcentaje_iva: pctIva,
     });
     setGuardando(false);
     if (error) { setErrorForm("Error: " + error.message); return; }
@@ -142,7 +142,6 @@ export default function ComprasPage() {
     cargarTodo();
   }
 
-  // ── VER DETALLE ───────────────────────────────────────────
   async function verDetalle(c: Compra) {
     setCompraVer(c);
     setTabDetalle("detalle");
@@ -156,17 +155,14 @@ export default function ComprasPage() {
     setLoadingDetalle(false);
   }
 
-  // ── CANCELAR COMPRA COMPLETA (pagar saldo total) ──────────
   async function cancelarCompra() {
     if (!compraVer) return;
     const saldo = compraVer.total - compraVer.total_pagado;
     if (saldo <= 0) return;
     setCancelando(true);
     await supabase.rpc("registrar_pago_compra", {
-      p_compra_id: compraVer.id,
-      p_monto: saldo,
-      p_metodo_pago: "Efectivo",
-      p_notas: "Cancelación total",
+      p_compra_id: compraVer.id, p_monto: saldo,
+      p_metodo_pago: "Efectivo", p_notas: "Cancelación total",
     });
     setCancelando(false);
     const actualizada = { ...compraVer, total_pagado: compraVer.total, estado: "pagado" };
@@ -176,7 +172,6 @@ export default function ComprasPage() {
     cargarTodo();
   }
 
-  // ── REGISTRAR PAGO PARCIAL ────────────────────────────────
   function abrirPago() {
     setFormPago({ monto: "", metodo_pago: "Efectivo", notas: "" });
     setModalPago(true);
@@ -196,12 +191,7 @@ export default function ComprasPage() {
     setGuardandoPago(false);
     setModalPago(false);
     const nuevoTotal = compraVer.total_pagado + monto;
-    const actualizada = {
-      ...compraVer,
-      total_pagado: nuevoTotal,
-      estado: nuevoTotal >= compraVer.total ? "pagado" : "parcial",
-    };
-    setCompraVer(actualizada);
+    setCompraVer({ ...compraVer, total_pagado: nuevoTotal, estado: nuevoTotal >= compraVer.total ? "pagado" : "parcial" });
     const { data: p } = await supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha");
     if (p) setPagos(p);
     cargarTodo();
@@ -212,15 +202,12 @@ export default function ComprasPage() {
     return texto.includes(busqueda.toLowerCase()) && (filtroEstado === "todos" || c.estado === filtroEstado);
   });
 
-  const totalDeuda = compras
-    .filter(c => c.estado !== "pagado")
-    .reduce((s, c) => s + (c.total - c.total_pagado), 0);
+  const totalDeuda = compras.filter(c => c.estado !== "pagado").reduce((s, c) => s + (c.total - c.total_pagado), 0);
+  const pctIvaForm = parseFloat(form.porcentaje_iva) || 0;
+  const { subtotal: subtotalForm, iva: ivaForm, total: totalForm } = calcularTotales(items, form.incluye_iva, pctIvaForm);
 
-  const { subtotal: subtotalForm, iva: ivaForm, total: totalForm } = calcularTotales(items, form.incluye_iva);
-
-  // ── RENDER ────────────────────────────────────────────────
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 md:p-6" style={{ maxWidth: "100%", overflowX: "hidden" }}>
 
       {/* Encabezado */}
       <div className="flex items-center justify-between mb-6">
@@ -228,19 +215,19 @@ export default function ComprasPage() {
           <h1 className="text-2xl font-bold text-gray-900">Compras</h1>
           <p className="text-sm text-gray-500 mt-1">
             {compras.length} compra{compras.length !== 1 ? "s" : ""} registrada{compras.length !== 1 ? "s" : ""}
-            {totalDeuda > 0 && <span className="ml-3 text-red-600 font-medium">· Deuda total: {fmt(totalDeuda)}</span>}
+            {totalDeuda > 0 && <span className="ml-2 text-red-600 font-medium">· Deuda: {fmt(totalDeuda)}</span>}
           </p>
         </div>
-        <button onClick={abrirNueva} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+        <button onClick={abrirNueva} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">
           + Nueva compra
         </button>
       </div>
 
       {/* Filtros */}
       <div className="flex gap-3 mb-4">
-        <input type="text" placeholder="Buscar por proveedor o remito..." value={busqueda}
+        <input type="text" placeholder="Buscar proveedor o remito..." value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
-          className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          className="flex-1 min-w-0 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="todos">Todos</option>
@@ -250,65 +237,73 @@ export default function ComprasPage() {
         </select>
       </div>
 
-      {/* Tabla */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center text-gray-400 text-sm">Cargando...</div>
-        ) : filtradas.length === 0 ? (
-          <div className="p-8 text-center text-gray-400 text-sm">No hay compras registradas.</div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600 uppercase text-xs">
-              <tr>
-                <th className="text-left px-4 py-3">Fecha</th>
-                <th className="text-left px-4 py-3">Proveedor</th>
-                <th className="text-left px-4 py-3">Remito</th>
-                <th className="text-left px-4 py-3">Vencimiento</th>
-                <th className="text-center px-4 py-3">IVA</th>
-                <th className="text-right px-4 py-3">Total</th>
-                <th className="text-right px-4 py-3">Pagado</th>
-                <th className="text-right px-4 py-3">Saldo</th>
-                <th className="text-center px-4 py-3">Estado</th>
-                <th className="text-right px-4 py-3">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filtradas.map(c => {
-                const saldo = c.total - c.total_pagado;
-                const est = ESTADO_LABEL[c.estado] ?? ESTADO_LABEL.pendiente;
-                const vencido = c.fecha_vencimiento && c.estado !== "pagado" && new Date(c.fecha_vencimiento) < new Date();
-                return (
-                  <tr key={c.id} className={`hover:bg-gray-50 transition-colors ${vencido ? "bg-red-50" : ""}`}>
-                    <td className="px-4 py-3 text-gray-600">{c.fecha}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{c.proveedores?.nombre ?? "—"}</td>
-                    <td className="px-4 py-3 text-gray-500">{c.numero_remito ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      <span className={vencido ? "text-red-600 font-medium" : "text-gray-500"}>
-                        {c.fecha_vencimiento ?? "—"}
-                        {vencido && " ⚠️"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {c.incluye_iva
-                        ? <span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">+IVA</span>
-                        : <span className="text-gray-300 text-xs">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-900 font-medium">{fmt(c.total)}</td>
-                    <td className="px-4 py-3 text-right text-green-700">{fmt(c.total_pagado)}</td>
-                    <td className="px-4 py-3 text-right text-red-600 font-medium">{saldo > 0 ? fmt(saldo) : "—"}</td>
-                    <td className="px-4 py-3 text-center">
+      {/* Cards de compras — reemplaza la tabla para evitar scroll horizontal */}
+      {loading ? (
+        <div className="p-8 text-center text-gray-400 text-sm">Cargando...</div>
+      ) : filtradas.length === 0 ? (
+        <div className="p-8 text-center text-gray-400 text-sm">No hay compras registradas.</div>
+      ) : (
+        <div className="space-y-3">
+          {filtradas.map(c => {
+            const saldo = c.total - c.total_pagado;
+            const est = ESTADO_LABEL[c.estado] ?? ESTADO_LABEL.pendiente;
+            const vencido = c.fecha_vencimiento && c.estado !== "pagado" && new Date(c.fecha_vencimiento) < new Date();
+            return (
+              <div key={c.id}
+                className={`bg-white rounded-xl border shadow-sm p-4 ${vencido ? "border-red-300 bg-red-50" : "border-gray-200"}`}>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+
+                  {/* Izquierda: info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="font-semibold text-gray-900">{c.proveedores?.nombre ?? "—"}</span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${est.color}`}>{est.label}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => verDetalle(c)} className="text-blue-600 hover:underline text-xs">Ver detalle</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+                      {c.incluye_iva && (
+                        <span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">
+                          IVA {c.porcentaje_iva}%
+                        </span>
+                      )}
+                      {vencido && <span className="text-red-600 text-xs font-medium">⚠️ Vencida</span>}
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                      <span>📅 {c.fecha}</span>
+                      {c.numero_remito && <span>🧾 {c.numero_remito}</span>}
+                      {c.fecha_vencimiento && (
+                        <span className={vencido ? "text-red-600 font-medium" : ""}>
+                          ⏰ Vence: {c.fecha_vencimiento}
+                        </span>
+                      )}
+                      {c.metodo_pago && <span>💳 {c.metodo_pago}</span>}
+                    </div>
+                  </div>
+
+                  {/* Derecha: montos */}
+                  <div className="flex items-center gap-4 flex-shrink-0">
+                    <div className="text-right">
+                      <div className="text-xs text-gray-400">Total</div>
+                      <div className="font-semibold text-gray-900 text-sm">{fmt(c.total)}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-gray-400">Pagado</div>
+                      <div className="font-semibold text-green-700 text-sm">{fmt(c.total_pagado)}</div>
+                    </div>
+                    {saldo > 0 && (
+                      <div className="text-right">
+                        <div className="text-xs text-gray-400">Saldo</div>
+                        <div className="font-bold text-red-600 text-sm">{fmt(saldo)}</div>
+                      </div>
+                    )}
+                    <button onClick={() => verDetalle(c)}
+                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
+                      Ver detalle
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── MODAL NUEVA COMPRA ── */}
       {modalNueva && (
@@ -371,50 +366,49 @@ export default function ComprasPage() {
                       <thead className="bg-gray-50 text-gray-500 text-xs">
                         <tr>
                           <th className="text-left px-3 py-2">Producto</th>
-                          <th className="text-center px-3 py-2 w-24">Cantidad</th>
-                          <th className="text-center px-3 py-2 w-32">Precio unit.</th>
-                          <th className="text-right px-3 py-2 w-28">Subtotal</th>
-                          <th className="w-8"></th>
+                          <th className="text-center px-3 py-2 w-20">Cant.</th>
+                          <th className="text-center px-3 py-2 w-28">P. unit.</th>
+                          <th className="text-right px-3 py-2 w-24">Subtotal</th>
+                          <th className="w-6"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {items.map((it, idx) => (
                           <tr key={it.producto_id}>
-                            <td className="px-3 py-2 text-gray-800">{it.nombre}</td>
+                            <td className="px-3 py-2 text-gray-800 text-xs">{it.nombre}</td>
                             <td className="px-3 py-2">
                               <input type="number" min="1" value={it.cantidad}
                                 onChange={e => actualizarItem(idx, "cantidad", parseFloat(e.target.value) || 1)}
-                                className="w-full text-center border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                className="w-full text-center border border-gray-300 rounded px-1 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
                             </td>
                             <td className="px-3 py-2">
                               <input type="number" min="0" step="0.01" value={it.precio_unitario}
                                 onChange={e => actualizarItem(idx, "precio_unitario", parseFloat(e.target.value) || 0)}
-                                className="w-full text-center border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                className="w-full text-center border border-gray-300 rounded px-1 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
                             </td>
-                            <td className="px-3 py-2 text-right font-medium text-gray-700">{fmt(it.cantidad * it.precio_unitario)}</td>
+                            <td className="px-3 py-2 text-right font-medium text-gray-700 text-xs">{fmt(it.cantidad * it.precio_unitario)}</td>
                             <td className="px-3 py-2 text-center">
                               <button onClick={() => quitarItem(idx)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
                             </td>
                           </tr>
                         ))}
                       </tbody>
-                      {/* Totales con IVA */}
                       <tfoot className="bg-gray-50 text-sm">
                         <tr>
-                          <td colSpan={3} className="px-3 py-1.5 text-right text-gray-500">Subtotal:</td>
-                          <td className="px-3 py-1.5 text-right text-gray-700">{fmt(subtotalForm)}</td>
+                          <td colSpan={3} className="px-3 py-1.5 text-right text-gray-500 text-xs">Subtotal:</td>
+                          <td className="px-3 py-1.5 text-right text-gray-700 text-xs">{fmt(subtotalForm)}</td>
                           <td></td>
                         </tr>
-                        {form.incluye_iva && (
+                        {form.incluye_iva && ivaForm > 0 && (
                           <tr>
-                            <td colSpan={3} className="px-3 py-1.5 text-right text-blue-600">IVA 21%:</td>
-                            <td className="px-3 py-1.5 text-right text-blue-600">{fmt(ivaForm)}</td>
+                            <td colSpan={3} className="px-3 py-1.5 text-right text-blue-600 text-xs">IVA {pctIvaForm}%:</td>
+                            <td className="px-3 py-1.5 text-right text-blue-600 text-xs">{fmt(ivaForm)}</td>
                             <td></td>
                           </tr>
                         )}
                         <tr className="border-t border-gray-200">
-                          <td colSpan={3} className="px-3 py-2 text-right font-semibold text-gray-700">Total:</td>
-                          <td className="px-3 py-2 text-right font-bold text-gray-900">{fmt(totalForm)}</td>
+                          <td colSpan={3} className="px-3 py-2 text-right font-semibold text-gray-700 text-xs">Total:</td>
+                          <td className="px-3 py-2 text-right font-bold text-gray-900 text-xs">{fmt(totalForm)}</td>
                           <td></td>
                         </tr>
                       </tfoot>
@@ -423,20 +417,32 @@ export default function ComprasPage() {
                 )}
               </div>
 
-              {/* IVA toggle */}
-              <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+              {/* IVA toggle + porcentaje editable */}
+              <div className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${form.incluye_iva ? "bg-blue-50 border-blue-200" : "bg-gray-50 border-gray-200"}`}>
                 <input type="checkbox" id="incluye_iva" checked={form.incluye_iva}
                   onChange={e => setForm({ ...form, incluye_iva: e.target.checked })}
-                  className="w-4 h-4 accent-blue-600 cursor-pointer" />
-                <label htmlFor="incluye_iva" className="text-sm text-blue-800 cursor-pointer font-medium">
-                  Agregar IVA 21% sobre el subtotal
+                  className="w-4 h-4 accent-blue-600 cursor-pointer flex-shrink-0" />
+                <label htmlFor="incluye_iva" className={`text-sm cursor-pointer font-medium ${form.incluye_iva ? "text-blue-800" : "text-gray-600"}`}>
+                  Agregar IVA
                 </label>
-                {form.incluye_iva && items.length > 0 && (
-                  <span className="ml-auto text-xs text-blue-600 font-medium">+{fmt(ivaForm)}</span>
+                {form.incluye_iva && (
+                  <>
+                    <div className="flex items-center gap-1.5 ml-2">
+                      <input
+                        type="number" min="0" max="100" step="0.5"
+                        value={form.porcentaje_iva}
+                        onChange={e => setForm({ ...form, porcentaje_iva: e.target.value })}
+                        className="w-16 text-center border border-blue-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      />
+                      <span className="text-sm text-blue-700 font-medium">%</span>
+                    </div>
+                    {items.length > 0 && ivaForm > 0 && (
+                      <span className="ml-auto text-xs text-blue-700 font-medium">+{fmt(ivaForm)}</span>
+                    )}
+                  </>
                 )}
               </div>
 
-              {/* Pago inicial + método */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Pago inicial (0 = a crédito)</label>
@@ -465,7 +471,7 @@ export default function ComprasPage() {
             <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
               {items.length > 0 && (
                 <div className="text-sm text-gray-500">
-                  Total a pagar: <span className="font-bold text-gray-900">{fmt(totalForm)}</span>
+                  Total: <span className="font-bold text-gray-900">{fmt(totalForm)}</span>
                 </div>
               )}
               <div className="flex gap-3 ml-auto">
@@ -484,17 +490,17 @@ export default function ComprasPage() {
       {compraVer && (
         <div className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-8">
-
-            {/* Header */}
             <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between">
               <div>
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <h2 className="text-lg font-semibold text-gray-900">Detalle de compra</h2>
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_LABEL[compraVer.estado]?.color}`}>
                     {ESTADO_LABEL[compraVer.estado]?.label}
                   </span>
                   {compraVer.incluye_iva && (
-                    <span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">+IVA</span>
+                    <span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">
+                      IVA {compraVer.porcentaje_iva}%
+                    </span>
                   )}
                 </div>
                 <p className="text-sm text-gray-500">
@@ -502,10 +508,10 @@ export default function ComprasPage() {
                   {compraVer.numero_remito && <span> · Remito: {compraVer.numero_remito}</span>}
                 </p>
               </div>
-              <button onClick={() => setCompraVer(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none ml-4">✕</button>
+              <button onClick={() => setCompraVer(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none ml-4 flex-shrink-0">✕</button>
             </div>
 
-            {/* Resumen financiero siempre visible */}
+            {/* Resumen financiero */}
             <div className="px-6 pt-4">
               <div className="grid grid-cols-3 gap-3">
                 {[
@@ -520,20 +526,18 @@ export default function ComprasPage() {
                 ))}
               </div>
 
-              {/* Botones de acción */}
-              {compraVer.estado !== "pagado" && (
+              {compraVer.estado !== "pagado" ? (
                 <div className="flex gap-2 mt-3">
                   <button onClick={abrirPago}
                     className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                    💳 Registrar pago parcial
+                    💳 Pago parcial
                   </button>
                   <button onClick={cancelarCompra} disabled={cancelando}
                     className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                    {cancelando ? "Cancelando..." : `✅ Cancelar deuda (${fmt(compraVer.total - compraVer.total_pagado)})`}
+                    {cancelando ? "..." : `✅ Cancelar deuda (${fmt(compraVer.total - compraVer.total_pagado)})`}
                   </button>
                 </div>
-              )}
-              {compraVer.estado === "pagado" && (
+              ) : (
                 <div className="mt-3 text-center py-2 bg-green-50 rounded-lg text-green-700 text-sm font-medium">
                   ✓ Compra totalmente pagada
                 </div>
@@ -546,11 +550,9 @@ export default function ComprasPage() {
                 {(["detalle", "pagos"] as const).map(tab => (
                   <button key={tab} onClick={() => setTabDetalle(tab)}
                     className={`pb-2 text-sm font-medium border-b-2 transition-colors ${
-                      tabDetalle === tab
-                        ? "border-blue-600 text-blue-600"
-                        : "border-transparent text-gray-500 hover:text-gray-700"
+                      tabDetalle === tab ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
                     }`}>
-                    {tab === "detalle" ? "📦 Productos recibidos" : `💰 Pagos (${pagos.length})`}
+                    {tab === "detalle" ? "📦 Productos" : `💰 Pagos (${pagos.length})`}
                   </button>
                 ))}
               </div>
@@ -560,8 +562,6 @@ export default function ComprasPage() {
               <div className="p-8 text-center text-gray-400 text-sm">Cargando...</div>
             ) : (
               <div className="px-6 py-4">
-
-                {/* Tab: Productos */}
                 {tabDetalle === "detalle" && (
                   <div>
                     <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
@@ -587,17 +587,17 @@ export default function ComprasPage() {
                         {compraVer.incluye_iva && (
                           <>
                             <tr>
-                              <td colSpan={3} className="px-3 py-1.5 text-right text-gray-500">Subtotal:</td>
-                              <td className="px-3 py-1.5 text-right text-gray-700">{fmt(compraVer.total - compraVer.monto_iva)}</td>
+                              <td colSpan={3} className="px-3 py-1.5 text-right text-gray-500 text-xs">Subtotal:</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700 text-xs">{fmt(compraVer.total - compraVer.monto_iva)}</td>
                             </tr>
                             <tr>
-                              <td colSpan={3} className="px-3 py-1.5 text-right text-blue-600">IVA 21%:</td>
-                              <td className="px-3 py-1.5 text-right text-blue-600">{fmt(compraVer.monto_iva)}</td>
+                              <td colSpan={3} className="px-3 py-1.5 text-right text-blue-600 text-xs">IVA {compraVer.porcentaje_iva}%:</td>
+                              <td className="px-3 py-1.5 text-right text-blue-600 text-xs">{fmt(compraVer.monto_iva)}</td>
                             </tr>
                           </>
                         )}
                         <tr className="border-t border-gray-200">
-                          <td colSpan={3} className="px-3 py-2 text-right font-semibold">Total:</td>
+                          <td colSpan={3} className="px-3 py-2 text-right font-semibold text-xs">Total:</td>
                           <td className="px-3 py-2 text-right font-bold">{fmt(compraVer.total)}</td>
                         </tr>
                       </tfoot>
@@ -608,7 +608,6 @@ export default function ComprasPage() {
                   </div>
                 )}
 
-                {/* Tab: Pagos */}
                 {tabDetalle === "pagos" && (
                   <div>
                     {pagos.length === 0 ? (
@@ -658,7 +657,7 @@ export default function ComprasPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
             <div className="px-6 py-4 border-b border-gray-100">
               <h2 className="text-lg font-semibold text-gray-900">Registrar pago</h2>
-              <p className="text-sm text-gray-500">Saldo pendiente: <span className="font-semibold text-red-600">{fmt(compraVer.total - compraVer.total_pagado)}</span></p>
+              <p className="text-sm text-gray-500">Saldo: <span className="font-semibold text-red-600">{fmt(compraVer.total - compraVer.total_pagado)}</span></p>
             </div>
             <div className="px-6 py-4 space-y-4">
               <div>
@@ -669,7 +668,7 @@ export default function ComprasPage() {
                   placeholder="0.00" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Método de pago</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Método</label>
                 <select value={formPago.metodo_pago} onChange={e => setFormPago({ ...formPago, metodo_pago: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   {METODOS.map(m => <option key={m}>{m}</option>)}
