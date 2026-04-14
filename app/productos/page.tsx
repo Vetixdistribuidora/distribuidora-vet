@@ -39,8 +39,8 @@ export default function Productos() {
   // 🆕 archivo CSV
   const [archivo, setArchivo] = useState<File | null>(null)
 
-  // 🆕 margen configurable
-  const [margenImportacion, setMargenImportacion] = useState("30")
+  // 🆕 margen configurable (VACÍO)
+  const [margenImportacion, setMargenImportacion] = useState("")
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
@@ -142,13 +142,18 @@ export default function Productos() {
       return
     }
 
+    if (!margenImportacion) {
+      mostrarToast("⚠️ Ingresá un margen antes de importar", "error")
+      return
+    }
+
     const texto = await archivo.text()
     const lineas = texto.split("\n").slice(1)
 
     let nuevos = 0
     let actualizados = 0
 
-    const margenDefault = Number(margenImportacion) || 30
+    const margenDefault = Number(margenImportacion)
 
     for (let linea of lineas) {
 
@@ -218,15 +223,15 @@ export default function Productos() {
 
       <h1>📦 Productos</h1>
 
-      {/* 🆕 IMPORTADOR */}
+      {/* IMPORTADOR */}
       <div style={{ marginBottom: 20 }}>
         
         <input
           type="number"
-          placeholder="% Margen importación"
+          placeholder="% Margen (ej: 40)"
           value={margenImportacion}
           onChange={(e) => setMargenImportacion(e.target.value)}
-          style={{ width: 150, marginRight: 10 }}
+          style={{ width: 180, marginRight: 10 }}
         />
 
         <input 
