@@ -49,15 +49,31 @@ export default function Dashboard() {
     // 🔹 Ganancia estimada (usando margen)
     let ganancia = 0
 
-    ventasMesData.forEach(v => {
-      ganancia += v.total * 0.3 // estimación promedio (mejorable después)
-    })
+const { data: detalleVentas } = await supabase
+  .from("detalle_ventas")
+  .select("producto_id, cantidad")
 
-    setGananciaMes(ganancia)
+if (detalleVentas) {
+
+  const { data: productos } = await supabase
+    .from("productos")
+    .select("id, costo, precio_venta")
+
+  detalleVentas.forEach(d => {
+    const prod = productos?.find(p => p.id === d.producto_id)
+
+    if (prod) {
+      const gananciaProducto = (prod.precio_venta - prod.costo) * d.cantidad
+      ganancia += gananciaProducto
+    }
+  })
+}
+
+setGananciaMes(ganancia)
 
     // 🔹 Stock bajo
     const { data: productos } = await supabase.from("productos").select("*")
-    setStockBajo(productos?.filter(p => p.stock <= 5) || [])
+    {stockBajo.length === 0 && <p>Todo en orden 👍</p>}
 
     // 🔹 Top productos
     const { data: detalle } = await supabase
@@ -155,6 +171,12 @@ export default function Dashboard() {
 }
 
 function Card({ titulo, valor }: any) {
+
+  let color = "#333"
+
+  if (titulo.includes("Ganancia")) color = "#2f9e44"
+  if (titulo.includes("Stock")) color = "#e03131"
+
   return (
     <div style={{
       background: "white",
@@ -164,7 +186,7 @@ function Card({ titulo, valor }: any) {
       boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
     }}>
       <p style={{ color: "#666" }}>{titulo}</p>
-      <h2>{valor}</h2>
+      <h2 style={{ color }}>{valor}</h2>
     </div>
   )
 }
