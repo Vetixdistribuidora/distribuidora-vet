@@ -129,56 +129,64 @@ export default function ComprasPage() {
   function quitarItem(idx: number) { setItems(items.filter((_, i) => i !== idx)); }
 
   async function guardarCompra() {
-    if (!form.proveedor_id) { setErrorForm("Seleccioná un proveedor."); return; }
-    if (items.length === 0) { setErrorForm("Agregá al menos un producto."); return; }
-    if (items.some(it => it.precio_unitario <= 0)) { setErrorForm("Todos los productos deben tener precio mayor a 0."); return; }
-    const pctIva = parseFloat(form.porcentaje_iva) || 0;
-    if (form.incluye_iva && (pctIva <= 0 || pctIva > 100)) { setErrorForm("El porcentaje de IVA debe estar entre 1 y 100."); return; }
-    const valFlete = parseFloat(form.valor_flete) || 0;
-    if (form.incluye_flete && valFlete <= 0) { setErrorForm("El valor del flete debe ser mayor a 0."); return; }
+  if (!form.proveedor_id) { setErrorForm("Seleccioná un proveedor."); return; }
+  if (items.length === 0) { setErrorForm("Agregá al menos un producto."); return; }
+  if (items.some(it => it.precio_unitario <= 0)) { setErrorForm("Todos los productos deben tener precio mayor a 0."); return; }
 
-    setGuardando(true); setErrorForm(null);
-
-    const { flete: montoFlete, total: totalConExtras } = calcularTotales(
-      items, form.incluye_iva, pctIva, form.incluye_flete, form.tipo_flete, valFlete
-    );
-
-    // El RPC recibe el total ya calculado via los items + IVA.
-    // Para incluir el flete agregamos un ítem virtual de ajuste en notas
-    // y pasamos el monto de flete sumado al IVA como ajuste en p_porcentaje_iva=0
-    // En realidad: mandamos el flete como parte de las notas y ajustamos el total
-    // pasando p_pago_inicial correctamente sobre el total real.
-    const notasFinales = [
-      form.notas || null,
-      form.incluye_flete && montoFlete > 0
-        ? `Flete: ${form.tipo_flete === "pct" ? `${valFlete}% = ` : ""}${fmt(montoFlete)}`
-        : null,
-    ].filter(Boolean).join(" | ");
-
-    const { error } = await supabase.rpc("registrar_compra", {
-  p_proveedor_id: Number(form.proveedor_id),
-  p_fecha: form.fecha,
-  p_numero_remito: form.numero_remito || null,
-  p_fecha_vencimiento: form.fecha_vencimiento || null,
-  p_metodo_pago: form.metodo_pago,
-  p_notas: notasFinales || null,
-  p_pago_inicial: parseFloat(form.pago_inicial) || 0,
-  p_items: items.map(it => ({
-    producto_id: it.producto_id,
-    cantidad: it.cantidad,
-    precio_unitario: it.precio_unitario
-  })),
-  p_incluye_iva: form.incluye_iva,
-  p_porcentaje_iva: pctIva,
-
-  // ✅ SIEMPRE MANDAR
-  p_monto_flete: montoFlete || 0
-});
-    setGuardando(false);
-    if (error) { setErrorForm("Error: " + error.message); return; }
-    setModalNueva(false);
-    cargarTodo();
+  const pctIva = parseFloat(form.porcentaje_iva) || 0;
+  if (form.incluye_iva && (pctIva <= 0 || pctIva > 100)) {
+    setErrorForm("El porcentaje de IVA debe estar entre 1 y 100.");
+    return;
   }
+
+  const valFlete = parseFloat(form.valor_flete) || 0;
+  if (form.incluye_flete && valFlete <= 0) {
+    setErrorForm("El valor del flete debe ser mayor a 0.");
+    return;
+  }
+
+  setGuardando(true);
+  setErrorForm(null);
+
+  // ✅ calcular flete correctamente
+  const subtotal = items.reduce((s, it) => s + it.cantidad * it.precio_unitario, 0);
+
+  const montoFlete = form.incluye_flete
+    ? form.tipo_flete === "pct"
+      ? Math.round(subtotal * (valFlete / 100) * 100) / 100
+      : valFlete
+    : 0;
+
+  const { error } = await supabase.rpc("registrar_compra", {
+    p_proveedor_id: Number(form.proveedor_id),
+    p_fecha: form.fecha,
+    p_numero_remito: form.numero_remito || null,
+    p_fecha_vencimiento: form.fecha_vencimiento || null,
+    p_metodo_pago: form.metodo_pago,
+    p_notas: form.notas || null,
+    p_pago_inicial: parseFloat(form.pago_inicial) || 0,
+    p_items: items.map(it => ({
+      producto_id: it.producto_id,
+      cantidad: it.cantidad,
+      precio_unitario: it.precio_unitario
+    })),
+    p_incluye_iva: form.incluye_iva,
+    p_porcentaje_iva: pctIva,
+
+    // ✅ CLAVE: esto ahora va limpio y bien
+    p_monto_flete: montoFlete
+  });
+
+  setGuardando(false);
+
+  if (error) {
+    setErrorForm("Error: " + error.message);
+    return;
+  }
+
+  setModalNueva(false);
+  cargarTodo();
+}
 
   async function verDetalle(c: Compra) {
     setCompraVer(c);
