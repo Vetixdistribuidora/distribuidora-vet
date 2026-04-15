@@ -270,11 +270,15 @@ if (compraActualizada) setCompraVer(compraActualizada);
     const fleteItem = incluyeFlete ? flete * proporcion : 0;
 
     return {
-      ...it,
-      subtotal: subtotalItem,
-      iva: Math.round(ivaItem * 100) / 100,
-      flete: Math.round(fleteItem * 100) / 100
-    };
+  ...it,
+  subtotal: subtotalItem,
+  iva: Math.round(ivaItem * 100) / 100,
+  flete: Math.round(fleteItem * 100) / 100,
+  precio_final_unitario:
+    it.cantidad > 0
+      ? Math.round(((subtotalItem + ivaItem + fleteItem) / it.cantidad) * 100) / 100
+      : 0
+};
   });
 }
 const itemsCalculados = calcularItemsConExtras(
@@ -488,33 +492,50 @@ const itemsCalculados = calcularItemsConExtras(
                         ))}
                       </tbody>
                       <tfoot className="bg-gray-50 text-sm">
-                        <tr>
-                          <td colSpan={3} className="px-3 py-1.5 text-right text-gray-500 text-xs">Subtotal:</td>
-                          <td className="px-3 py-1.5 text-right text-gray-700 text-xs">{fmt(subtotalForm)}</td>
-                          <td></td>
-                        </tr>
-                        {form.incluye_iva && ivaForm > 0 && (
-                          <tr>
-                            <td colSpan={3} className="px-3 py-1.5 text-right text-blue-600 text-xs">IVA {pctIvaForm}%:</td>
-                            <td className="px-3 py-1.5 text-right text-blue-600 text-xs">{fmt(ivaForm)}</td>
-                            <td></td>
-                          </tr>
-                        )}
-                        {form.incluye_flete && fleteForm > 0 && (
-                          <tr>
-                            <td colSpan={3} className="px-3 py-1.5 text-right text-orange-600 text-xs">
-                              🚚 Flete{form.tipo_flete === "pct" ? ` ${valFleteForm}%` : ""}:
-                            </td>
-                            <td className="px-3 py-1.5 text-right text-orange-600 text-xs">{fmt(fleteForm)}</td>
-                            <td></td>
-                          </tr>
-                        )}
-                        <tr className="border-t border-gray-200">
-                          <td colSpan={3} className="px-3 py-2 text-right font-semibold text-gray-700 text-xs">Total:</td>
-                          <td className="px-3 py-2 text-right font-bold text-gray-900 text-xs">{fmt(totalForm)}</td>
-                          <td></td>
-                        </tr>
-                      </tfoot>
+  <tr>
+    <td colSpan={6} className="px-3 py-1.5 text-right text-gray-500 text-xs">
+      Subtotal:
+    </td>
+    <td className="px-3 py-1.5 text-right text-gray-700 text-xs">
+      {fmt(subtotalForm)}
+    </td>
+    <td></td>
+  </tr>
+
+  {form.incluye_iva && ivaForm > 0 && (
+    <tr>
+      <td colSpan={6} className="px-3 py-1.5 text-right text-blue-600 text-xs">
+        IVA {pctIvaForm}%:
+      </td>
+      <td className="px-3 py-1.5 text-right text-blue-600 text-xs">
+        {fmt(ivaForm)}
+      </td>
+      <td></td>
+    </tr>
+  )}
+
+  {form.incluye_flete && fleteForm > 0 && (
+    <tr>
+      <td colSpan={6} className="px-3 py-1.5 text-right text-orange-600 text-xs">
+        🚚 Flete{form.tipo_flete === "pct" ? ` ${valFleteForm}%` : ""}:
+      </td>
+      <td className="px-3 py-1.5 text-right text-orange-600 text-xs">
+        {fmt(fleteForm)}
+      </td>
+      <td></td>
+    </tr>
+  )}
+
+  <tr className="border-t border-gray-200">
+    <td colSpan={6} className="px-3 py-2 text-right font-semibold text-gray-700 text-xs">
+      Total:
+    </td>
+    <td className="px-3 py-2 text-right font-bold text-gray-900 text-xs">
+      {fmt(totalForm)}
+    </td>
+    <td></td>
+  </tr>
+</tfoot>
                     </table>
                   </div>
                 )}
