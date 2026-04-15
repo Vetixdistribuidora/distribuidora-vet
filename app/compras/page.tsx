@@ -245,6 +245,46 @@ if (compraActualizada) setCompraVer(compraActualizada);
   const { subtotal: subtotalForm, iva: ivaForm, flete: fleteForm, total: totalForm } =
     calcularTotales(items, form.incluye_iva, pctIvaForm, form.incluye_flete, form.tipo_flete, valFleteForm);
 
+   function calcularItemsConExtras(
+  items: ItemForm[],
+  incluyeIva: boolean,
+  porcentajeIva: number,
+  incluyeFlete: boolean,
+  tipoFlete: "pct" | "pesos",
+  valorFlete: number
+) {
+  const { subtotal, iva, flete } = calcularTotales(
+    items,
+    incluyeIva,
+    porcentajeIva,
+    incluyeFlete,
+    tipoFlete,
+    valorFlete
+  );
+
+  return items.map((it) => {
+    const subtotalItem = it.cantidad * it.precio_unitario;
+    const proporcion = subtotal > 0 ? subtotalItem / subtotal : 0;
+
+    const ivaItem = incluyeIva ? iva * proporcion : 0;
+    const fleteItem = incluyeFlete ? flete * proporcion : 0;
+
+    return {
+      ...it,
+      subtotal: subtotalItem,
+      iva: Math.round(ivaItem * 100) / 100,
+      flete: Math.round(fleteItem * 100) / 100
+    };
+  });
+}
+const itemsCalculados = calcularItemsConExtras(
+  items,
+  form.incluye_iva,
+  pctIvaForm,
+  form.incluye_flete,
+  form.tipo_flete,
+  valFleteForm
+);
   return (
     <div className="p-4 md:p-6" style={{ maxWidth: "100%", overflowX: "hidden" }}>
 
@@ -408,12 +448,15 @@ if (compraActualizada) setCompraVer(compraActualizada);
                           <th className="text-left px-3 py-2">Producto</th>
                           <th className="text-center px-3 py-2 w-20">Cant.</th>
                           <th className="text-center px-3 py-2 w-28">P. unit.</th>
-                          <th className="text-right px-3 py-2 w-24">Subtotal</th>
+                         <th className="text-right px-3 py-2">Subtotal</th>
+<th className="text-right px-3 py-2 text-blue-600">IVA</th>
+<th className="text-right px-3 py-2 text-orange-600">Flete</th>
+<th className="text-right px-3 py-2">Total</th>
                           <th className="w-6"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {items.map((it, idx) => (
+                        {itemsCalculados.map((it, idx) => (
                           <tr key={it.producto_id}>
                             <td className="px-3 py-2 text-gray-800 text-xs">{it.nombre}</td>
                             <td className="px-3 py-2">
@@ -426,7 +469,18 @@ if (compraActualizada) setCompraVer(compraActualizada);
                                 onChange={e => actualizarItem(idx, "precio_unitario", parseFloat(e.target.value) || 0)}
                                 className="w-full text-center border border-gray-300 rounded px-1 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
                             </td>
-                            <td className="px-3 py-2 text-right font-medium text-gray-700 text-xs">{fmt(it.cantidad * it.precio_unitario)}</td>
+                            <td className="px-3 py-2 text-right text-xs">
+  {fmt(it.subtotal)}
+</td>
+<td className="px-3 py-2 text-right text-blue-600 text-xs">
+  {fmt(it.iva)}
+</td>
+<td className="px-3 py-2 text-right text-orange-600 text-xs">
+  {fmt(it.flete)}
+</td>
+<td className="px-3 py-2 text-right font-semibold text-gray-800 text-xs">
+  {fmt(it.subtotal + it.iva + it.flete)}
+</td>
                             <td className="px-3 py-2 text-center">
                               <button onClick={() => quitarItem(idx)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
                             </td>
