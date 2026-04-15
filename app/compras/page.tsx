@@ -156,21 +156,24 @@ export default function ComprasPage() {
     ].filter(Boolean).join(" | ");
 
     const { error } = await supabase.rpc("registrar_compra", {
-      p_proveedor_id: Number(form.proveedor_id),
-      p_fecha: form.fecha,
-      p_numero_remito: form.numero_remito || null,
-      p_fecha_vencimiento: form.fecha_vencimiento || null,
-      p_metodo_pago: form.metodo_pago,
-      p_notas: notasFinales || null,
-      p_pago_inicial: parseFloat(form.pago_inicial) || 0,
-      p_items: items.map(it => ({ producto_id: it.producto_id, cantidad: it.cantidad, precio_unitario: it.precio_unitario })),
-      p_incluye_iva: form.incluye_iva,
-      p_porcentaje_iva: pctIva,
-      // El flete se suma al total ajustando el pago inicial proporcionalmente
-      // pasando el monto de flete como un extra en la nota ya que el RPC
-      // calcula el total desde los items + IVA
-      ...(form.incluye_flete && montoFlete > 0 ? { p_monto_flete: montoFlete } : {}),
-    });
+  p_proveedor_id: Number(form.proveedor_id),
+  p_fecha: form.fecha,
+  p_numero_remito: form.numero_remito || null,
+  p_fecha_vencimiento: form.fecha_vencimiento || null,
+  p_metodo_pago: form.metodo_pago,
+  p_notas: notasFinales || null,
+  p_pago_inicial: parseFloat(form.pago_inicial) || 0,
+  p_items: items.map(it => ({
+    producto_id: it.producto_id,
+    cantidad: it.cantidad,
+    precio_unitario: it.precio_unitario
+  })),
+  p_incluye_iva: form.incluye_iva,
+  p_porcentaje_iva: pctIva,
+
+  // ✅ SIEMPRE MANDAR
+  p_monto_flete: montoFlete || 0
+});
     setGuardando(false);
     if (error) { setErrorForm("Error: " + error.message); return; }
     setModalNueva(false);
