@@ -19,10 +19,12 @@ interface Compra {
   incluye_iva: boolean;
   monto_iva: number;
   porcentaje_iva: number;
+  monto_flete: number;
   proveedores: { nombre: string } | null;
 }
 interface DetalleCompra {
   id: number; cantidad: number; precio_unitario: number; subtotal: number;
+  monto_iva: number; monto_flete: number;
   productos: { nombre: string } | null;
 }
 interface PagoCompra {
@@ -129,64 +131,37 @@ export default function ComprasPage() {
   function quitarItem(idx: number) { setItems(items.filter((_, i) => i !== idx)); }
 
   async function guardarCompra() {
-  if (!form.proveedor_id) { setErrorForm("Seleccioná un proveedor."); return; }
-  if (items.length === 0) { setErrorForm("Agregá al menos un producto."); return; }
-  if (items.some(it => it.precio_unitario <= 0)) { setErrorForm("Todos los productos deben tener precio mayor a 0."); return; }
+    if (!form.proveedor_id) { setErrorForm("Seleccioná un proveedor."); return; }
+    if (items.length === 0) { setErrorForm("Agregá al menos un producto."); return; }
+    if (items.some(it => it.precio_unitario <= 0)) { setErrorForm("Todos los productos deben tener precio mayor a 0."); return; }
+    const pctIva = parseFloat(form.porcentaje_iva) || 0;
+    if (form.incluye_iva && (pctIva <= 0 || pctIva > 100)) { setErrorForm("El porcentaje de IVA debe estar entre 1 y 100."); return; }
+    const valFlete = parseFloat(form.valor_flete) || 0;
+    if (form.incluye_flete && valFlete <= 0) { setErrorForm("El valor del flete debe ser mayor a 0."); return; }
 
-  const pctIva = parseFloat(form.porcentaje_iva) || 0;
-  if (form.incluye_iva && (pctIva <= 0 || pctIva > 100)) {
-    setErrorForm("El porcentaje de IVA debe estar entre 1 y 100.");
-    return;
+    const { flete: montoFlete } = calcularTotales(
+      items, form.incluye_iva, pctIva, form.incluye_flete, form.tipo_flete, valFlete
+    );
+
+    setGuardando(true); setErrorForm(null);
+    const { error } = await supabase.rpc("registrar_compra", {
+      p_proveedor_id: Number(form.proveedor_id),
+      p_fecha: form.fecha,
+      p_numero_remito: form.numero_remito || null,
+      p_fecha_vencimiento: form.fecha_vencimiento || null,
+      p_metodo_pago: form.metodo_pago,
+      p_notas: form.notas || null,
+      p_pago_inicial: parseFloat(form.pago_inicial) || 0,
+      p_items: items.map(it => ({ producto_id: it.producto_id, cantidad: it.cantidad, precio_unitario: it.precio_unitario })),
+      p_incluye_iva: form.incluye_iva,
+      p_porcentaje_iva: pctIva,
+      p_monto_flete: montoFlete,
+    });
+    setGuardando(false);
+    if (error) { setErrorForm("Error: " + error.message); return; }
+    setModalNueva(false);
+    cargarTodo();
   }
-
-  const valFlete = parseFloat(form.valor_flete) || 0;
-  if (form.incluye_flete && valFlete <= 0) {
-    setErrorForm("El valor del flete debe ser mayor a 0.");
-    return;
-  }
-
-  setGuardando(true);
-  setErrorForm(null);
-
-  // ✅ calcular flete correctamente
-  const subtotal = items.reduce((s, it) => s + it.cantidad * it.precio_unitario, 0);
-
-  const montoFlete = form.incluye_flete
-    ? form.tipo_flete === "pct"
-      ? Math.round(subtotal * (valFlete / 100) * 100) / 100
-      : valFlete
-    : 0;
-
-  const { error } = await supabase.rpc("registrar_compra", {
-    p_proveedor_id: Number(form.proveedor_id),
-    p_fecha: form.fecha,
-    p_numero_remito: form.numero_remito || null,
-    p_fecha_vencimiento: form.fecha_vencimiento || null,
-    p_metodo_pago: form.metodo_pago,
-    p_notas: form.notas || null,
-    p_pago_inicial: parseFloat(form.pago_inicial) || 0,
-    p_items: items.map(it => ({
-      producto_id: it.producto_id,
-      cantidad: it.cantidad,
-      precio_unitario: it.precio_unitario
-    })),
-    p_incluye_iva: form.incluye_iva,
-    p_porcentaje_iva: pctIva,
-
-    // ✅ CLAVE: esto ahora va limpio y bien
-    p_monto_flete: montoFlete
-  });
-
-  setGuardando(false);
-
-  if (error) {
-    setErrorForm("Error: " + error.message);
-    return;
-  }
-
-  setModalNueva(false);
-  cargarTodo();
-}
 
   async function verDetalle(c: Compra) {
     setCompraVer(c);
@@ -307,6 +282,11 @@ export default function ComprasPage() {
                       {c.incluye_iva && (
                         <span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">
                           IVA {c.porcentaje_iva}%
+                        </span>
+                      )}
+                      {c.monto_flete > 0 && (
+                        <span className="bg-orange-50 text-orange-700 text-xs px-2 py-0.5 rounded-full font-medium">
+                          🚚 Flete {fmt(c.monto_flete)}
                         </span>
                       )}
                       {vencido && <span className="text-red-600 text-xs font-medium">⚠️ Vencida</span>}
@@ -453,7 +433,7 @@ export default function ComprasPage() {
                         {form.incluye_flete && fleteForm > 0 && (
                           <tr>
                             <td colSpan={3} className="px-3 py-1.5 text-right text-orange-600 text-xs">
-                              Flete{form.tipo_flete === "pct" ? ` ${valFleteForm}%` : ""}:
+                              🚚 Flete{form.tipo_flete === "pct" ? ` ${valFleteForm}%` : ""}:
                             </td>
                             <td className="px-3 py-1.5 text-right text-orange-600 text-xs">{fmt(fleteForm)}</td>
                             <td></td>
@@ -504,7 +484,6 @@ export default function ComprasPage() {
                 </label>
                 {form.incluye_flete && (
                   <>
-                    {/* Selector % o $ */}
                     <div className="flex rounded-lg border border-orange-300 overflow-hidden ml-2">
                       <button
                         onClick={() => setForm({ ...form, tipo_flete: "pesos" })}
@@ -593,6 +572,11 @@ export default function ComprasPage() {
                       IVA {compraVer.porcentaje_iva}%
                     </span>
                   )}
+                  {compraVer.monto_flete > 0 && (
+                    <span className="bg-orange-50 text-orange-700 text-xs px-2 py-0.5 rounded-full font-medium">
+                      🚚 Flete {fmt(compraVer.monto_flete)}
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm text-gray-500">
                   {compraVer.proveedores?.nombre} · {compraVer.fecha}
@@ -675,17 +659,26 @@ export default function ComprasPage() {
                         ))}
                       </tbody>
                       <tfoot className="bg-gray-50 text-sm">
-                        {compraVer.incluye_iva && (
-                          <>
-                            <tr>
-                              <td colSpan={3} className="px-3 py-1.5 text-right text-gray-500 text-xs">Subtotal:</td>
-                              <td className="px-3 py-1.5 text-right text-gray-700 text-xs">{fmt(compraVer.total - compraVer.monto_iva)}</td>
-                            </tr>
-                            <tr>
-                              <td colSpan={3} className="px-3 py-1.5 text-right text-blue-600 text-xs">IVA {compraVer.porcentaje_iva}%:</td>
-                              <td className="px-3 py-1.5 text-right text-blue-600 text-xs">{fmt(compraVer.monto_iva)}</td>
-                            </tr>
-                          </>
+                        {/* Subtotal base siempre visible si hay IVA o flete */}
+                        {(compraVer.incluye_iva || compraVer.monto_flete > 0) && (
+                          <tr>
+                            <td colSpan={3} className="px-3 py-1.5 text-right text-gray-500 text-xs">Subtotal:</td>
+                            <td className="px-3 py-1.5 text-right text-gray-700 text-xs">
+                              {fmt(compraVer.total - compraVer.monto_iva - compraVer.monto_flete)}
+                            </td>
+                          </tr>
+                        )}
+                        {compraVer.incluye_iva && compraVer.monto_iva > 0 && (
+                          <tr>
+                            <td colSpan={3} className="px-3 py-1.5 text-right text-blue-600 text-xs">IVA {compraVer.porcentaje_iva}%:</td>
+                            <td className="px-3 py-1.5 text-right text-blue-600 text-xs">{fmt(compraVer.monto_iva)}</td>
+                          </tr>
+                        )}
+                        {compraVer.monto_flete > 0 && (
+                          <tr>
+                            <td colSpan={3} className="px-3 py-1.5 text-right text-orange-600 text-xs">🚚 Flete:</td>
+                            <td className="px-3 py-1.5 text-right text-orange-600 text-xs">{fmt(compraVer.monto_flete)}</td>
+                          </tr>
                         )}
                         <tr className="border-t border-gray-200">
                           <td colSpan={3} className="px-3 py-2 text-right font-semibold text-xs">Total:</td>
