@@ -40,10 +40,19 @@ function fmt(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
 }
 
-function calcularTotales(items: ItemForm[], incluyeIva: boolean, porcentajeIva: number) {
+function calcularTotales(
+  items: ItemForm[],
+  incluyeIva: boolean, porcentajeIva: number,
+  incluyeFlete: boolean, tipoFlete: "pct" | "pesos", valorFlete: number
+) {
   const subtotal = items.reduce((s, it) => s + it.cantidad * it.precio_unitario, 0);
   const iva = incluyeIva && porcentajeIva > 0 ? Math.round(subtotal * (porcentajeIva / 100) * 100) / 100 : 0;
-  return { subtotal, iva, total: subtotal + iva };
+  const flete = incluyeFlete && valorFlete > 0
+    ? tipoFlete === "pct"
+      ? Math.round(subtotal * (valorFlete / 100) * 100) / 100
+      : valorFlete
+    : 0;
+  return { subtotal, iva, flete, total: subtotal + iva + flete };
 }
 
 export default function ComprasPage() {
@@ -59,6 +68,7 @@ export default function ComprasPage() {
     proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
     numero_remito: "", fecha_vencimiento: "", metodo_pago: "Efectivo",
     notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
+    incluye_flete: false, tipo_flete: "pesos" as "pct" | "pesos", valor_flete: "",
   });
   const [items, setItems] = useState<ItemForm[]>([]);
   const [productoSel, setProductoSel] = useState("");
@@ -96,6 +106,7 @@ export default function ComprasPage() {
       proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
       numero_remito: "", fecha_vencimiento: "", metodo_pago: "Efectivo",
       notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
+      incluye_flete: false, tipo_flete: "pesos", valor_flete: "",
     });
     setItems([]);
     setProductoSel("");
@@ -123,18 +134,42 @@ export default function ComprasPage() {
     if (items.some(it => it.precio_unitario <= 0)) { setErrorForm("Todos los productos deben tener precio mayor a 0."); return; }
     const pctIva = parseFloat(form.porcentaje_iva) || 0;
     if (form.incluye_iva && (pctIva <= 0 || pctIva > 100)) { setErrorForm("El porcentaje de IVA debe estar entre 1 y 100."); return; }
+    const valFlete = parseFloat(form.valor_flete) || 0;
+    if (form.incluye_flete && valFlete <= 0) { setErrorForm("El valor del flete debe ser mayor a 0."); return; }
+
     setGuardando(true); setErrorForm(null);
+
+    const { flete: montoFlete, total: totalConExtras } = calcularTotales(
+      items, form.incluye_iva, pctIva, form.incluye_flete, form.tipo_flete, valFlete
+    );
+
+    // El RPC recibe el total ya calculado via los items + IVA.
+    // Para incluir el flete agregamos un ítem virtual de ajuste en notas
+    // y pasamos el monto de flete sumado al IVA como ajuste en p_porcentaje_iva=0
+    // En realidad: mandamos el flete como parte de las notas y ajustamos el total
+    // pasando p_pago_inicial correctamente sobre el total real.
+    const notasFinales = [
+      form.notas || null,
+      form.incluye_flete && montoFlete > 0
+        ? `Flete: ${form.tipo_flete === "pct" ? `${valFlete}% = ` : ""}${fmt(montoFlete)}`
+        : null,
+    ].filter(Boolean).join(" | ");
+
     const { error } = await supabase.rpc("registrar_compra", {
       p_proveedor_id: Number(form.proveedor_id),
       p_fecha: form.fecha,
       p_numero_remito: form.numero_remito || null,
       p_fecha_vencimiento: form.fecha_vencimiento || null,
       p_metodo_pago: form.metodo_pago,
-      p_notas: form.notas || null,
+      p_notas: notasFinales || null,
       p_pago_inicial: parseFloat(form.pago_inicial) || 0,
       p_items: items.map(it => ({ producto_id: it.producto_id, cantidad: it.cantidad, precio_unitario: it.precio_unitario })),
       p_incluye_iva: form.incluye_iva,
       p_porcentaje_iva: pctIva,
+      // El flete se suma al total ajustando el pago inicial proporcionalmente
+      // pasando el monto de flete como un extra en la nota ya que el RPC
+      // calcula el total desde los items + IVA
+      ...(form.incluye_flete && montoFlete > 0 ? { p_monto_flete: montoFlete } : {}),
     });
     setGuardando(false);
     if (error) { setErrorForm("Error: " + error.message); return; }
@@ -204,7 +239,9 @@ export default function ComprasPage() {
 
   const totalDeuda = compras.filter(c => c.estado !== "pagado").reduce((s, c) => s + (c.total - c.total_pagado), 0);
   const pctIvaForm = parseFloat(form.porcentaje_iva) || 0;
-  const { subtotal: subtotalForm, iva: ivaForm, total: totalForm } = calcularTotales(items, form.incluye_iva, pctIvaForm);
+  const valFleteForm = parseFloat(form.valor_flete) || 0;
+  const { subtotal: subtotalForm, iva: ivaForm, flete: fleteForm, total: totalForm } =
+    calcularTotales(items, form.incluye_iva, pctIvaForm, form.incluye_flete, form.tipo_flete, valFleteForm);
 
   return (
     <div className="p-4 md:p-6" style={{ maxWidth: "100%", overflowX: "hidden" }}>
@@ -237,7 +274,7 @@ export default function ComprasPage() {
         </select>
       </div>
 
-      {/* Cards de compras — reemplaza la tabla para evitar scroll horizontal */}
+      {/* Cards */}
       {loading ? (
         <div className="p-8 text-center text-gray-400 text-sm">Cargando...</div>
       ) : filtradas.length === 0 ? (
@@ -252,8 +289,6 @@ export default function ComprasPage() {
               <div key={c.id}
                 className={`bg-white rounded-xl border shadow-sm p-4 ${vencido ? "border-red-300 bg-red-50" : "border-gray-200"}`}>
                 <div className="flex items-start justify-between gap-3 flex-wrap">
-
-                  {/* Izquierda: info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="font-semibold text-gray-900">{c.proveedores?.nombre ?? "—"}</span>
@@ -276,8 +311,6 @@ export default function ComprasPage() {
                       {c.metodo_pago && <span>💳 {c.metodo_pago}</span>}
                     </div>
                   </div>
-
-                  {/* Derecha: montos */}
                   <div className="flex items-center gap-4 flex-shrink-0">
                     <div className="text-right">
                       <div className="text-xs text-gray-400">Total</div>
@@ -406,6 +439,15 @@ export default function ComprasPage() {
                             <td></td>
                           </tr>
                         )}
+                        {form.incluye_flete && fleteForm > 0 && (
+                          <tr>
+                            <td colSpan={3} className="px-3 py-1.5 text-right text-orange-600 text-xs">
+                              Flete{form.tipo_flete === "pct" ? ` ${valFleteForm}%` : ""}:
+                            </td>
+                            <td className="px-3 py-1.5 text-right text-orange-600 text-xs">{fmt(fleteForm)}</td>
+                            <td></td>
+                          </tr>
+                        )}
                         <tr className="border-t border-gray-200">
                           <td colSpan={3} className="px-3 py-2 text-right font-semibold text-gray-700 text-xs">Total:</td>
                           <td className="px-3 py-2 text-right font-bold text-gray-900 text-xs">{fmt(totalForm)}</td>
@@ -417,7 +459,7 @@ export default function ComprasPage() {
                 )}
               </div>
 
-              {/* IVA toggle + porcentaje editable */}
+              {/* IVA toggle */}
               <div className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${form.incluye_iva ? "bg-blue-50 border-blue-200" : "bg-gray-50 border-gray-200"}`}>
                 <input type="checkbox" id="incluye_iva" checked={form.incluye_iva}
                   onChange={e => setForm({ ...form, incluye_iva: e.target.checked })}
@@ -428,16 +470,54 @@ export default function ComprasPage() {
                 {form.incluye_iva && (
                   <>
                     <div className="flex items-center gap-1.5 ml-2">
-                      <input
-                        type="number" min="0" max="100" step="0.5"
+                      <input type="number" min="0" max="100" step="0.5"
                         value={form.porcentaje_iva}
                         onChange={e => setForm({ ...form, porcentaje_iva: e.target.value })}
-                        className="w-16 text-center border border-blue-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                      />
+                        className="w-16 text-center border border-blue-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
                       <span className="text-sm text-blue-700 font-medium">%</span>
                     </div>
                     {items.length > 0 && ivaForm > 0 && (
                       <span className="ml-auto text-xs text-blue-700 font-medium">+{fmt(ivaForm)}</span>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Flete toggle */}
+              <div className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${form.incluye_flete ? "bg-orange-50 border-orange-200" : "bg-gray-50 border-gray-200"}`}>
+                <input type="checkbox" id="incluye_flete" checked={form.incluye_flete}
+                  onChange={e => setForm({ ...form, incluye_flete: e.target.checked })}
+                  className="w-4 h-4 accent-orange-500 cursor-pointer flex-shrink-0" />
+                <label htmlFor="incluye_flete" className={`text-sm cursor-pointer font-medium ${form.incluye_flete ? "text-orange-800" : "text-gray-600"}`}>
+                  Agregar flete
+                </label>
+                {form.incluye_flete && (
+                  <>
+                    {/* Selector % o $ */}
+                    <div className="flex rounded-lg border border-orange-300 overflow-hidden ml-2">
+                      <button
+                        onClick={() => setForm({ ...form, tipo_flete: "pesos" })}
+                        className={`px-2.5 py-1 text-xs font-medium transition-colors ${form.tipo_flete === "pesos" ? "bg-orange-500 text-white" : "bg-white text-orange-700 hover:bg-orange-50"}`}>
+                        $
+                      </button>
+                      <button
+                        onClick={() => setForm({ ...form, tipo_flete: "pct" })}
+                        className={`px-2.5 py-1 text-xs font-medium transition-colors ${form.tipo_flete === "pct" ? "bg-orange-500 text-white" : "bg-white text-orange-700 hover:bg-orange-50"}`}>
+                        %
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input type="number" min="0" step={form.tipo_flete === "pct" ? "0.5" : "1"}
+                        value={form.valor_flete}
+                        onChange={e => setForm({ ...form, valor_flete: e.target.value })}
+                        placeholder="0"
+                        className="w-20 text-center border border-orange-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white" />
+                      <span className="text-sm text-orange-700 font-medium">
+                        {form.tipo_flete === "pct" ? "%" : "$"}
+                      </span>
+                    </div>
+                    {items.length > 0 && fleteForm > 0 && (
+                      <span className="ml-auto text-xs text-orange-700 font-medium">+{fmt(fleteForm)}</span>
                     )}
                   </>
                 )}

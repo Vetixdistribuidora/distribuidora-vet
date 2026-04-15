@@ -39,6 +39,7 @@ export default function ProveedoresPage() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmEliminar, setConfirmEliminar] = useState<Proveedor | null>(null);
+  const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
 
   useEffect(() => { cargarProveedores(); }, []);
 
@@ -107,8 +108,19 @@ export default function ProveedoresPage() {
   }
 
   async function eliminar(p: Proveedor) {
+    setErrorEliminar(null);
     const { error } = await supabase.from("proveedores").delete().eq("id", p.id);
-    if (!error) { setConfirmEliminar(null); cargarProveedores(); }
+    if (error) {
+      setErrorEliminar(
+        p.compras_pendientes > 0
+          ? `No se puede eliminar: ${p.nombre} tiene compras registradas. Eliminá las compras primero.`
+          : "No se pudo eliminar: " + error.message
+      );
+    } else {
+      setConfirmEliminar(null);
+      setErrorEliminar(null);
+      cargarProveedores();
+    }
   }
 
   const filtrados = proveedores.filter((p) =>
@@ -195,7 +207,6 @@ export default function ProveedoresPage() {
 
                 {/* Saldo + acciones */}
                 <div className="flex flex-col items-end gap-3 flex-shrink-0">
-                  {/* Saldo */}
                   <div className="text-right">
                     {p.saldo_pendiente > 0 ? (
                       <div>
@@ -212,13 +223,12 @@ export default function ProveedoresPage() {
                     )}
                   </div>
 
-                  {/* Botones */}
                   <div className="flex gap-2">
                     <button onClick={() => abrirEditar(p)}
                       className="border border-gray-300 hover:border-blue-400 hover:text-blue-600 text-gray-600 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
                       ✏️ Editar
                     </button>
-                    <button onClick={() => setConfirmEliminar(p)}
+                    <button onClick={() => { setConfirmEliminar(p); setErrorEliminar(null); }}
                       className="border border-gray-300 hover:border-red-400 hover:text-red-600 text-gray-600 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
                       🗑️ Eliminar
                     </button>
@@ -300,11 +310,17 @@ export default function ProveedoresPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-2">¿Eliminar proveedor?</h2>
-            <p className="text-sm text-gray-500 mb-6">
+            <p className="text-sm text-gray-500 mb-4">
               Vas a eliminar a <strong>{confirmEliminar.nombre}</strong>. Esta acción no se puede deshacer.
             </p>
+            {errorEliminar && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg mb-4">
+                ⚠️ {errorEliminar}
+              </div>
+            )}
             <div className="flex justify-end gap-3">
-              <button onClick={() => setConfirmEliminar(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+              <button onClick={() => { setConfirmEliminar(null); setErrorEliminar(null); }}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
                 Cancelar
               </button>
               <button onClick={() => eliminar(confirmEliminar)}
