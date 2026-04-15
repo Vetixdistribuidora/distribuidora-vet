@@ -181,13 +181,29 @@ export default function ComprasPage() {
     const saldo = compraVer.total - compraVer.total_pagado;
     if (saldo <= 0) return;
     setCancelando(true);
-    await supabase.rpc("registrar_pago_compra", {
-      p_compra_id: compraVer.id, p_monto: saldo,
-      p_metodo_pago: "Efectivo", p_notas: "Cancelación total",
-    });
+    const { error } = await supabase.rpc("registrar_pago_compra", {
+  p_compra_id: compraVer.id,
+  p_monto: saldo,
+  p_metodo_pago: "Efectivo",
+  p_notas: "Cancelación total",
+});
+
+if (error) {
+  console.error("Error al cancelar:", error);
+  alert("Error al cancelar: " + error.message);
+  setCancelando(false);
+  return;
+}
     setCancelando(false);
-    const actualizada = { ...compraVer, total_pagado: compraVer.total, estado: "pagado" };
-    setCompraVer(actualizada);
+    await cargarTodo();
+
+const { data: compraActualizada } = await supabase
+  .from("compras")
+  .select("*")
+  .eq("id", compraVer.id)
+  .single();
+
+if (compraActualizada) setCompraVer(compraActualizada);
     const { data: p } = await supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha");
     if (p) setPagos(p);
     cargarTodo();
