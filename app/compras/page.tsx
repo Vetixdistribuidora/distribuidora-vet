@@ -19,6 +19,7 @@ interface Compra {
   incluye_iva: boolean;
   monto_iva: number;
   porcentaje_iva: number;
+  monto_flete: number; // ✅ AGREGAR ESTA LÍNEA
   proveedores: { nombre: string } | null;
 }
 interface DetalleCompra {
@@ -682,7 +683,7 @@ if (form.incluye_flete) {
   const ivaTotal = compraVer.monto_iva || 0;
 
   // 3. FLETE total (REAL)
-  const fleteTotal = compraVer.total - baseTotal - ivaTotal;
+  const fleteTotal = compraVer.monto_flete || 0;
 
   return detalle.map(d => {
     const subtotalConTodo = d.subtotal;
