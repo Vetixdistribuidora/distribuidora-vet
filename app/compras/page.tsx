@@ -666,21 +666,33 @@ export default function ComprasPage() {
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {(() => {
-  // Total base sin IVA (lo usamos para proporciones)
-  const subtotalBase = detalle.reduce((acc, d) => {
-    return acc + (d.cantidad * d.precio_unitario) / (1 + (compraVer.porcentaje_iva || 0) / 100);
+  const ivaPct = compraVer.porcentaje_iva || 0;
+
+  // 1. Calcular BASE TOTAL (sin IVA ni flete)
+  const baseTotal = detalle.reduce((acc, d) => {
+    return acc + (d.subtotal / (1 + ivaPct / 100));
   }, 0);
 
-  // Sacamos el flete desde notas (porque lo guardamos ahí)
-  const matchFlete = compraVer.notas?.match(/Flete:.*?([\d,.]+)/);
-  const montoFlete = matchFlete ? parseFloat(matchFlete[1].replace(",", ".")) : 0;
+  // 2. IVA total
+  const ivaTotal = compraVer.monto_iva || 0;
+
+  // 3. FLETE total (REAL)
+  const fleteTotal = compraVer.total - baseTotal - ivaTotal;
 
   return detalle.map(d => {
-    const baseItem = (d.cantidad * d.precio_unitario) / (1 + (compraVer.porcentaje_iva || 0) / 100);
+    const subtotalConTodo = d.subtotal;
 
-    const proporcion = subtotalBase > 0 ? baseItem / subtotalBase : 0;
+    // Base del item
+    const baseItem = subtotalConTodo / (1 + ivaPct / 100);
 
-    const fleteItem = montoFlete * proporcion;
+    // IVA del item
+    const ivaItem = ivaPct > 0 ? baseItem * (ivaPct / 100) : 0;
+
+    // Proporción
+    const proporcion = baseTotal > 0 ? baseItem / baseTotal : 0;
+
+    // Flete del item
+    const fleteItem = fleteTotal > 0 ? fleteTotal * proporcion : 0;
 
     return (
       <tr key={d.id}>
@@ -688,6 +700,19 @@ export default function ComprasPage() {
           <div className="flex flex-col gap-1">
             <span>{d.productos?.nombre ?? "—"}</span>
 
+            {/* PRECIO BASE */}
+            <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium w-fit">
+              Base: {fmt(baseItem)}
+            </span>
+
+            {/* IVA */}
+            {ivaItem > 0 && (
+              <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium w-fit">
+                IVA: {fmt(ivaItem)}
+              </span>
+            )}
+
+            {/* FLETE */}
             {fleteItem > 0 && (
               <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium w-fit">
                 🚚 Flete: {fmt(fleteItem)}
@@ -703,7 +728,7 @@ export default function ComprasPage() {
         </td>
 
         <td className="px-3 py-2 text-right font-medium">
-          {fmt(d.subtotal)}
+          {fmt(subtotalConTodo)}
         </td>
       </tr>
     );
