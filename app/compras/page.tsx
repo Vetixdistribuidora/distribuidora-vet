@@ -665,14 +665,50 @@ export default function ComprasPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {detalle.map(d => (
-                          <tr key={d.id}>
-                            <td className="px-3 py-2">{d.productos?.nombre ?? "—"}</td>
-                            <td className="px-3 py-2 text-center">{d.cantidad}</td>
-                            <td className="px-3 py-2 text-right">{fmt(d.precio_unitario)}</td>
-                            <td className="px-3 py-2 text-right font-medium">{fmt(d.subtotal)}</td>
-                          </tr>
-                        ))}
+                        {(() => {
+  // Total base sin IVA (lo usamos para proporciones)
+  const subtotalBase = detalle.reduce((acc, d) => {
+    return acc + (d.cantidad * d.precio_unitario) / (1 + (compraVer.porcentaje_iva || 0) / 100);
+  }, 0);
+
+  // Sacamos el flete desde notas (porque lo guardamos ahí)
+  const matchFlete = compraVer.notas?.match(/Flete:.*?([\d,.]+)/);
+  const montoFlete = matchFlete ? parseFloat(matchFlete[1].replace(",", ".")) : 0;
+
+  return detalle.map(d => {
+    const baseItem = (d.cantidad * d.precio_unitario) / (1 + (compraVer.porcentaje_iva || 0) / 100);
+
+    const proporcion = subtotalBase > 0 ? baseItem / subtotalBase : 0;
+
+    const fleteItem = montoFlete * proporcion;
+
+    return (
+      <tr key={d.id}>
+        <td className="px-3 py-2">
+          <div className="flex flex-col gap-1">
+            <span>{d.productos?.nombre ?? "—"}</span>
+
+            {fleteItem > 0 && (
+              <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium w-fit">
+                🚚 Flete: {fmt(fleteItem)}
+              </span>
+            )}
+          </div>
+        </td>
+
+        <td className="px-3 py-2 text-center">{d.cantidad}</td>
+
+        <td className="px-3 py-2 text-right">
+          {fmt(d.precio_unitario)}
+        </td>
+
+        <td className="px-3 py-2 text-right font-medium">
+          {fmt(d.subtotal)}
+        </td>
+      </tr>
+    );
+  });
+})()}
                       </tbody>
                       <tfoot className="bg-gray-50 text-sm">
                         {compraVer.incluye_iva && (
