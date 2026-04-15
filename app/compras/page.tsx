@@ -19,7 +19,6 @@ interface Compra {
   incluye_iva: boolean;
   monto_iva: number;
   porcentaje_iva: number;
-  monto_flete: number; // ✅ AGREGAR ESTA LÍNEA
   proveedores: { nombre: string } | null;
 }
 interface DetalleCompra {
@@ -149,19 +148,14 @@ export default function ComprasPage() {
   setGuardando(true);
   setErrorForm(null);
 
- // ✅ calcular subtotal base
-const subtotal = items.reduce((s, it) => s + it.cantidad * it.precio_unitario, 0);
+  // ✅ calcular flete correctamente
+  const subtotal = items.reduce((s, it) => s + it.cantidad * it.precio_unitario, 0);
 
-// ✅ calcular flete correctamente
-let montoFlete = 0;
-
-if (form.incluye_flete) {
-  if (form.tipo_flete === "pct") {
-    montoFlete = Math.round(subtotal * (valFlete / 100) * 100) / 100;
-  } else {
-    montoFlete = valFlete;
-  }
-}
+  const montoFlete = form.incluye_flete
+    ? form.tipo_flete === "pct"
+      ? Math.round(subtotal * (valFlete / 100) * 100) / 100
+      : valFlete
+    : 0;
 
   const { error } = await supabase.rpc("registrar_compra", {
     p_proveedor_id: Number(form.proveedor_id),
@@ -671,75 +665,14 @@ if (form.incluye_flete) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {(() => {
-  const ivaPct = compraVer.porcentaje_iva || 0;
-
-  // 1. Calcular BASE TOTAL (sin IVA ni flete)
-  const baseTotal = detalle.reduce((acc, d) => {
-    return acc + (d.subtotal / (1 + ivaPct / 100));
-  }, 0);
-
-  // 2. IVA total
-  const ivaTotal = compraVer.monto_iva || 0;
-
-  // 3. FLETE total (REAL)
-  const fleteTotal = compraVer.monto_flete || 0;
-
-  return detalle.map(d => {
-    const subtotalConTodo = d.subtotal;
-
-    // Base del item
-    const baseItem = subtotalConTodo / (1 + ivaPct / 100);
-
-    // IVA del item
-    const ivaItem = ivaPct > 0 ? baseItem * (ivaPct / 100) : 0;
-
-    // Proporción
-    const proporcion = baseTotal > 0 ? baseItem / baseTotal : 0;
-
-    // Flete del item
-    const fleteItem = fleteTotal > 0 ? fleteTotal * proporcion : 0;
-
-    return (
-      <tr key={d.id}>
-        <td className="px-3 py-2">
-          <div className="flex flex-col gap-1">
-            <span>{d.productos?.nombre ?? "—"}</span>
-
-            {/* PRECIO BASE */}
-            <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium w-fit">
-              Base: {fmt(baseItem)}
-            </span>
-
-            {/* IVA */}
-            {ivaItem > 0 && (
-              <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium w-fit">
-                IVA: {fmt(ivaItem)}
-              </span>
-            )}
-
-            {/* FLETE */}
-            {fleteItem > 0 && (
-              <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium w-fit">
-                🚚 Flete: {fmt(fleteItem)}
-              </span>
-            )}
-          </div>
-        </td>
-
-        <td className="px-3 py-2 text-center">{d.cantidad}</td>
-
-        <td className="px-3 py-2 text-right">
-          {fmt(d.precio_unitario)}
-        </td>
-
-        <td className="px-3 py-2 text-right font-medium">
-          {fmt(subtotalConTodo)}
-        </td>
-      </tr>
-    );
-  });
-})()}
+                        {detalle.map(d => (
+                          <tr key={d.id}>
+                            <td className="px-3 py-2">{d.productos?.nombre ?? "—"}</td>
+                            <td className="px-3 py-2 text-center">{d.cantidad}</td>
+                            <td className="px-3 py-2 text-right">{fmt(d.precio_unitario)}</td>
+                            <td className="px-3 py-2 text-right font-medium">{fmt(d.subtotal)}</td>
+                          </tr>
+                        ))}
                       </tbody>
                       <tfoot className="bg-gray-50 text-sm">
                         {compraVer.incluye_iva && (
