@@ -148,14 +148,19 @@ export default function ComprasPage() {
   setGuardando(true);
   setErrorForm(null);
 
-  // ✅ calcular flete correctamente
-  const subtotal = items.reduce((s, it) => s + it.cantidad * it.precio_unitario, 0);
+ // ✅ calcular subtotal base
+const subtotal = items.reduce((s, it) => s + it.cantidad * it.precio_unitario, 0);
 
-  const montoFlete = form.incluye_flete
-    ? form.tipo_flete === "pct"
-      ? Math.round(subtotal * (valFlete / 100) * 100) / 100
-      : valFlete
-    : 0;
+// ✅ calcular flete correctamente
+let montoFlete = 0;
+
+if (form.incluye_flete) {
+  if (form.tipo_flete === "pct") {
+    montoFlete = Math.round(subtotal * (valFlete / 100) * 100) / 100;
+  } else {
+    montoFlete = valFlete;
+  }
+}
 
   const { error } = await supabase.rpc("registrar_compra", {
     p_proveedor_id: Number(form.proveedor_id),
