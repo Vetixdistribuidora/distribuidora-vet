@@ -52,6 +52,7 @@ export default function Clientes() {
   const [ventaParaPagar, setVentaParaPagar] = useState<any>(null)
   const [montoPago, setMontoPago] = useState("")
   const [notaPago, setNotaPago] = useState("")
+  const [confirmEliminar, setConfirmEliminar] = useState<any | null>(null)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
@@ -129,12 +130,12 @@ export default function Clientes() {
   }
 
   async function eliminar(id: number) {
-    if (!confirm("Eliminar este cliente?")) return
-    const { error } = await supabase.from("clientes").delete().eq("id", id)
-    if (error) return mostrarToast("Error: " + error.message, "error")
-    mostrarToast("Cliente eliminado", "ok")
-    cargar()
-  }
+  const { error } = await supabase.from("clientes").delete().eq("id", id)
+  if (error) return mostrarToast("Error: " + error.message, "error")
+  mostrarToast("Cliente eliminado", "ok")
+  setConfirmEliminar(null)
+  cargar()
+}
 
   async function abrirHistorial(cliente: any) {
     setClienteSeleccionado(cliente)
@@ -452,7 +453,7 @@ export default function Clientes() {
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => setEditando({ ...c, porcentaje: String(c.porcentaje || "") })}>Editar</button>
                   <button onClick={() => abrirHistorial(c)}>Historial</button>
-                  <button onClick={() => eliminar(c.id)} style={{ background: "#e03131", color: "white" }}>Eliminar</button>
+                  <button onClick={() => setConfirmEliminar(c)} style={{ background: "#e03131", color: "white" }}>Eliminar</button>
                 </div>
               </div>
             )}
@@ -704,6 +705,26 @@ export default function Clientes() {
           </div>
         </div>
       )}
+      {confirmEliminar && (
+  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+      <h2 className="text-lg font-semibold text-gray-900 mb-2">¿Eliminar cliente?</h2>
+      <p className="text-sm text-gray-500 mb-6">
+        Vas a eliminar a <strong>{confirmEliminar.nombre} {confirmEliminar.apellido}</strong>. Esta acción no se puede deshacer.
+      </p>
+      <div className="flex justify-end gap-3">
+        <button onClick={() => setConfirmEliminar(null)}
+          className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+          Cancelar
+        </button>
+        <button onClick={() => eliminar(confirmEliminar.id)}
+          className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors">
+          Eliminar
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   )
 }
