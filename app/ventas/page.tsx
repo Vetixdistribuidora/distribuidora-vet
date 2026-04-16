@@ -248,7 +248,7 @@ export default function Ventas() {
     return
   }
 
-  // 🔹 Validar stock antes
+  // 🔹 Validar stock
   for (const item of carrito) {
     const producto = productos.find(p => p.id === item.producto_id)
     if (!producto) continue
@@ -259,7 +259,7 @@ export default function Ventas() {
     }
   }
 
-  // 🔹 Crear venta
+  // 🔥 1. CREAR VENTA
   const { data: venta, error: errorVenta } = await supabase
     .from("ventas")
     .insert({
@@ -277,7 +277,7 @@ export default function Ventas() {
     return
   }
 
-  // 🔥 Crear detalle con venta_id
+  // 🔥 2. CREAR DETALLE
   const detalles = carrito.map(item => ({
     venta_id: venta.id,
     producto_id: item.producto_id,
@@ -294,7 +294,30 @@ export default function Ventas() {
     return
   }
 
-  // 🔹 Actualizar stock (después de guardar)
+  // 🔥 3. CUENTA CORRIENTE (AHORA SÍ FUNCIONA)
+  if (esCuentaCorriente) {
+
+    const { data: ultimo } = await supabase
+      .from("cuentas_corrientes")
+      .select("saldo")
+      .eq("cliente_id", Number(clienteId))
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const saldoAnterior = ultimo?.saldo || 0
+    const nuevoSaldo = saldoAnterior + total
+
+    await supabase.from("cuentas_corrientes").insert({
+      cliente_id: Number(clienteId),
+      tipo: "venta",
+      monto: total,
+      saldo: nuevoSaldo,
+      venta_id: venta.id
+    })
+  }
+
+  // 🔹 4. ACTUALIZAR STOCK
   for (const item of carrito) {
     const producto = productos.find(p => p.id === item.producto_id)
     if (!producto) continue
@@ -307,7 +330,7 @@ export default function Ventas() {
       .eq("id", item.producto_id)
   }
 
-  // 🔹 Guardar datos impresión (ahora con venta_id correcto)
+  // 🔹 5. GUARDAR FACTURA
   const datosImpresion: DatosImpresion = {
     nroFactura,
     clienteSeleccionado,
@@ -321,7 +344,7 @@ export default function Ventas() {
   await supabase.from("facturas_impresion").insert([{
     nro_factura: nroFactura,
     cliente_id: Number(clienteId),
-    venta_id: venta.id,   // 🔥 ahora correcto
+    venta_id: venta.id,
     datos: datosImpresion
   }])
 
