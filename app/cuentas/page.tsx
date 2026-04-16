@@ -27,7 +27,7 @@ export default function CuentasCorrientes() {
       .from("cuentas_corrientes")
       .select("*")
       .eq("cliente_id", Number(id))
-      .order("id", { ascending: false })
+      .order("fecha", { ascending: false })
 
     setMovimientos(data || [])
 
@@ -40,43 +40,44 @@ export default function CuentasCorrientes() {
 
   // 🔥 ESTA ES LA FUNCIÓN PAGAR
   async function pagar() {
-    if (!clienteId || !montoPago) return
+  if (!clienteId || !montoPago) return
 
-    const monto = Number(montoPago)
+  const monto = Number(montoPago)
 
-    if (monto <= 0) {
-      alert("Monto inválido")
-      return
-    }
-
-    const { data: ultimo } = await supabase
-      .from("cuentas_corrientes")
-      .select("saldo")
-      .eq("cliente_id", Number(clienteId))
-      .order("id", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    const saldoAnterior = ultimo?.saldo || 0
-    const nuevoSaldo = saldoAnterior - monto
-
-    const { error } = await supabase
-      .from("cuentas_corrientes")
-      .insert({
-        cliente_id: Number(clienteId),
-        tipo: "pago",
-        monto: -monto,
-        saldo: nuevoSaldo
-      })
-
-    if (error) {
-      alert("Error al registrar pago")
-      return
-    }
-
-    setMontoPago("")
-    cargarMovimientos(clienteId)
+  if (monto <= 0) {
+    alert("Monto inválido")
+    return
   }
+
+  const { data: ultimo } = await supabase
+    .from("cuentas_corrientes")
+    .select("saldo")
+    .eq("cliente_id", Number(clienteId))
+    .order("fecha", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const saldoAnterior = ultimo?.saldo || 0
+  const nuevoSaldo = saldoAnterior - monto
+
+  const { error } = await supabase
+    .from("cuentas_corrientes")
+    .insert({
+      cliente_id: Number(clienteId),
+      tipo: "pago",
+      monto: -monto,
+      saldo: nuevoSaldo,
+      fecha: new Date() // 🔥 CLAVE
+    })
+
+  if (error) {
+    alert("Error al registrar pago")
+    return
+  }
+
+  setMontoPago("")
+  cargarMovimientos(clienteId)
+}
 
   function fmt(n: number) {
     return "$" + n.toLocaleString("es-AR")

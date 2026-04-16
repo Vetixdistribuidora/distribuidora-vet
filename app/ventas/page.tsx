@@ -309,12 +309,13 @@ export default function Ventas() {
     const nuevoSaldo = saldoAnterior + total
 
     await supabase.from("cuentas_corrientes").insert({
-      cliente_id: Number(clienteId),
-      tipo: "venta",
-      monto: total,
-      saldo: nuevoSaldo,
-      venta_id: venta.id
-    })
+  cliente_id: Number(clienteId),
+  tipo: "venta",
+  monto: total,
+  saldo: nuevoSaldo,
+  venta_id: venta.id,
+  fecha: new Date() // 🔥 agregalo
+})
   }
 
   // 🔹 4. ACTUALIZAR STOCK
