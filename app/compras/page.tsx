@@ -729,59 +729,87 @@ const itemsCalculados = calcularItemsConExtras(
             ) : (
               <div className="px-6 py-4">
                 {tabDetalle === "detalle" && (
-                  <div>
-                    <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-                      <thead className="bg-gray-50 text-gray-500 text-xs">
-                        <tr>
-                          <th className="text-left px-3 py-2">Producto</th>
-                          <th className="text-center px-3 py-2">Cant.</th>
-                          <th className="text-right px-3 py-2">P. unit.</th>
-                          <th className="text-right px-3 py-2">Subtotal</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {detalle.map(d => (
-                          <tr key={d.id}>
-                            <td className="px-3 py-2">{d.productos?.nombre ?? "—"}</td>
-                            <td className="px-3 py-2 text-center">{d.cantidad}</td>
-                            <td className="px-3 py-2 text-right">{fmt(d.precio_unitario)}</td>
-                            <td className="px-3 py-2 text-right font-medium">{fmt(d.subtotal)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="bg-gray-50 text-sm">
-                        {/* Subtotal base siempre visible si hay IVA o flete */}
-                        {(compraVer.incluye_iva || compraVer.monto_flete > 0) && (
-                          <tr>
-                            <td colSpan={3} className="px-3 py-1.5 text-right text-gray-500 text-xs">Subtotal:</td>
-                            <td className="px-3 py-1.5 text-right text-gray-700 text-xs">
-                              {fmt(compraVer.total - compraVer.monto_iva - compraVer.monto_flete)}
-                            </td>
-                          </tr>
-                        )}
-                        {compraVer.incluye_iva && compraVer.monto_iva > 0 && (
-                          <tr>
-                            <td colSpan={3} className="px-3 py-1.5 text-right text-blue-600 text-xs">IVA {compraVer.porcentaje_iva}%:</td>
-                            <td className="px-3 py-1.5 text-right text-blue-600 text-xs">{fmt(compraVer.monto_iva)}</td>
-                          </tr>
-                        )}
-                        {compraVer.monto_flete > 0 && (
-                          <tr>
-                            <td colSpan={3} className="px-3 py-1.5 text-right text-orange-600 text-xs">🚚 Flete:</td>
-                            <td className="px-3 py-1.5 text-right text-orange-600 text-xs">{fmt(compraVer.monto_flete)}</td>
-                          </tr>
-                        )}
-                        <tr className="border-t border-gray-200">
-                          <td colSpan={3} className="px-3 py-2 text-right font-semibold text-xs">Total:</td>
-                          <td className="px-3 py-2 text-right font-bold">{fmt(compraVer.total)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                    {compraVer.notas && (
-                      <p className="mt-3 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">📝 {compraVer.notas}</p>
-                    )}
-                  </div>
-                )}
+  <div>
+    {(() => {
+      // Recalcular IVA y flete por ítem usando proporciones
+      const subtotalBase = detalle.reduce((s, d) => s + d.cantidad * d.precio_unitario, 0);
+      const detalleConExtras = detalle.map((d) => {
+        const subtotalItem = d.cantidad * d.precio_unitario;
+        const proporcion = subtotalBase > 0 ? subtotalItem / subtotalBase : 0;
+        const ivaItem = compraVer.incluye_iva ? Math.round(compraVer.monto_iva * proporcion * 100) / 100 : 0;
+        const fleteItem = compraVer.monto_flete > 0 ? Math.round(compraVer.monto_flete * proporcion * 100) / 100 : 0;
+        return { ...d, subtotalItem, ivaItem, fleteItem };
+      });
+
+      const hayIva = compraVer.incluye_iva && compraVer.monto_iva > 0;
+      const hayFlete = compraVer.monto_flete > 0;
+
+      return (
+        <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+          <thead className="bg-gray-50 text-gray-500 text-xs">
+            <tr>
+              <th className="text-left px-3 py-2">Producto</th>
+              <th className="text-center px-3 py-2">Cant.</th>
+              <th className="text-right px-3 py-2">P. unit.</th>
+              <th className="text-right px-3 py-2">Subtotal</th>
+              {hayIva && <th className="text-right px-3 py-2 text-blue-600">IVA</th>}
+              {hayFlete && <th className="text-right px-3 py-2 text-orange-600">Flete</th>}
+              <th className="text-right px-3 py-2">Total</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {detalleConExtras.map((d) => (
+              <tr key={d.id}>
+                <td className="px-3 py-2 text-xs">{d.productos?.nombre ?? "—"}</td>
+                <td className="px-3 py-2 text-center text-xs">{d.cantidad}</td>
+                <td className="px-3 py-2 text-right text-xs">{fmt(d.precio_unitario)}</td>
+                <td className="px-3 py-2 text-right text-xs">{fmt(d.subtotalItem)}</td>
+                {hayIva && <td className="px-3 py-2 text-right text-blue-600 text-xs">{fmt(d.ivaItem)}</td>}
+                {hayFlete && <td className="px-3 py-2 text-right text-orange-600 text-xs">{fmt(d.fleteItem)}</td>}
+                <td className="px-3 py-2 text-right font-medium text-xs">
+                  {fmt(d.subtotalItem + d.ivaItem + d.fleteItem)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="bg-gray-50 text-sm">
+            {(hayIva || hayFlete) && (
+              <tr>
+                <td colSpan={hayIva && hayFlete ? 6 : 5} className="px-3 py-1.5 text-right text-gray-500 text-xs">Subtotal:</td>
+                <td className="px-3 py-1.5 text-right text-gray-700 text-xs">
+                  {fmt(compraVer.total - compraVer.monto_iva - compraVer.monto_flete)}
+                </td>
+              </tr>
+            )}
+            {hayIva && (
+              <tr>
+                <td colSpan={hayIva && hayFlete ? 6 : 5} className="px-3 py-1.5 text-right text-blue-600 text-xs">
+                  IVA {compraVer.porcentaje_iva}%:
+                </td>
+                <td className="px-3 py-1.5 text-right text-blue-600 text-xs">{fmt(compraVer.monto_iva)}</td>
+              </tr>
+            )}
+            {hayFlete && (
+              <tr>
+                <td colSpan={hayIva && hayFlete ? 6 : 5} className="px-3 py-1.5 text-right text-orange-600 text-xs">
+                  🚚 Flete:
+                </td>
+                <td className="px-3 py-1.5 text-right text-orange-600 text-xs">{fmt(compraVer.monto_flete)}</td>
+              </tr>
+            )}
+            <tr className="border-t border-gray-200">
+              <td colSpan={hayIva && hayFlete ? 6 : hayIva || hayFlete ? 5 : 3} className="px-3 py-2 text-right font-semibold text-xs">Total:</td>
+              <td className="px-3 py-2 text-right font-bold">{fmt(compraVer.total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      );
+    })()}
+    {compraVer.notas && (
+      <p className="mt-3 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">📝 {compraVer.notas}</p>
+    )}
+  </div>
+)}
 
                 {tabDetalle === "pagos" && (
                   <div>
