@@ -26,18 +26,15 @@ export default function Productos() {
   const [productos, setProductos] = useState<any[]>([])
   const [cargando, setCargando] = useState(true)
   const [toast, setToast] = useState<any>(null)
-
   const [busqueda, setBusqueda] = useState("")
-
   const [nombre, setNombre] = useState("")
   const [costo, setCosto] = useState("")
   const [margen, setMargen] = useState("")
   const [stock, setStock] = useState("")
-
   const [editando, setEditando] = useState<any | null>(null)
-
   const [archivo, setArchivo] = useState<File | null>(null)
   const [margenImportacion, setMargenImportacion] = useState("")
+  const [confirmEliminar, setConfirmEliminar] = useState<any | null>(null)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
@@ -45,197 +42,93 @@ export default function Productos() {
   }
 
   async function cargar() {
-    const { data } = await supabase
-      .from("productos")
-      .select("*")
-      .order("nombre")
-
+    const { data } = await supabase.from("productos").select("*").order("nombre")
     setProductos(data || [])
     setCargando(false)
   }
 
-  useEffect(() => {
-    cargar()
-  }, [])
+  useEffect(() => { cargar() }, [])
 
   async function agregar() {
-
     if (!nombre || !costo || !margen || !stock) {
       mostrarToast("⚠️ Completá todos los campos", "error")
       return
     }
-
     const costoNum = Number(costo)
     const margenNum = Number(margen)
     const precioVenta = costoNum + (costoNum * margenNum / 100)
-
     const { data, error } = await supabase.from("productos").insert([{
-      nombre,
-      costo: costoNum,
-      margen: margenNum,
-      precio_venta: precioVenta,
-      stock: Number(stock)
+      nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(stock)
     }]).select()
-
     if (error) return mostrarToast("❌ " + error.message, "error")
-
-    // 🔥 AUDITORÍA
-    await supabase.rpc("registrar_auditoria", {
-      accion: "crear",
-      tabla: "productos",
-      registro_id: data?.[0]?.id || 0
-    })
-
+    await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 })
     mostrarToast("✅ Producto agregado", "ok")
-    setNombre("")
-    setCosto("")
-    setMargen("")
-    setStock("")
+    setNombre(""); setCosto(""); setMargen(""); setStock("")
     cargar()
   }
 
   async function guardarEdicion() {
-
     if (!editando.nombre || !editando.costo || !editando.margen) {
       mostrarToast("⚠️ Completá todos los campos", "error")
       return
     }
-
     const costoNum = Number(editando.costo)
     const margenNum = Number(editando.margen)
     const precioVenta = costoNum + (costoNum * margenNum / 100)
-
-    const { error } = await supabase
-      .from("productos")
-      .update({
-        nombre: editando.nombre,
-        costo: costoNum,
-        margen: margenNum,
-        precio_venta: precioVenta,
-        stock: Number(editando.stock)
-      })
-      .eq("id", editando.id)
-
+    const { error } = await supabase.from("productos").update({
+      nombre: editando.nombre, costo: costoNum, margen: margenNum,
+      precio_venta: precioVenta, stock: Number(editando.stock)
+    }).eq("id", editando.id)
     if (error) return mostrarToast("❌ " + error.message, "error")
-
-    // 🔥 AUDITORÍA
-    await supabase.rpc("registrar_auditoria", {
-      accion: "editar",
-      tabla: "productos",
-      registro_id: editando.id
-    })
-
+    await supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id })
     mostrarToast("✅ Producto actualizado", "ok")
     setEditando(null)
     cargar()
   }
 
-  async function eliminar(id: number) {
-
-    if (!confirm("¿Eliminar este producto?")) return
-
-    const { error } = await supabase
-      .from("productos")
-      .delete()
-      .eq("id", id)
-
-    if (error) return mostrarToast("❌ " + error.message, "error")
-
-    // 🔥 AUDITORÍA
-    await supabase.rpc("registrar_auditoria", {
-      accion: "eliminar",
-      tabla: "productos",
-      registro_id: id
-    })
-
+  async function confirmarEliminar() {
+    if (!confirmEliminar) return
+    const { error } = await supabase.from("productos").delete().eq("id", confirmEliminar.id)
+    if (error) {
+      mostrarToast("❌ " + error.message, "error")
+      setConfirmEliminar(null)
+      return
+    }
+    await supabase.rpc("registrar_auditoria", { accion: "eliminar", tabla: "productos", registro_id: confirmEliminar.id })
     mostrarToast("🗑️ Producto eliminado", "ok")
+    setConfirmEliminar(null)
     cargar()
   }
 
   async function importarCSV() {
-
-    if (!archivo) {
-      mostrarToast("⚠️ Seleccioná un archivo", "error")
-      return
-    }
-
-    if (!margenImportacion) {
-      mostrarToast("⚠️ Ingresá un margen antes de importar", "error")
-      return
-    }
-
+    if (!archivo) { mostrarToast("⚠️ Seleccioná un archivo", "error"); return }
+    if (!margenImportacion) { mostrarToast("⚠️ Ingresá un margen antes de importar", "error"); return }
     const texto = await archivo.text()
     const lineas = texto.split("\n").slice(1)
-
-    let nuevos = 0
-    let actualizados = 0
-
+    let nuevos = 0, actualizados = 0
     const margenDefault = Number(margenImportacion)
-
     for (let linea of lineas) {
-
       if (!linea.trim()) continue
-
       const separador = linea.includes(";") ? ";" : ","
       const [producto, precio] = linea.split(separador)
-
       const nombre = producto?.trim()
       const costo = Number(precio)
-
       if (!nombre || !costo) continue
-
-      const { data: existente } = await supabase
-        .from("productos")
-        .select("*")
-        .eq("nombre", nombre)
-        .maybeSingle()
-
+      const { data: existente } = await supabase.from("productos").select("*").eq("nombre", nombre).maybeSingle()
       if (existente) {
-
         const precioVenta = costo + (costo * existente.margen / 100)
-
-        await supabase
-          .from("productos")
-          .update({
-            costo,
-            precio_venta: precioVenta
-          })
-          .eq("id", existente.id)
-
+        await supabase.from("productos").update({ costo, precio_venta: precioVenta }).eq("id", existente.id)
+        await supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: existente.id })
         actualizados++
-
-        // 🔥 AUDITORÍA
-        await supabase.rpc("registrar_auditoria", {
-          accion: "editar",
-          tabla: "productos",
-          registro_id: existente.id
-        })
-
       } else {
-
         const precioVenta = costo + (costo * margenDefault / 100)
-
-        const { data } = await supabase
-          .from("productos")
-          .insert([{
-            nombre,
-            costo,
-            margen: margenDefault,
-            precio_venta: precioVenta,
-            stock: 0
-          }]).select()
-
+        const { data } = await supabase.from("productos").insert([{
+          nombre, costo, margen: margenDefault, precio_venta: precioVenta, stock: 0
+        }]).select()
+        await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 })
         nuevos++
-
-        // 🔥 AUDITORÍA
-        await supabase.rpc("registrar_auditoria", {
-          accion: "crear",
-          tabla: "productos",
-          registro_id: data?.[0]?.id || 0
-        })
       }
     }
-
     mostrarToast(`✅ ${nuevos} nuevos · ${actualizados} actualizados`, "ok")
     setArchivo(null)
     cargar()
@@ -249,38 +142,21 @@ export default function Productos() {
 
   return (
     <div>
-
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 
       <h1>📦 Productos</h1>
 
       <div style={{ marginBottom: 20 }}>
-        
-        <input
-          type="number"
-          placeholder="% Margen (ej: 40)"
-          value={margenImportacion}
+        <input type="number" placeholder="% Margen (ej: 40)" value={margenImportacion}
           onChange={(e) => setMargenImportacion(e.target.value)}
-          style={{ width: 180, marginRight: 10 }}
-        />
-
-        <input 
-          type="file" 
-          accept=".csv"
-          onChange={(e) => setArchivo(e.target.files?.[0] || null)}
-        />
-
-        <button onClick={importarCSV}>
-          📥 Importar CSV
-        </button>
+          style={{ width: 180, marginRight: 10 }} />
+        <input type="file" accept=".csv" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
+        <button onClick={importarCSV}>📥 Importar CSV</button>
       </div>
 
-      <input
-        placeholder="Buscar producto..."
-        value={busqueda}
+      <input placeholder="Buscar producto..." value={busqueda}
         onChange={(e) => setBusqueda(e.target.value)}
-        style={{ width: "100%", marginBottom: 20, padding: 10 }}
-      />
+        style={{ width: "100%", marginBottom: 20, padding: 10 }} />
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 30 }}>
         <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
@@ -291,75 +167,66 @@ export default function Productos() {
       </div>
 
       {productosFiltrados.map(p => {
-
         const costoNum = Number(editando?.costo || 0)
         const margenNum = Number(editando?.margen || 0)
         const precioEstimado = costoNum + (costoNum * margenNum / 100)
-
         return (
-          <div key={p.id} style={{
-            background: "white",
-            padding: 15,
-            marginBottom: 10,
-            borderRadius: 10
-          }}>
-
+          <div key={p.id} style={{ background: "white", padding: 15, marginBottom: 10, borderRadius: 10 }}>
             {editando?.id === p.id ? (
-
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-
                 <label><b>🏷️ Nombre</b></label>
                 <input value={editando.nombre || ""} onChange={e => setEditando({ ...editando, nombre: e.target.value })} />
-
                 <label><b>💰 Costo</b></label>
                 <input type="number" value={editando.costo || ""} onChange={e => setEditando({ ...editando, costo: e.target.value })} />
-
                 <label><b>📊 % Margen</b></label>
                 <input type="number" value={editando.margen || ""} onChange={e => setEditando({ ...editando, margen: e.target.value })} />
-
                 <label><b>📦 Stock</b></label>
                 <input type="number" value={editando.stock || ""} onChange={e => setEditando({ ...editando, stock: e.target.value })} />
-
-                <div style={{
-                  background: "#f1f3f5",
-                  padding: 10,
-                  borderRadius: 8,
-                  marginTop: 10
-                }}>
+                <div style={{ background: "#f1f3f5", padding: 10, borderRadius: 8, marginTop: 10 }}>
                   💵 <b>Precio estimado:</b> {formatearPrecio(precioEstimado)}
                 </div>
-
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={guardarEdicion}>💾 Guardar</button>
                   <button onClick={() => setEditando(null)}>✖️ Cancelar</button>
                 </div>
-
               </div>
-
             ) : (
-
               <div>
                 <b>{p.nombre}</b>
-
                 {p.stock <= 5 && <span style={{ marginLeft: 10 }}>⚠️ Stock bajo</span>}
-
-                <p>
-                  💰 Costo: {formatearPrecio(p.costo)} · 📊 Margen: {p.margen}% · 💵 Venta: {formatearPrecio(p.precio_venta)}
-                </p>
+                <p>💰 Costo: {formatearPrecio(p.costo)} · 📊 Margen: {p.margen}% · 💵 Venta: {formatearPrecio(p.precio_venta)}</p>
                 <p>📦 Stock: {p.stock}</p>
-
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => setEditando({ ...p })}>✏️ Editar</button>
-                  <button onClick={() => eliminar(p.id)} style={{ background: "red", color: "white" }}>🗑️</button>
+                  <button onClick={() => setConfirmEliminar(p)} style={{ background: "red", color: "white" }}>🗑️</button>
                 </div>
               </div>
-
             )}
-
           </div>
         )
       })}
 
+      {/* Modal confirmar eliminar */}
+      {confirmEliminar && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">¿Eliminar producto?</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              Vas a eliminar <strong>{confirmEliminar.nombre}</strong>. Esta acción no se puede deshacer.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setConfirmEliminar(null)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+                Cancelar
+              </button>
+              <button onClick={confirmarEliminar}
+                className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors">
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
