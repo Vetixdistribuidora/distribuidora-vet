@@ -243,81 +243,103 @@ export default function Ventas() {
   const total = subtotal + (subtotal * ivaNum / 100)
 
   async function guardarVenta() {
-    if (!clienteId || carrito.length === 0) {
-      mostrarToast("Faltan datos", "error")
-      return
-    }
-
-    for (const item of carrito) {
-      const producto = productos.find(p => p.id === item.producto_id)
-      if (!producto) continue
-      const nuevoStock = producto.stock - item.cantidad
-      if (nuevoStock < 0) {
-        mostrarToast("Sin stock para: " + item.nombre, "error")
-        return
-      }
-      const { error } = await supabase
-        .from("productos")
-        .update({ stock: nuevoStock })
-        .eq("id", item.producto_id)
-      if (error) {
-        mostrarToast("Error al actualizar stock: " + error.message, "error")
-        return
-      }
-    }
-
-    const { data: ventaData, error } = await supabase.rpc("registrar_venta", {
-      p_cliente_id: Number(clienteId),
-      p_total: total,
-      p_items: carrito,
-      p_estado: esCuentaCorriente ? "cuenta_corriente" : "cobrada",
-      p_nro_factura: nroFactura
-    })
-
-    if (error) {
-      mostrarToast("Error: " + error.message, "error")
-      return
-    }
-
-    // Buscar el id de la venta recién creada por nro_factura
-    const { data: ventaCreada } = await supabase
-      .from("ventas")
-      .select("id")
-      .eq("nro_factura", nroFactura)
-      .order("id", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    const ventaId = ventaCreada?.id || null
-
-    const datosImpresion: DatosImpresion = {
-      nroFactura,
-      clienteSeleccionado,
-      carrito: [...carrito],
-      subtotal,
-      ivaNum,
-      total,
-      esCuentaCorriente
-    }
-
-    // Guardar con venta_id como clave principal
-    await supabase.from("facturas_impresion").insert([{
-      nro_factura: nroFactura,
-      cliente_id: Number(clienteId),
-      venta_id: ventaId,
-      datos: datosImpresion
-    }])
-
-    mostrarToast(esCuentaCorriente ? "Venta guardada en cuenta corriente" : "Venta cobrada", "ok")
-
-    setCarrito([])
-    setClienteId("")
-    setClienteSeleccionado(null)
-    setEsCuentaCorriente(false)
-    cargar()
-
-    // NO imprime automáticamente — el usuario usa el botón "Imprimir / PDF"
+  if (!clienteId || carrito.length === 0) {
+    mostrarToast("Faltan datos", "error")
+    return
   }
+
+  // 🔹 Validar stock antes
+  for (const item of carrito) {
+    const producto = productos.find(p => p.id === item.producto_id)
+    if (!producto) continue
+
+    if (item.cantidad > producto.stock) {
+      mostrarToast("Sin stock para: " + item.nombre, "error")
+      return
+    }
+  }
+
+  // 🔹 Crear venta
+  const { data: venta, error: errorVenta } = await supabase
+    .from("ventas")
+    .insert({
+      cliente_id: Number(clienteId),
+      total: total,
+      fecha: new Date(),
+      estado: esCuentaCorriente ? "cuenta_corriente" : "cobrada",
+      nro_factura: nroFactura
+    })
+    .select()
+    .single()
+
+  if (errorVenta || !venta) {
+    mostrarToast("Error al guardar venta", "error")
+    return
+  }
+
+  // 🔥 Crear detalle con venta_id
+  const detalles = carrito.map(item => ({
+    venta_id: venta.id,
+    producto_id: item.producto_id,
+    cantidad: item.cantidad,
+    precio: item.precio
+  }))
+
+  const { error: errorDetalle } = await supabase
+    .from("detalle_ventas")
+    .insert(detalles)
+
+  if (errorDetalle) {
+    mostrarToast("Error al guardar detalle", "error")
+    return
+  }
+
+  // 🔹 Actualizar stock (después de guardar)
+  for (const item of carrito) {
+    const producto = productos.find(p => p.id === item.producto_id)
+    if (!producto) continue
+
+    await supabase
+      .from("productos")
+      .update({
+        stock: producto.stock - item.cantidad
+      })
+      .eq("id", item.producto_id)
+  }
+
+  // 🔹 Guardar datos impresión (ahora con venta_id correcto)
+  const datosImpresion: DatosImpresion = {
+    nroFactura,
+    clienteSeleccionado,
+    carrito: [...carrito],
+    subtotal,
+    ivaNum,
+    total,
+    esCuentaCorriente
+  }
+
+  await supabase.from("facturas_impresion").insert([{
+    nro_factura: nroFactura,
+    cliente_id: Number(clienteId),
+    venta_id: venta.id,   // 🔥 ahora correcto
+    datos: datosImpresion
+  }])
+
+  mostrarToast(
+    esCuentaCorriente
+      ? "Venta guardada en cuenta corriente"
+      : "Venta cobrada",
+    "ok"
+  )
+
+  // 🔹 limpiar
+  setCarrito([])
+  setClienteId("")
+  setClienteSeleccionado(null)
+  setEsCuentaCorriente(false)
+
+  cargar()
+}
 
   async function imprimirTicket() {
     if (!clienteSeleccionado || carrito.length === 0) return

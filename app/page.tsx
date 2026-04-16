@@ -10,60 +10,60 @@ import {
 export default function Dashboard() {
 
   const router = useRouter()
-
   const [loading, setLoading] = useState(true)
 
-  const [ventasHoy, setVentasHoy] = useState(0)
-  const [ventasMes, setVentasMes] = useState(0)
-  const [gananciaMes, setGananciaMes] = useState(0)
-  const [cantidadVentas, setCantidadVentas] = useState(0)
-  const [ticketPromedio, setTicketPromedio] = useState(0)
-
-  const [stockBajo, setStockBajo] = useState<any[]>([])
-  const [topProductos, setTopProductos] = useState<any[]>([])
+  const [kpis, setKpis] = useState<any>({})
+  const [alertas, setAlertas] = useState<any>({})
   const [ventasGrafico, setVentasGrafico] = useState<any[]>([])
-
-  const [sinVentas, setSinVentas] = useState<any[]>([])
-  const [masRentables, setMasRentables] = useState<any[]>([])
 
   useEffect(() => {
     iniciar()
   }, [])
 
   async function iniciar() {
-  const { data } = await supabase.auth.getSession()
+    const { data } = await supabase.auth.getSession()
 
-  if (!data.session) {
-    router.push("/login")
-    return
+    if (!data.session) {
+      router.push("/login")
+      return
+    }
+
+    await cargarDatos()
+    setLoading(false)
   }
-
-  await cargarDatos()
-  setLoading(false)
-}
 
   async function cargarDatos() {
 
     const hoy = new Date().toISOString().slice(0, 10)
+
     const inicioMes = new Date()
     inicioMes.setDate(1)
+
+    const mesAnterior = new Date()
+    mesAnterior.setMonth(mesAnterior.getMonth() - 1)
+    mesAnterior.setDate(1)
 
     // 🔹 Ventas
     const { data: ventas } = await supabase.from("ventas").select("*")
 
-    const ventasHoyData = ventas?.filter(v => v.fecha.startsWith(hoy)) || []
-    const ventasMesData = ventas?.filter(v => v.fecha >= inicioMes.toISOString()) || []
+    const ventasHoy = ventas?.filter(v => v.fecha.startsWith(hoy)) || []
+    const ventasMes = ventas?.filter(v => v.fecha >= inicioMes.toISOString()) || []
+    const ventasMesAnterior = ventas?.filter(v =>
+      v.fecha >= mesAnterior.toISOString() &&
+      v.fecha < inicioMes.toISOString()
+    ) || []
 
-    const totalHoy = ventasHoyData.reduce((acc, v) => acc + Number(v.total), 0)
-    const totalMes = ventasMesData.reduce((acc, v) => acc + Number(v.total), 0)
+    const totalHoy = ventasHoy.reduce((acc, v) => acc + Number(v.total), 0)
+    const totalMes = ventasMes.reduce((acc, v) => acc + Number(v.total), 0)
+    const totalAnterior = ventasMesAnterior.reduce((acc, v) => acc + Number(v.total), 0)
 
-    setVentasHoy(totalHoy)
-    setVentasMes(totalMes)
-    setCantidadVentas(ventasMesData.length)
+    const crecimiento = totalAnterior
+      ? ((totalMes - totalAnterior) / totalAnterior) * 100
+      : 0
 
-    if (ventasMesData.length) {
-      setTicketPromedio(totalMes / ventasMesData.length)
-    }
+    const ticketPromedio = ventasMes.length
+      ? totalMes / ventasMes.length
+      : 0
 
     // 🔹 Productos
     const { data: productos } = await supabase.from("productos").select("*")
@@ -73,7 +73,7 @@ export default function Dashboard() {
       .from("detalle_ventas")
       .select("producto_id, cantidad")
 
-    // 🔹 Ganancia REAL
+    // 🔹 Ganancia
     let ganancia = 0
 
     if (detalleVentas && productos) {
@@ -85,44 +85,54 @@ export default function Dashboard() {
       })
     }
 
-    setGananciaMes(ganancia)
+    const margen = totalMes ? (ganancia / totalMes) * 100 : 0
 
-    // 🔹 Stock bajo
-    setStockBajo(productos?.filter(p => p.stock <= 5) || [])
+    // 🔹 Capital en stock
+    const capitalStock = productos?.reduce(
+      (acc, p) => acc + p.costo * p.stock,
+      0
+    ) || 0
 
-    // 🔹 Top productos
-    if (detalleVentas) {
-      const conteo: any = {}
+    // 🔹 ALERTAS
 
-      detalleVentas.forEach(d => {
-        conteo[d.producto_id] = (conteo[d.producto_id] || 0) + d.cantidad
-      })
+    // Stock bajo
+    const stockBajo = productos?.filter(p => p.stock <= 5) || []
 
-      const topIds = Object.entries(conteo)
-        .sort((a: any, b: any) => b[1] - a[1])
-        .slice(0, 5)
-        .map(d => Number(d[0]))
-
-      const top = productos?.filter(p => topIds.includes(p.id)) || []
-      setTopProductos(top)
-    }
-
-    // 🔹 Sin ventas
+    // Sin ventas (histórico)
     const vendidosIds = new Set(detalleVentas?.map(d => d.producto_id))
-    setSinVentas(productos?.filter(p => !vendidosIds.has(p.id)) || [])
+    const sinVentas = productos?.filter(p => !vendidosIds.has(p.id)) || []
 
-    // 🔹 Más rentables
-    const rentables = productos
-      ?.map(p => ({
-        ...p,
-        ganancia: p.precio_venta - p.costo
-      }))
-      .sort((a, b) => b.ganancia - a.ganancia)
-      .slice(0, 5)
+    // Sin rotación (30 días)
+    const hace30 = new Date()
+    hace30.setDate(hace30.getDate() - 30)
 
-    setMasRentables(rentables || [])
+    const ventasRecientes = ventas?.filter(v => v.fecha >= hace30.toISOString()) || []
+    const idsRecientes = new Set(ventasRecientes.map(v => v.id))
 
-    // 🔹 Gráfico
+    const sinRotacion = productos?.filter(p =>
+  !detalleVentas?.some(d =>
+    d.producto_id === p.id
+  )
+) || []
+
+    setKpis({
+      totalHoy,
+      totalMes,
+      ganancia,
+      margen,
+      crecimiento,
+      ticketPromedio,
+      cantidadVentas: ventasMes.length,
+      capitalStock
+    })
+
+    setAlertas({
+      stockBajo,
+      sinVentas,
+      sinRotacion
+    })
+
+    // 🔹 Gráfico (7 días)
     const ultimos7 = [...Array(7)].map((_, i) => {
       const fecha = new Date()
       fecha.setDate(fecha.getDate() - i)
@@ -138,13 +148,12 @@ export default function Dashboard() {
     setVentasGrafico(ultimos7)
   }
 
-  async function logout() {
-    await supabase.auth.signOut()
-    window.location.href = "/login"
+  function formato(num: number) {
+    return "$" + Math.round(num).toLocaleString("es-AR")
   }
 
-  function formato(num: number) {
-    return "$" + num.toLocaleString("es-AR", { maximumFractionDigits: 0 })
+  function porcentaje(num: number) {
+    return num.toFixed(1) + "%"
   }
 
   if (loading) return <p style={{ padding: 30 }}>🔐 Cargando...</p>
@@ -152,23 +161,30 @@ export default function Dashboard() {
   return (
     <div style={{ padding: 20, background: "#f8f9fa", minHeight: "100vh" }}>
 
-      <button onClick={logout} style={{ marginBottom: 20 }}>
-        🚪 Cerrar sesión
-      </button>
-
       <h1>📊 Dashboard</h1>
 
-      {/* KPIs */}
-      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-        <Card titulo="Ventas hoy" valor={formato(ventasHoy)} />
-        <Card titulo="Ventas mes" valor={formato(ventasMes)} />
-        <Card titulo="Ganancia real" valor={formato(gananciaMes)} />
-        <Card titulo="Ticket promedio" valor={formato(ticketPromedio)} />
-        <Card titulo="Cantidad ventas" valor={cantidadVentas} />
-        <Card titulo="Stock bajo" valor={stockBajo.length} />
+      {/* 🧠 KPIs */}
+      <h2>📈 Rendimiento</h2>
+      <div style={grid}>
+        <Card titulo="Ventas hoy" valor={formato(kpis.totalHoy)} />
+        <Card titulo="Ventas mes" valor={formato(kpis.totalMes)} />
+        <Card titulo="Ganancia" valor={formato(kpis.ganancia)} verde />
+        <Card titulo="Margen" valor={porcentaje(kpis.margen)} verde />
+        <Card titulo="Crecimiento" valor={porcentaje(kpis.crecimiento)} />
+        <Card titulo="Ticket promedio" valor={formato(kpis.ticketPromedio)} />
+        <Card titulo="Ventas" valor={kpis.cantidadVentas} />
+        <Card titulo="Capital stock" valor={formato(kpis.capitalStock)} />
       </div>
 
-      {/* GRÁFICO */}
+      {/* ⚠️ ALERTAS */}
+      <h2 style={{ marginTop: 30 }}>⚠️ Alertas</h2>
+      <div style={grid}>
+        <Alerta titulo="Stock bajo" valor={alertas.stockBajo.length} />
+        <Alerta titulo="Sin ventas" valor={alertas.sinVentas.length} />
+        <Alerta titulo="Sin rotación (30d)" valor={alertas.sinRotacion.length} />
+      </div>
+
+      {/* 📈 GRÁFICO */}
       <div style={cardGrande}>
         <h3>📈 Ventas últimos 7 días</h3>
         <ResponsiveContainer width="100%" height={250}>
@@ -181,46 +197,40 @@ export default function Dashboard() {
         </ResponsiveContainer>
       </div>
 
-      {/* BLOQUES */}
-      <Bloque titulo="⚠️ Stock bajo" lista={stockBajo} />
-      <Bloque titulo="🥇 Más vendidos" lista={topProductos} />
-      <Bloque titulo="🟡 Sin ventas" lista={sinVentas} />
-      <Bloque titulo="🟢 Más rentables" lista={masRentables} mostrarGanancia />
     </div>
   )
 }
 
 // 🎨 COMPONENTES
 
-function Card({ titulo, valor }: any) {
-
-  let color = "#333"
-  if (titulo.includes("Ganancia")) color = "#2f9e44"
-  if (titulo.includes("Stock")) color = "#e03131"
-
+function Card({ titulo, valor, verde }: any) {
   return (
     <div style={card}>
       <p style={{ color: "#666" }}>{titulo}</p>
+      <h2 style={{ color: verde ? "#2f9e44" : "#111" }}>{valor}</h2>
+    </div>
+  )
+}
+
+function Alerta({ titulo, valor }: any) {
+
+  let color = "#2f9e44"
+  if (valor > 0) color = "#e03131"
+
+  return (
+    <div style={card}>
+      <p>{titulo}</p>
       <h2 style={{ color }}>{valor}</h2>
     </div>
   )
 }
 
-function Bloque({ titulo, lista, mostrarGanancia }: any) {
-  return (
-    <div style={cardGrande}>
-      <h3>{titulo}</h3>
+// 🎨 estilos
 
-      {lista.length === 0 && <p>Todo en orden 👍</p>}
-
-      {lista.slice(0, 5).map((p: any) => (
-        <p key={p.id}>
-          {p.nombre}
-          {mostrarGanancia && ` — 💰 $${Math.round(p.ganancia)}`}
-        </p>
-      ))}
-    </div>
-  )
+const grid: React.CSSProperties = {
+  display: "flex",
+  gap: 20,
+  flexWrap: "wrap"
 }
 
 const card = {
