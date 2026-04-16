@@ -40,43 +40,36 @@ export default function CuentasCorrientes() {
 
   // 🔥 ESTA ES LA FUNCIÓN PAGAR
   async function pagar() {
+  console.log("---- INICIANDO PAGO ----")
+  console.log("clienteId:", clienteId)
+  console.log("montoPago:", montoPago)
+
   if (!clienteId || !montoPago) return
 
   const monto = Number(montoPago)
 
-  if (monto <= 0) {
-    alert("Monto inválido")
-    return
-  }
-
-  const { data: ultimo } = await supabase
-    .from("cuentas_corrientes")
-    .select("saldo")
-    .eq("cliente_id", Number(clienteId))
-    .order("fecha", { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  const saldoAnterior = ultimo?.saldo || 0
-  const nuevoSaldo = saldoAnterior - monto
-
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("cuentas_corrientes")
     .insert({
       cliente_id: Number(clienteId),
       tipo: "pago",
       monto: -monto,
-      saldo: nuevoSaldo,
-      fecha: new Date() // 🔥 CLAVE
+      fecha: new Date()
     })
+    .select()
+
+  console.log("RESULTADO INSERT:", data, error)
 
   if (error) {
     alert("Error al registrar pago")
     return
   }
 
+  console.log("RECARGANDO MOVIMIENTOS...")
+
+  await cargarMovimientos(clienteId)
+
   setMontoPago("")
-  cargarMovimientos(clienteId)
 }
 
   function fmt(n: number) {
