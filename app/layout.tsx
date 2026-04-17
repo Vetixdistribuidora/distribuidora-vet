@@ -6,53 +6,27 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+import AuthGuard from "@/components/AuthGuard"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [usuario, setUsuario] = useState<any>(null)
-  const [loadingAuth, setLoadingAuth] = useState(true)
   const router = useRouter()
 
   useEffect(() => {
-    checkUser()
+    // Escucha cambios de sesión en tiempo real
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        setUsuario(null)
+        router.replace("/login")
+      } else {
+        setUsuario(session.user)
+      }
+    })
+    return () => subscription.unsubscribe()
   }, [])
 
-  async function checkUser() {
-    const { data } = await supabase.auth.getUser()
-    const user = data?.user
-
-    if (!user) {
-      router.push("/login")
-      return
-    }
-
-    const usuariosPermitidos = [
-      "clauforte@gmail.com",
-      "santiagozabalegui@gmail.com"
-    ]
-
-    if (!usuariosPermitidos.includes(user.email ?? "")) {
-      await supabase.auth.signOut()
-      router.push("/login")
-      return
-    }
-
-    setUsuario(user)
-    setLoadingAuth(false)
-  }
-
-  // Bloquea render hasta confirmar sesión
-  if (loadingAuth) {
-    return (
-      <html lang="es">
-        <body style={{ margin: 0, background: "#0a0a0a", display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>
-          <div style={{ color: "#6b7280", fontFamily: "Segoe UI", fontSize: "14px" }}>Verificando sesión...</div>
-        </body>
-      </html>
-    )
-  }
-
-  if (!usuario) return null
+  const isLoginPage = pathname === "/login"
 
   const getItemStyle = (path: string) => {
     const active = path === "/" ? pathname === "/" : pathname.startsWith(path)
@@ -100,8 +74,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return ""
   }
 
-  const inicialAvatar = usuario?.email?.charAt(0).toUpperCase() ?? "U"
+  const inicialAvatar = usuario?.email?.charAt(0).toUpperCase() ?? "?"
   const emailCorto = usuario?.email ?? ""
+
+  // En la página de login, renderizar sin sidebar
+  if (isLoginPage) {
+    return (
+      <html lang="es">
+        <body style={{ margin: 0, fontFamily: "Segoe UI", background: "#f1f3f5" }}>
+          {children}
+        </body>
+      </html>
+    )
+  }
 
   return (
     <html lang="es">
@@ -124,8 +109,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           flexDirection: "column",
           justifyContent: "space-between"
         }}>
-
-          {/* TOP */}
           <div style={{ padding: "20px" }}>
 
             {/* LOGO VETIX */}
@@ -140,7 +123,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 justifyContent: "center",
                 flexShrink: 0,
               }}>
-                {/* Pata SVG */}
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
                   <ellipse cx="6" cy="5" rx="2" ry="3" />
                   <ellipse cx="12" cy="3.5" rx="2" ry="3" />
@@ -218,7 +200,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             alignItems: "center",
             gap: "10px"
           }}>
-            {/* Avatar */}
             <div style={{
               width: "34px",
               height: "34px",
@@ -235,7 +216,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {inicialAvatar}
             </div>
 
-            {/* Info */}
             <div style={{ flex: 1, overflow: "hidden" }}>
               <div style={{
                 fontSize: "12px",
@@ -252,11 +232,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
             </div>
 
-            {/* Botón salir */}
             <button
               onClick={async () => {
                 await supabase.auth.signOut()
-                router.push("/login")
+                setUsuario(null)
+                router.replace("/login")
               }}
               title="Cerrar sesión"
               style={{
@@ -282,7 +262,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Salir
             </button>
           </div>
-
         </aside>
 
         {/* MAIN */}
@@ -292,7 +271,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           display: "flex",
           flexDirection: "column"
         }}>
-
           {/* HEADER */}
           <div style={{
             background: "white",
@@ -304,7 +282,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             gap: "12px",
             boxShadow: "0 1px 4px rgba(0,0,0,0.06)"
           }}>
-            {/* Barra de color lateral */}
             <div style={{
               width: "4px",
               height: "24px",
@@ -315,15 +292,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <span style={{ fontWeight: "700", fontSize: "16px", color: "#111827" }}>{getTitle()}</span>
           </div>
 
-          {/* CONTENT */}
+          {/* CONTENT — protegido */}
           <div style={{
             padding: "30px",
             overflowY: "auto",
             flex: 1
           }}>
-            {children}
+            <AuthGuard>{children}</AuthGuard>
           </div>
-
         </main>
 
       </body>
