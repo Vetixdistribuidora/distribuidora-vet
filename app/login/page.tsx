@@ -20,7 +20,7 @@ export default function Login() {
     if (error) {
       alert("Error: " + error.message)
     } else {
-      router.push("/dashboard")
+      router.push("/")
     }
   }
 
