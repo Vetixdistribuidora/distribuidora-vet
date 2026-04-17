@@ -14,40 +14,62 @@ export default function LayoutClient({ children }: { children: React.ReactNode }
   const [loadingAuth, setLoadingAuth] = useState(true)
 
   useEffect(() => {
-    checkUser()
+    const init = async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser()
+
+        if (error) {
+          console.error("Error obteniendo usuario:", error.message)
+          router.push("/login")
+          return
+        }
+
+        const user = data?.user
+
+        if (!user) {
+          router.push("/login")
+          return
+        }
+
+        const usuariosPermitidos = [
+          "admin@dvs.com",
+          "sofia@dvs.com"
+        ]
+
+        if (!usuariosPermitidos.includes(user.email ?? "")) {
+          await supabase.auth.signOut()
+          router.push("/login")
+          return
+        }
+
+        setUsuario(user)
+
+      } catch (err) {
+        console.error("Error inesperado:", err)
+        router.push("/login")
+      } finally {
+        setLoadingAuth(false)
+      }
+    }
+
+    init()
   }, [])
 
-  async function checkUser() {
-    const { data } = await supabase.auth.getUser()
-    const user = data?.user
-
-    if (!user) {
-      router.push("/login")
-      return
-    }
-
-    const usuariosPermitidos = [
-      "admin@dvs.com",
-      "sofia@dvs.com"
-    ]
-
-    if (!usuariosPermitidos.includes(user.email ?? "")) {
-      await supabase.auth.signOut()
-      router.push("/login")
-      return
-    }
-
-    setUsuario(user)
-    setLoadingAuth(false)
-  }
-
+  // 🔒 LOADING SEGURO (ya no se queda colgado)
   if (loadingAuth) {
-  return (
-    <div style={{ padding: 50 }}>
-      Cargando...
-    </div>
-  )
-}
+    return (
+      <div style={{
+        height: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "#555",
+        fontSize: "14px"
+      }}>
+        Cargando...
+      </div>
+    )
+  }
 
   const getItemStyle = (path: string) => {
     const active = pathname.startsWith(path)
@@ -68,7 +90,10 @@ export default function LayoutClient({ children }: { children: React.ReactNode }
     }
   }
 
-  const nombre = usuario?.user_metadata?.nombre || usuario?.email || "Usuario"
+  const nombre =
+    usuario?.user_metadata?.nombre ||
+    usuario?.email ||
+    "Usuario"
 
   return (
     <div style={{
@@ -88,9 +113,9 @@ export default function LayoutClient({ children }: { children: React.ReactNode }
       }}>
 
         <div style={{ padding: "20px" }}>
-          <h2>🐾 DVS</h2>
+          <h2 style={{ marginBottom: "20px" }}>🐾 DVS</h2>
 
-          <nav style={{ marginTop: "20px" }}>
+          <nav>
             <Link href="/" style={getItemStyle("/")}>Inicio</Link>
             <Link href="/productos" style={getItemStyle("/productos")}>Productos</Link>
             <Link href="/clientes" style={getItemStyle("/clientes")}>Clientes</Link>
@@ -102,9 +127,22 @@ export default function LayoutClient({ children }: { children: React.ReactNode }
         </div>
 
         {/* USER */}
-        <div style={{ padding: "15px", borderTop: "1px solid #1f2937" }}>
-          <div>{nombre}</div>
-          <div style={{ fontSize: "12px", color: "#9ca3af" }}>
+        <div style={{
+          padding: "15px",
+          borderTop: "1px solid #1f2937"
+        }}>
+
+          <div style={{
+            fontWeight: "600",
+            fontSize: "13px"
+          }}>
+            {nombre}
+          </div>
+
+          <div style={{
+            fontSize: "11px",
+            color: "#9ca3af"
+          }}>
             {usuario?.email}
           </div>
 
@@ -115,11 +153,18 @@ export default function LayoutClient({ children }: { children: React.ReactNode }
             }}
             style={{
               marginTop: "10px",
-              width: "100%"
+              width: "100%",
+              background: "#1f2937",
+              border: "none",
+              color: "#e5e7eb",
+              padding: "8px",
+              borderRadius: "8px",
+              cursor: "pointer"
             }}
           >
             Cerrar sesión
           </button>
+
         </div>
 
       </aside>
