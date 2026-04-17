@@ -763,7 +763,7 @@ const itemsCalculados = calcularItemsConExtras(
 
       return (
         <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-          <thead className="bg-gray-50 text-gray-500 text-xs">
+          <thead className="bg-gray-100 text-gray-700 text-xs font-semibold">
             <tr>
               <th className="text-left px-3 py-2">Producto</th>
               <th className="text-center px-3 py-2">Cant.</th>
@@ -777,13 +777,13 @@ const itemsCalculados = calcularItemsConExtras(
           <tbody className="divide-y divide-gray-100">
             {detalleConExtras.map((d) => (
               <tr key={d.id}>
-                <td className="px-3 py-2 text-xs">{d.productos?.nombre ?? "—"}</td>
+                <td className="px-3 py-2 text-gray-800 text-xs">{d.productos?.nombre ?? "—"}</td>
                 <td className="px-3 py-2 text-center text-xs">{d.cantidad}</td>
                 <td className="px-3 py-2 text-right text-xs">{fmt(d.precio_unitario)}</td>
                 <td className="px-3 py-2 text-right text-xs">{fmt(d.subtotalItem)}</td>
                 {hayIva && <td className="px-3 py-2 text-right text-blue-600 text-xs">{fmt(d.ivaItem)}</td>}
                 {hayFlete && <td className="px-3 py-2 text-right text-orange-600 text-xs">{fmt(d.fleteItem)}</td>}
-                <td className="px-3 py-2 text-right font-medium text-xs">
+                <td className="px-3 py-2 text-right font-semibold text-gray-900 text-xs">
                   {fmt(d.subtotalItem + d.ivaItem + d.fleteItem)}
                 </td>
               </tr>
