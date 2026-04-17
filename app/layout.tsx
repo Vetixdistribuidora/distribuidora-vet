@@ -14,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const [usuario, setUsuario] = useState<any>(null)
   const [loadingAuth, setLoadingAuth] = useState(true)
 
+  // 🔐 CONTROL DE LOGIN
   useEffect(() => {
     checkUser()
   }, [])
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   if (loadingAuth) return null
 
+  // 🎨 ESTILOS ITEMS
   const getItemStyle = (path: string) => {
     const active = pathname.startsWith(path)
 
@@ -79,6 +81,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/cuentas")) return "Cuenta Corriente"
     return ""
   }
+
+  const nombre = usuario?.user_metadata?.nombre || usuario?.email || "Usuario"
 
   return (
     <html lang="es">
@@ -173,7 +177,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </nav>
           </div>
 
-          {/* USER LIMPIO */}
+          {/* USER */}
           <div style={{
             borderTop: "1px solid #1f2937",
             padding: "15px 20px"
@@ -182,27 +186,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div style={{
               display: "flex",
               alignItems: "center",
-              gap: "10px",
-              marginBottom: "8px"
+              gap: "10px"
             }}>
 
+              {/* Avatar */}
               <div style={{
-                width: "32px",
-                height: "32px",
+                width: "35px",
+                height: "35px",
                 borderRadius: "50%",
                 background: "#1f2937",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontWeight: "600",
-                fontSize: "13px"
+                fontWeight: "bold"
               }}>
-                {(usuario?.user_metadata?.nombre || usuario?.email)?.charAt(0).toUpperCase()}
+                {nombre.charAt(0).toUpperCase()}
               </div>
 
               <div>
                 <div style={{ fontSize: "13px", fontWeight: "600" }}>
-                  {usuario?.user_metadata?.nombre || "Usuario"}
+                  {nombre}
                 </div>
 
                 <div style={{ fontSize: "11px", color: "#9ca3af" }}>
@@ -211,23 +214,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
             </div>
 
-            <div
+            {/* LOGOUT */}
+            <button
               onClick={async () => {
                 await supabase.auth.signOut()
                 router.push("/login")
               }}
               style={{
-                fontSize: "12px",
-                color: "#9ca3af",
-                cursor: "pointer",
-                paddingLeft: "42px"
+                marginTop: "12px",
+                width: "100%",
+                background: "#1f2937",
+                border: "none",
+                color: "#e5e7eb",
+                padding: "8px",
+                borderRadius: "8px",
+                cursor: "pointer"
               }}
             >
               Cerrar sesión
-            </div>
+            </button>
 
           </div>
-
         </aside>
 
         {/* MAIN */}
@@ -238,6 +245,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           flexDirection: "column"
         }}>
 
+          {/* HEADER */}
           <div style={{
             background: "white",
             padding: "15px 25px",
@@ -247,6 +255,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {getTitle()}
           </div>
 
+          {/* CONTENT */}
           <div style={{
             padding: "30px",
             overflowY: "auto",
