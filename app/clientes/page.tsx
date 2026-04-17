@@ -662,10 +662,10 @@ export default function Clientes() {
                       </div>
                       <div style={{ marginTop: 8 }}>
                         {(v.detalle_ventas || []).map((d: any, i: number) => (
-                          <div key={i} style={{ fontSize: 13, color: "#868e96" }}>
-                            · {d.productos?.nombre} × {d.cantidad}
-                          </div>
-                        ))}
+  <div key={i} style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>
+    · {d.productos?.nombre} × {d.cantidad}
+  </div>
+))}
                       </div>
                       <div style={{ marginTop: 10 }}>
                         <button onClick={() => reimprimirFactura(v)} style={{ ...btnPrimary, fontSize: 12, padding: "6px 14px" }}>
@@ -718,17 +718,17 @@ export default function Clientes() {
                           </div>
                         </div>
                         {(v.detalle_ventas || []).map((d: any, i: number) => (
-                          <div key={i} style={{ fontSize: 13, color: "#868e96" }}>· {d.productos?.nombre} × {d.cantidad}</div>
-                        ))}
+  <div key={i} style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>· {d.productos?.nombre} × {d.cantidad}</div>
+))}
                         {v.pagos.length > 0 && (
                           <div style={{ marginTop: 10, background: "white", borderRadius: 8, padding: "8px 12px", border: "1px solid #f1f3f5" }}>
                             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Pagos registrados:</div>
                             {v.pagos.map((p: any, i: number) => (
                               <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: i < v.pagos.length - 1 ? "1px solid #f8f9fa" : "none" }}>
-                                <span style={{ color: "#495057" }}>
-                                  {fechaCorta(p.fecha)} — <b style={{ color: "#2f9e44" }}>{fmt(p.monto)}</b>
-                                  {p.nota ? <span style={{ color: "#868e96" }}> ({p.nota})</span> : ""}
-                                </span>
+                                <span style={{ color: "#111827" }}>
+  {fechaCorta(p.fecha)} — <b style={{ color: "#2f9e44" }}>{fmt(p.monto)}</b>
+  {p.nota ? <span style={{ color: "#495057", fontWeight: 500 }}> ({p.nota})</span> : ""}
+</span>
                                 <button onClick={() => imprimirRecibo(p, v)} style={{ background: "#e7f5ff", color: "#1971c2", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                                   Recibo
                                 </button>
@@ -756,11 +756,11 @@ export default function Clientes() {
                           Saldada
                         </span>
                       </div>
-                      <div style={{ fontSize: 13, color: "#868e96", marginTop: 4 }}>Total: {fmt(Number(v.total))}</div>
+                      <div style={{ fontSize: 13, color: "#374151", marginTop: 4, fontWeight: 500 }}>Total: {fmt(Number(v.total))}</div>
                       <div style={{ marginTop: 8 }}>
                         {v.pagos.map((p: any, i: number) => (
                           <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0" }}>
-                            <span>{fechaCorta(p.fecha)} — <b>{fmt(p.monto)}</b>{p.nota ? ` (${p.nota})` : ""}</span>
+                            <span style={{ color: "#111827" }}>{fechaCorta(p.fecha)} — <b style={{ color: "#2f9e44" }}>{fmt(p.monto)}</b>{p.nota ? <span style={{ color: "#495057" }}> ({p.nota})</span> : ""}</span>
                             <button onClick={() => imprimirRecibo(p, v)} style={{ background: "#e7f5ff", color: "#1971c2", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>
                               Recibo
                             </button>
