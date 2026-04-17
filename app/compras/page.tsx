@@ -447,56 +447,72 @@ const itemsCalculados = calcularItemsConExtras(
                 {items.length > 0 && (
                   <div className="border border-gray-200 rounded-lg overflow-hidden">
                     <table className="w-full text-sm">
-                      <thead className="bg-gray-50 text-gray-500 text-xs">
-                        <tr>
-                          <th className="text-left px-3 py-2">Producto</th>
-                          <th className="text-center px-3 py-2 w-20">Cant.</th>
-                          <th className="text-center px-3 py-2 w-28">P. unit.</th>
-                         <th className="text-right px-3 py-2">Subtotal</th>
-<th className="text-right px-3 py-2 text-blue-600">IVA</th>
-<th className="text-right px-3 py-2 text-orange-600">Flete</th>
-<th className="text-right px-3 py-2">Total</th>
-                          <th className="w-6"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {itemsCalculados.map((it, idx) => (
-                          <tr key={it.producto_id}>
-                            <td className="px-3 py-2 text-gray-800 text-xs">{it.nombre}</td>
-                            <td className="px-3 py-2">
-                              <input type="number" min="1" value={it.cantidad}
-                                onChange={e => actualizarItem(idx, "cantidad", parseFloat(e.target.value) || 1)}
-                                className="w-full text-center border border-gray-300 rounded px-1 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                            </td>
-                            <td className="px-3 py-2">
-                              <input type="number" min="0" step="0.01" value={it.precio_unitario}
-                                onChange={e => actualizarItem(idx, "precio_unitario", parseFloat(e.target.value) || 0)}
-                                className="w-full text-center border border-gray-300 rounded px-1 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                            </td>
-                            <td className="px-3 py-2 text-right text-xs">
-  {fmt(it.subtotal)}
-</td>
-<td className="px-3 py-2 text-right text-blue-600 text-xs">
-  {fmt(it.iva)}
-</td>
-<td className="px-3 py-2 text-right text-orange-600 text-xs">
-  {fmt(it.flete)}
-</td>
-<td className="px-3 py-2 text-right font-semibold text-gray-800 text-xs">
-  {fmt(it.subtotal + it.iva + it.flete)}
-</td>
-                            <td className="px-3 py-2 text-center">
-                              <button onClick={() => quitarItem(idx)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="bg-gray-50 text-sm">
+                      <thead className="bg-gray-100 text-gray-700 text-xs font-semibold">
   <tr>
-    <td colSpan={6} className="px-3 py-1.5 text-right text-gray-500 text-xs">
+    <th className="text-left px-3 py-2">Producto</th>
+    <th className="text-center px-3 py-2 w-20">Cant.</th>
+    <th className="text-center px-3 py-2 w-28">P. unit.</th>
+    <th className="text-right px-3 py-2">Subtotal</th>
+    <th className="text-right px-3 py-2 text-blue-700">IVA</th>
+    <th className="text-right px-3 py-2 text-orange-700">Flete</th>
+    <th className="text-right px-3 py-2">Total</th>
+    <th className="w-6"></th>
+  </tr>
+</thead>
+
+<tbody className="divide-y divide-gray-100">
+  {itemsCalculados.map((it, idx) => (
+    <tr key={it.producto_id} className="hover:bg-gray-50">
+      
+      <td className="px-3 py-2 text-gray-800 text-xs">
+        {it.nombre}
+      </td>
+
+      <td className="px-3 py-2">
+        <input type="number" min="1" value={it.cantidad}
+          onChange={e => actualizarItem(idx, "cantidad", parseFloat(e.target.value) || 1)}
+          className="w-full text-center border border-gray-300 rounded px-1 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+      </td>
+
+      <td className="px-3 py-2">
+        <input type="number" min="0" step="0.01" value={it.precio_unitario}
+          onChange={e => actualizarItem(idx, "precio_unitario", parseFloat(e.target.value) || 0)}
+          className="w-full text-center border border-gray-300 rounded px-1 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+      </td>
+
+      <td className="px-3 py-2 text-right text-gray-800 text-xs">
+        {fmt(it.subtotal)}
+      </td>
+
+      <td className="px-3 py-2 text-right text-blue-700 text-xs font-medium">
+        {fmt(it.iva)}
+      </td>
+
+      <td className="px-3 py-2 text-right text-orange-700 text-xs font-medium">
+        {fmt(it.flete)}
+      </td>
+
+      <td className="px-3 py-2 text-right font-semibold text-gray-900 text-xs">
+        {fmt(it.subtotal + it.iva + it.flete)}
+      </td>
+
+      <td className="px-3 py-2 text-center">
+        <button onClick={() => quitarItem(idx)}
+          className="text-red-500 hover:text-red-700 text-xs">
+          ✕
+        </button>
+      </td>
+    </tr>
+  ))}
+</tbody>
+
+<tfoot className="bg-gray-50 text-sm">
+
+  <tr>
+    <td colSpan={6} className="px-3 py-1.5 text-right text-gray-600 text-xs">
       Subtotal:
     </td>
-    <td className="px-3 py-1.5 text-right text-gray-700 text-xs">
+    <td className="px-3 py-1.5 text-right text-gray-800 text-xs font-medium">
       {fmt(subtotalForm)}
     </td>
     <td></td>
@@ -504,10 +520,10 @@ const itemsCalculados = calcularItemsConExtras(
 
   {form.incluye_iva && ivaForm > 0 && (
     <tr>
-      <td colSpan={6} className="px-3 py-1.5 text-right text-blue-600 text-xs">
+      <td colSpan={6} className="px-3 py-1.5 text-right text-blue-700 text-xs">
         IVA {pctIvaForm}%:
       </td>
-      <td className="px-3 py-1.5 text-right text-blue-600 text-xs">
+      <td className="px-3 py-1.5 text-right text-blue-700 text-xs font-medium">
         {fmt(ivaForm)}
       </td>
       <td></td>
@@ -516,10 +532,10 @@ const itemsCalculados = calcularItemsConExtras(
 
   {form.incluye_flete && fleteForm > 0 && (
     <tr>
-      <td colSpan={6} className="px-3 py-1.5 text-right text-orange-600 text-xs">
+      <td colSpan={6} className="px-3 py-1.5 text-right text-orange-700 text-xs">
         🚚 Flete{form.tipo_flete === "pct" ? ` ${valFleteForm}%` : ""}:
       </td>
-      <td className="px-3 py-1.5 text-right text-orange-600 text-xs">
+      <td className="px-3 py-1.5 text-right text-orange-700 text-xs font-medium">
         {fmt(fleteForm)}
       </td>
       <td></td>
@@ -530,11 +546,12 @@ const itemsCalculados = calcularItemsConExtras(
     <td colSpan={6} className="px-3 py-2 text-right font-semibold text-gray-700 text-xs">
       Total:
     </td>
-    <td className="px-3 py-2 text-right font-bold text-gray-900 text-xs">
+    <td className="px-3 py-2 text-right font-bold text-gray-900 text-sm">
       {fmt(totalForm)}
     </td>
     <td></td>
   </tr>
+
 </tfoot>
                     </table>
                   </div>
