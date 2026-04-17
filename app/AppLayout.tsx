@@ -41,7 +41,13 @@ export default function LayoutClient({ children }: { children: React.ReactNode }
     setLoadingAuth(false)
   }
 
-  if (loadingAuth) return null
+  if (loadingAuth) {
+  return (
+    <div style={{ padding: 50 }}>
+      Cargando...
+    </div>
+  )
+}
 
   const getItemStyle = (path: string) => {
     const active = pathname.startsWith(path)
