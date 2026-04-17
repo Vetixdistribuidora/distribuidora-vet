@@ -18,6 +18,25 @@ export default function Dashboard() {
 
   useEffect(() => {
     iniciar()
+    async function setearNombreUsuario() {
+  await supabase.auth.updateUser({
+    data: { nombre: "Sofia" }
+  })
+}
+async function iniciar() {
+  const { data } = await supabase.auth.getSession()
+
+  if (!data.session) {
+    router.push("/login")
+    return
+  }
+
+  // 👇 AGREGÁ ESTA LÍNEA
+  await setearNombreUsuario()
+
+  await cargarDatos()
+  setLoading(false)
+}
   }, [])
 
   async function iniciar() {

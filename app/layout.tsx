@@ -17,6 +17,12 @@ const router = useRouter()
 useEffect(() => {
   checkUser()
 }, [])
+const [usuario, setUsuario] = useState<any>(null)
+useEffect(() => {
+  supabase.auth.getUser().then(({ data }) => {
+    setUsuario(data.user)
+  })
+}, [])
 
 async function checkUser() {
   const { data } = await supabase.auth.getUser()
@@ -200,9 +206,67 @@ async function checkUser() {
     <div style={{ fontSize: "13px", fontWeight: "600" }}>
       {usuario?.email}
     </div>
-    <div style={{ fontSize: "11px", color: "#9ca3af" }}>
-      Usuario activo
+    <div style={{
+  marginTop: "auto",
+  paddingTop: "20px",
+  borderTop: "1px solid #1f2937"
+}}>
+
+  <div style={{
+    display: "flex",
+    alignItems: "center",
+    gap: "10px"
+  }}>
+
+    {/* Avatar */}
+    <div style={{
+      width: "35px",
+      height: "35px",
+      borderRadius: "50%",
+      background: "#1f2937",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontWeight: "bold",
+      fontSize: "14px"
+    }}>
+      {(usuario?.user_metadata?.nombre || usuario?.email)?.charAt(0).toUpperCase()}
     </div>
+
+    {/* Nombre y email */}
+    <div>
+      <div style={{ fontSize: "13px", fontWeight: "600" }}>
+        {usuario?.user_metadata?.nombre || "Usuario"}
+      </div>
+
+      <div style={{ fontSize: "11px", color: "#9ca3af" }}>
+        {usuario?.email}
+      </div>
+    </div>
+
+  </div>
+
+  {/* BOTÓN LOGOUT */}
+  <button
+    onClick={async () => {
+      await supabase.auth.signOut()
+      window.location.href = "/login"
+    }}
+    style={{
+      marginTop: "10px",
+      width: "100%",
+      background: "#1f2937",
+      border: "none",
+      color: "#e5e7eb",
+      padding: "8px",
+      borderRadius: "8px",
+      cursor: "pointer"
+    }}
+  >
+    Cerrar sesión
+  </button>
+
+</div>
   </div>
 
   <button
