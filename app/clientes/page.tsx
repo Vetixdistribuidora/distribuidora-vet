@@ -649,16 +649,16 @@ export default function Clientes() {
                     }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <b style={{ fontSize: 15 }}>Factura #{v.nro_factura || v.id}</b>
-                          <span style={{
-                            background: v.estado === "cobrada" ? "#d3f9d8" : "#ffd8a8",
-                            color: v.estado === "cobrada" ? "#2f9e44" : "#e67700",
-                            fontSize: 11, padding: "2px 8px", borderRadius: 10, fontWeight: 700
-                          }}>
+                          <b style={{ fontSize: 15, color: "#111827" }}>Factura #{v.nro_factura || v.id}</b>
+<span style={{
+  background: v.estado === "cobrada" ? "#d3f9d8" : "#ffd8a8",
+  color: v.estado === "cobrada" ? "#2f9e44" : "#e67700",
+  fontSize: 11, padding: "2px 8px", borderRadius: 10, fontWeight: 700
+}}>
                             {v.estado === "cobrada" ? "Cobrada" : "CC"}
                           </span>
                         </div>
-                        <b style={{ fontSize: 15 }}>{fmt(Number(v.total))}</b>
+                        <b style={{ fontSize: 15, color: "#111827" }}>{fmt(Number(v.total))}</b>
                       </div>
                       <div style={{ marginTop: 8 }}>
                         {(v.detalle_ventas || []).map((d: any, i: number) => (
@@ -695,7 +695,7 @@ export default function Clientes() {
                         padding: 16, marginBottom: 14, background: "#fffbf0"
                       }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                          <b style={{ fontSize: 15 }}>Factura #{v.nro_factura || v.id}</b>
+                          <b style={{ fontSize: 15, color: "#111827" }}>Factura #{v.nro_factura || v.id}</b>
                           <div style={{ textAlign: "right" }}>
                             <div style={{ fontSize: 12, color: "#868e96" }}>Total: {fmt(v.total)}</div>
                             <div style={{ fontSize: 13, fontWeight: 700, color: "#e67700" }}>
@@ -722,7 +722,7 @@ export default function Clientes() {
 ))}
                         {v.pagos.length > 0 && (
                           <div style={{ marginTop: 10, background: "white", borderRadius: 8, padding: "8px 12px", border: "1px solid #f1f3f5" }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Pagos registrados:</div>
+                            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: "#111827" }}>Pagos registrados:</div>
                             {v.pagos.map((p: any, i: number) => (
                               <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: i < v.pagos.length - 1 ? "1px solid #f8f9fa" : "none" }}>
                                 <span style={{ color: "#111827" }}>
@@ -751,7 +751,7 @@ export default function Clientes() {
                   {ventasCobradas.filter(v => v.pagos?.length > 0).map(v => (
                     <div key={v.id} style={{ border: "1px solid #b2f2bb", borderRadius: 10, padding: 12, marginBottom: 8, background: "#f8fff8", opacity: 0.85 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <b>Factura #{v.nro_factura || v.id}</b>
+                        <b style={{ color: "#111827" }}>Factura #{v.nro_factura || v.id}</b>
                         <span style={{ background: "#d3f9d8", color: "#2f9e44", fontSize: 11, padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>
                           Saldada
                         </span>
