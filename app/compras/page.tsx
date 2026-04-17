@@ -816,9 +816,16 @@ const itemsCalculados = calcularItemsConExtras(
               </tr>
             )}
             <tr className="border-t border-gray-200">
-              <td colSpan={hayIva && hayFlete ? 6 : hayIva || hayFlete ? 5 : 3} className="px-3 py-2 text-right font-semibold text-xs">Total:</td>
-              <td className="px-3 py-2 text-right font-bold">{fmt(compraVer.total)}</td>
-            </tr>
+  <td
+    colSpan={hayIva && hayFlete ? 6 : hayIva || hayFlete ? 5 : 3}
+    className="px-3 py-2 text-right font-semibold text-gray-700 text-xs"
+  >
+    Total:
+  </td>
+  <td className="px-3 py-2 text-right font-bold text-gray-900 text-sm">
+    {fmt(compraVer.total)}
+  </td>
+</tr>
           </tfoot>
         </table>
       );
