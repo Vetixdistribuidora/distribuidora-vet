@@ -192,15 +192,30 @@ export default function Productos() {
               </div>
             ) : (
               <div>
-                <b>{p.nombre}</b>
-                {p.stock <= 5 && <span style={{ marginLeft: 10 }}>⚠️ Stock bajo</span>}
-                <p>💰 Costo: {formatearPrecio(p.costo)} · 📊 Margen: {p.margen}% · 💵 Venta: {formatearPrecio(p.precio_venta)}</p>
-                <p>📦 Stock: {p.stock}</p>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setEditando({ ...p })}>✏️ Editar</button>
-                  <button onClick={() => setConfirmEliminar(p)} style={{ background: "red", color: "white" }}>🗑️</button>
-                </div>
-              </div>
+  <b style={{ color: "#111827", fontSize: "15px" }}>{p.nombre}</b>
+  {p.stock <= 5 && (
+    <span style={{
+      marginLeft: 10,
+      background: "#fff3cd",
+      color: "#92400e",
+      fontSize: "12px",
+      fontWeight: "600",
+      padding: "2px 8px",
+      borderRadius: "6px",
+      border: "1px solid #fbbf24"
+    }}>
+      ⚠️ Stock bajo
+    </span>
+  )}
+  <p style={{ color: "#374151", margin: "6px 0 4px" }}>
+    💰 Costo: {formatearPrecio(p.costo)} · 📊 Margen: {p.margen}% · 💵 Venta: {formatearPrecio(p.precio_venta)}
+  </p>
+  <p style={{ color: "#374151", margin: "0 0 10px" }}>📦 Stock: {p.stock}</p>
+  <div style={{ display: "flex", gap: 8 }}>
+    <button onClick={() => setEditando({ ...p })}>✏️ Editar</button>
+    <button onClick={() => setConfirmEliminar(p)} style={{ background: "red", color: "white" }}>🗑️</button>
+  </div>
+</div>
             )}
           </div>
         )
