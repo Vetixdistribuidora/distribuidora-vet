@@ -3,14 +3,48 @@
 import "./globals.css"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabase"
 export default function RootLayout({ children }: { children: React.ReactNode }) {
 
   const pathname = usePathname()
-
+const [usuario, setUsuario] = useState<any>(null)
+const [loadingAuth, setLoadingAuth] = useState(true)
+const router = useRouter()
   const getItemStyle = (path: string) => {
     const active = pathname.startsWith(path)
+useEffect(() => {
+  checkUser()
+}, [])
 
+async function checkUser() {
+  const { data } = await supabase.auth.getUser()
+
+  const user = data?.user
+
+  if (!user) {
+    router.push("/login")
+    return
+  }
+
+  const usuariosPermitidos = [
+    "admin@dvs.com",
+    "sofia@dvs.com"
+  ]
+
+  if (!usuariosPermitidos.includes(user.email ?? "")) {
+    await supabase.auth.signOut()
+    router.push("/login")
+    return
+  }
+
+  setUsuario(user)
+  setLoadingAuth(false)
+  if (loadingAuth) {
+  return null
+}
+}
     return {
       display: "flex",
       alignItems: "center",
@@ -141,31 +175,53 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           {/* USER */}
           <div style={{
-            borderTop: "1px solid #1f2937",
-            padding: "15px 20px",
-            display: "flex",
-            alignItems: "center",
-            gap: "10px"
-          }}>
-            <div style={{
-              width: "35px",
-              height: "35px",
-              borderRadius: "50%",
-              background: "#374151",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "14px",
-              fontWeight: "bold"
-            }}>
-              A
-            </div>
-            <div>
-              <div style={{ fontSize: "13px", fontWeight: "600" }}>Admin</div>
-              <div style={{ fontSize: "11px", color: "#9ca3af" }}>Administrador</div>
-            </div>
-          </div>
+  borderTop: "1px solid #1f2937",
+  padding: "15px 20px",
+  display: "flex",
+  alignItems: "center",
+  gap: "10px"
+}}>
 
+  <div style={{
+    width: "35px",
+    height: "35px",
+    borderRadius: "50%",
+    background: "#374151",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "14px",
+    fontWeight: "bold"
+  }}>
+    {usuario?.email?.charAt(0).toUpperCase()}
+  </div>
+
+  <div style={{ flex: 1 }}>
+    <div style={{ fontSize: "13px", fontWeight: "600" }}>
+      {usuario?.email}
+    </div>
+    <div style={{ fontSize: "11px", color: "#9ca3af" }}>
+      Usuario activo
+    </div>
+  </div>
+
+  <button
+    onClick={async () => {
+      await supabase.auth.signOut()
+      router.push("/login")
+    }}
+    style={{
+      background: "transparent",
+      border: "none",
+      color: "#9ca3af",
+      cursor: "pointer",
+      fontSize: "12px"
+    }}
+  >
+    Salir
+  </button>
+
+</div>
         </aside>
 
         {/* MAIN */}
