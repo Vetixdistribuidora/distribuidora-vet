@@ -112,29 +112,58 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div style={{ padding: "20px" }}>
 
             {/* LOGO VETIX */}
-            <div style={{ marginBottom: "25px", display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{
-                width: "34px",
-                height: "34px",
-                borderRadius: "9px",
-                background: "linear-gradient(135deg, #3b82f6, #1d4ed8)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
-                  <ellipse cx="6" cy="5" rx="2" ry="3" />
-                  <ellipse cx="12" cy="3.5" rx="2" ry="3" />
-                  <ellipse cx="18" cy="5" rx="2" ry="3" />
-                  <path d="M5 13c0-4 14-4 14 0 0 5-3 8-7 8s-7-3-7-8z" />
-                </svg>
-              </div>
-              <div>
-                <div style={{ fontWeight: "700", fontSize: "16px", letterSpacing: "0.5px" }}>VETIX</div>
-                <div style={{ fontSize: "10px", color: "#6b7280", letterSpacing: "1px" }}>DISTRIBUIDORA</div>
-              </div>
-            </div>
+            {/* LOGO VETIX */}
+<div style={{ marginBottom: "28px", display: "flex", alignItems: "center", gap: "12px" }}>
+  {/* Ícono V */}
+  <div style={{
+    width: "38px",
+    height: "38px",
+    borderRadius: "10px",
+    background: "linear-gradient(145deg, #1e40af, #3b82f6)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    boxShadow: "0 4px 14px rgba(59,130,246,0.4)",
+  }}>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      {/* V geométrica con trazo doble */}
+      <polyline
+        points="3,5 9,19 12,13 15,19 21,5"
+        stroke="white"
+        strokeWidth="2.2"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* Punto de acento arriba */}
+      <circle cx="12" cy="4" r="1.3" fill="#93c5fd" />
+    </svg>
+  </div>
+
+  {/* Texto */}
+  <div>
+    <div style={{
+      fontWeight: "800",
+      fontSize: "17px",
+      letterSpacing: "2px",
+      color: "white",
+      lineHeight: 1,
+    }}>
+      VETIX
+    </div>
+    <div style={{
+      fontSize: "9px",
+      color: "#3b82f6",
+      letterSpacing: "2.5px",
+      marginTop: "3px",
+      textTransform: "uppercase",
+      fontWeight: "600"
+    }}>
+      Distribuidora
+    </div>
+  </div>
+</div>
 
             {/* NAV */}
             <nav>
@@ -299,7 +328,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             flex: 1
           }}>
             <AuthGuard>{children}</AuthGuard>
-          </div>
+          </div> -
         </main>
 
       </body>
