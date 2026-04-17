@@ -378,10 +378,10 @@ export default function CuentasCorrientes() {
                             }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                                 <div>
-                                  <span style={{ fontWeight: 700, fontSize: 15 }}>Factura #{v.nro_factura || v.id}</span>
-                                  <div style={{ fontSize: 12, color: "#868e96", marginTop: 2 }}>
-                                    {v.fecha ? fechaCorta(v.fecha) : ""}
-                                  </div>
+                                  <span style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>Factura #{v.nro_factura || v.id}</span>
+<div style={{ fontSize: 12, color: "#374151", marginTop: 2 }}>
+  {v.fecha ? fechaCorta(v.fecha) : ""}
+</div>
                                 </div>
                                 <div style={{ textAlign: "right" }}>
                                   <div style={{ fontSize: 13, color: "#868e96" }}>Total: {fmt(v.total)}</div>
@@ -416,7 +416,7 @@ export default function CuentasCorrientes() {
                               {/* Pagos previos */}
                               {v.pagos.length > 0 && (
                                 <div style={{ background: "white", borderRadius: 8, padding: "10px 12px", marginBottom: 10, border: "1px solid #f1f3f5" }}>
-                                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Pagos registrados:</div>
+                                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: "#111827" }}>Pagos registrados:</div>
                                   {v.pagos.map((p: any, i: number) => (
                                     <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: i < v.pagos.length - 1 ? "1px solid #f8f9fa" : "none" }}>
                                       <span>
@@ -458,7 +458,7 @@ export default function CuentasCorrientes() {
                             }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                  <b>Factura #{v.nro_factura || v.id}</b>
+  <b style={{ color: "#111827" }}>Factura #{v.nro_factura || v.id}</b>
                                   <span style={{
                                     fontSize: 11, padding: "2px 8px", borderRadius: 10,
                                     background: cobrada ? "#d3f9d8" : "#ffd8a8",
@@ -469,7 +469,7 @@ export default function CuentasCorrientes() {
                                 </div>
                                 <b>{fmt(v.total)}</b>
                               </div>
-                              {v.fecha && <div style={{ fontSize: 12, color: "#868e96", marginTop: 4 }}>{fechaCorta(v.fecha)}</div>}
+                              {v.fecha && <div style={{ fontSize: 12, color: "#374151", marginTop: 4 }}>{fechaCorta(v.fecha)}</div>}
                               <div style={{ marginTop: 8 }}>
                                 {v.detalle_ventas.map((d: any, i: number) => (
   <div key={i} style={{ fontSize: 12, color: "#374151", fontWeight: 500 }}>· {d.productos?.nombre} × {d.cantidad}</div>
@@ -477,7 +477,7 @@ export default function CuentasCorrientes() {
                               </div>
                               {v.pagos.length > 0 && (
                                 <div style={{ marginTop: 10, borderTop: "1px solid #f1f3f5", paddingTop: 8 }}>
-                                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Pagos:</div>
+                                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: "#111827" }}>Pagos:</div>
                                   {v.pagos.map((p: any, i: number) => (
                                     <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "3px 0" }}>
                                       <span style={{ color: "#1a1a2e" }}>{fechaCorta(p.fecha)} — <b style={{ color: "#2f9e44" }}>{fmt(p.monto)}</b>{p.nota ? <span style={{ color: "#495057" }}> ({p.nota})</span> : ""}</span>
