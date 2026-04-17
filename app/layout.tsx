@@ -28,8 +28,8 @@ async function checkUser() {
   }
 
   const usuariosPermitidos = [
-    "admin@dvs.com",
-    "sofia@dvs.com"
+    "clauforte@gmail.com",
+    "santiagozabalegui@gmail.com"
   ]
 
   if (!usuariosPermitidos.includes(user.email ?? "")) {
