@@ -778,9 +778,10 @@ const itemsCalculados = calcularItemsConExtras(
             {detalleConExtras.map((d) => (
               <tr key={d.id}>
                 <td className="px-3 py-2 text-gray-800 text-xs">{d.productos?.nombre ?? "—"}</td>
-                <td className="px-3 py-2 text-center text-xs">{d.cantidad}</td>
-                <td className="px-3 py-2 text-right text-xs">{fmt(d.precio_unitario)}</td>
-                <td className="px-3 py-2 text-right text-xs">{fmt(d.subtotalItem)}</td>
+                <td className="px-3 py-2 text-center text-gray-700 text-xs">{d.cantidad}</td>
+                <td className="px-3 py-2 text-right text-gray-800 text-xs">{fmt(d.precio_unitario)}</td>
+                <td className="px-3 py-2 text-right text-gray-800 text-xs">{fmt(d.subtotalItem)}</td>
+                
                 {hayIva && <td className="px-3 py-2 text-right text-blue-600 text-xs">{fmt(d.ivaItem)}</td>}
                 {hayFlete && <td className="px-3 py-2 text-right text-orange-600 text-xs">{fmt(d.fleteItem)}</td>}
                 <td className="px-3 py-2 text-right font-semibold text-gray-900 text-xs">
