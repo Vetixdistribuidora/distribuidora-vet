@@ -416,10 +416,10 @@ export default function Ventas() {
         const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
         const subtotalItem = unidadesPagas * item.precio
         return (
-          <div key={i} style={{ background: "#eee", padding: 10, marginBottom: 10 }}>
-            <b>{item.nombre}</b>
-            <span style={{ marginLeft: 10, fontSize: 13, color: "#555" }}>(stock: {item.stockDisponible})</span>
-            <p>Cantidad: {item.cantidad} | Bonificadas: {bonif} | Pagan: {unidadesPagas}</p>
+         <div key={i} style={{ background: "white", border: "1px solid #e5e7eb", padding: 12, marginBottom: 10, borderRadius: 10 }}>
+  <b style={{ color: "#111827", fontSize: 15 }}>{item.nombre}</b>
+  <span style={{ marginLeft: 10, fontSize: 13, color: "#6b7280" }}>(stock: {item.stockDisponible})</span>
+  <p style={{ color: "#374151", margin: "6px 0" }}>Cantidad: {item.cantidad} | Bonificadas: {bonif} | Pagan: {unidadesPagas}</p>
             <p>
               Precio:
               <input type="number" value={item.precio} onChange={e => cambiarPrecio(i, Number(e.target.value))} />
@@ -458,9 +458,9 @@ export default function Ventas() {
           onChange={e => setEsCuentaCorriente(e.target.checked)}
           style={{ width: 18, height: 18, cursor: "pointer" }}
         />
-        <label htmlFor="cuentaCorriente" style={{ cursor: "pointer", fontWeight: "bold", fontSize: 15 }}>
-          Dejar en cuenta corriente
-        </label>
+        <label htmlFor="cuentaCorriente" style={{ cursor: "pointer", fontWeight: "bold", fontSize: 15, color: esCuentaCorriente ? "#92400e" : "#374151" }}>
+  Dejar en cuenta corriente
+</label>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <button
