@@ -418,7 +418,7 @@ export default function CuentasCorrientes() {
                                 <div style={{ background: "white", borderRadius: 8, padding: "10px 12px", marginBottom: 10, border: "1px solid #f1f3f5" }}>
                                   <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: "#111827" }}>Pagos registrados:</div>
                                   {v.pagos.map((p: any, i: number) => (
-                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: i < v.pagos.length - 1 ? "1px solid #f8f9fa" : "none" }}>
+                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: i < v.pagos.length - 1 ? "1px solid #f8f9fa" : "none", color: "#111827" }}>
                                       <span>
   {fechaCorta(p.fecha)} — <b style={{ color: "#2f9e44" }}>{fmt(p.monto)}</b>
   {p.nota ? <span style={{ color: "#495057", fontWeight: 500 }}> ({p.nota})</span> : ""}
@@ -467,7 +467,7 @@ export default function CuentasCorrientes() {
                                     {cobrada ? "Saldada" : "Pendiente"}
                                   </span>
                                 </div>
-                                <b>{fmt(v.total)}</b>
+                                <b style={{ color: "#111827" }}>{fmt(v.total)}</b>
                               </div>
                               {v.fecha && <div style={{ fontSize: 12, color: "#374151", marginTop: 4 }}>{fechaCorta(v.fecha)}</div>}
                               <div style={{ marginTop: 8 }}>
@@ -479,7 +479,7 @@ export default function CuentasCorrientes() {
                                 <div style={{ marginTop: 10, borderTop: "1px solid #f1f3f5", paddingTop: 8 }}>
                                   <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: "#111827" }}>Pagos:</div>
                                   {v.pagos.map((p: any, i: number) => (
-                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "3px 0" }}>
+                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "3px 0", color: "#111827" }}>
                                       <span style={{ color: "#1a1a2e" }}>{fechaCorta(p.fecha)} — <b style={{ color: "#2f9e44" }}>{fmt(p.monto)}</b>{p.nota ? <span style={{ color: "#495057" }}> ({p.nota})</span> : ""}</span>
                                       <button onClick={() => imprimirRecibo(p, v)} style={{ background: "#e7f5ff", color: "#1971c2", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 11 }}>
                                         Recibo
