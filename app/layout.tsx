@@ -1,56 +1,52 @@
 "use client"
 
 import "./globals.css"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
 
   const pathname = usePathname()
-const [usuario, setUsuario] = useState<any>(null)
-const [loadingAuth, setLoadingAuth] = useState(true)
-const router = useRouter()
+  const router = useRouter()
+
+  const [usuario, setUsuario] = useState<any>(null)
+  const [loadingAuth, setLoadingAuth] = useState(true)
+
+  useEffect(() => {
+    checkUser()
+  }, [])
+
+  async function checkUser() {
+    const { data } = await supabase.auth.getUser()
+    const user = data?.user
+
+    if (!user) {
+      router.push("/login")
+      return
+    }
+
+    const usuariosPermitidos = [
+      "admin@dvs.com",
+      "sofia@dvs.com"
+    ]
+
+    if (!usuariosPermitidos.includes(user.email ?? "")) {
+      await supabase.auth.signOut()
+      router.push("/login")
+      return
+    }
+
+    setUsuario(user)
+    setLoadingAuth(false)
+  }
+
+  if (loadingAuth) return null
+
   const getItemStyle = (path: string) => {
     const active = pathname.startsWith(path)
-useEffect(() => {
-  checkUser()
-}, [])
-const [usuario, setUsuario] = useState<any>(null)
-useEffect(() => {
-  supabase.auth.getUser().then(({ data }) => {
-    setUsuario(data.user)
-  })
-}, [])
 
-async function checkUser() {
-  const { data } = await supabase.auth.getUser()
-
-  const user = data?.user
-
-  if (!user) {
-    router.push("/login")
-    return
-  }
-
-  const usuariosPermitidos = [
-    "admin@dvs.com",
-    "sofia@dvs.com"
-  ]
-
-  if (!usuariosPermitidos.includes(user.email ?? "")) {
-    await supabase.auth.signOut()
-    router.push("/login")
-    return
-  }
-
-  setUsuario(user)
-  setLoadingAuth(false)
-  if (loadingAuth) {
-  return null
-}
-}
     return {
       display: "flex",
       alignItems: "center",
@@ -109,10 +105,8 @@ async function checkUser() {
           {/* TOP */}
           <div style={{ padding: "20px" }}>
 
-            {/* LOGO */}
             <h2 style={{ marginBottom: "25px" }}>🐾 DVS</h2>
 
-            {/* NAV */}
             <nav>
 
               <Link href="/" style={getItemStyle("/")}>
@@ -179,113 +173,61 @@ async function checkUser() {
             </nav>
           </div>
 
-          {/* USER */}
+          {/* USER LIMPIO */}
           <div style={{
-  borderTop: "1px solid #1f2937",
-  padding: "15px 20px",
-  display: "flex",
-  alignItems: "center",
-  gap: "10px"
-}}>
+            borderTop: "1px solid #1f2937",
+            padding: "15px 20px"
+          }}>
 
-  <div style={{
-    width: "35px",
-    height: "35px",
-    borderRadius: "50%",
-    background: "#374151",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "14px",
-    fontWeight: "bold"
-  }}>
-    {usuario?.email?.charAt(0).toUpperCase()}
-  </div>
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              marginBottom: "8px"
+            }}>
 
-  <div style={{ flex: 1 }}>
-    <div style={{ fontSize: "13px", fontWeight: "600" }}>
-      {usuario?.email}
-    </div>
-    <div style={{
-  marginTop: "auto",
-  paddingTop: "20px",
-  borderTop: "1px solid #1f2937"
-}}>
+              <div style={{
+                width: "32px",
+                height: "32px",
+                borderRadius: "50%",
+                background: "#1f2937",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: "600",
+                fontSize: "13px"
+              }}>
+                {(usuario?.user_metadata?.nombre || usuario?.email)?.charAt(0).toUpperCase()}
+              </div>
 
-  <div style={{
-    display: "flex",
-    alignItems: "center",
-    gap: "10px"
-  }}>
+              <div>
+                <div style={{ fontSize: "13px", fontWeight: "600" }}>
+                  {usuario?.user_metadata?.nombre || "Usuario"}
+                </div>
 
-    {/* Avatar */}
-    <div style={{
-      width: "35px",
-      height: "35px",
-      borderRadius: "50%",
-      background: "#1f2937",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontWeight: "bold",
-      fontSize: "14px"
-    }}>
-      {(usuario?.user_metadata?.nombre || usuario?.email)?.charAt(0).toUpperCase()}
-    </div>
+                <div style={{ fontSize: "11px", color: "#9ca3af" }}>
+                  {usuario?.email}
+                </div>
+              </div>
+            </div>
 
-    {/* Nombre y email */}
-    <div>
-      <div style={{ fontSize: "13px", fontWeight: "600" }}>
-        {usuario?.user_metadata?.nombre || "Usuario"}
-      </div>
+            <div
+              onClick={async () => {
+                await supabase.auth.signOut()
+                router.push("/login")
+              }}
+              style={{
+                fontSize: "12px",
+                color: "#9ca3af",
+                cursor: "pointer",
+                paddingLeft: "42px"
+              }}
+            >
+              Cerrar sesión
+            </div>
 
-      <div style={{ fontSize: "11px", color: "#9ca3af" }}>
-        {usuario?.email}
-      </div>
-    </div>
+          </div>
 
-  </div>
-
-  {/* BOTÓN LOGOUT */}
-  <button
-    onClick={async () => {
-      await supabase.auth.signOut()
-      window.location.href = "/login"
-    }}
-    style={{
-      marginTop: "10px",
-      width: "100%",
-      background: "#1f2937",
-      border: "none",
-      color: "#e5e7eb",
-      padding: "8px",
-      borderRadius: "8px",
-      cursor: "pointer"
-    }}
-  >
-    Cerrar sesión
-  </button>
-
-</div>
-  </div>
-
-  <button
-    onClick={async () => {
-      await supabase.auth.signOut()
-      router.push("/login")
-    }}
-    style={{
-      background: "transparent",
-      border: "none",
-      color: "#9ca3af",
-      cursor: "pointer",
-      fontSize: "12px"
-    }}
-  >
-    Salir
-  </button>
-
-</div>
         </aside>
 
         {/* MAIN */}
@@ -296,18 +238,15 @@ async function checkUser() {
           flexDirection: "column"
         }}>
 
-          {/* HEADER */}
           <div style={{
             background: "white",
             padding: "15px 25px",
             borderBottom: "1px solid #e5e7eb",
-            fontWeight: "600",
-            fontSize: "16px"
+            fontWeight: "600"
           }}>
             {getTitle()}
           </div>
 
-          {/* CONTENT */}
           <div style={{
             padding: "30px",
             overflowY: "auto",
