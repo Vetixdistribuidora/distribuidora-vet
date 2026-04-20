@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
+import * as XLSX from "xlsx"
 
 function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
   return (
@@ -54,6 +55,80 @@ const [progreso, setProgreso] = useState(0)
   }
 
   useEffect(() => { cargar() }, [])
+
+  async function procesarExcelPreview() {
+  if (!archivo) {
+    mostrarToast("⚠️ Seleccioná un archivo", "error")
+    return
+  }
+
+  const data = await archivo.arrayBuffer()
+  const workbook = XLSX.read(data)
+
+  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+  const json: any[] = XLSX.utils.sheet_to_json(sheet)
+
+  const productos: any[] = []
+
+  function parsePrecio(valor: any) {
+    if (!valor) return NaN
+
+    let str = String(valor).replace(/\$/g, "").trim()
+
+    if (str.includes(",") && str.includes(".")) {
+      str = str.replace(/\./g, "").replace(",", ".")
+    } else if (str.includes(",") && !str.includes(".")) {
+      str = str.replace(",", ".")
+    }
+
+    return Number(str)
+  }
+
+  for (let fila of json) {
+
+    // 🔥 detectar columnas dinámicamente
+    const laboratorio =
+      fila.Laboratorio ||
+      fila.laboratorio ||
+      fila.Marca ||
+      fila.marca ||
+      ""
+
+    const nombreProd =
+      fila.Producto ||
+      fila.producto ||
+      fila.Nombre ||
+      fila.nombre ||
+      ""
+
+    const costoRaw =
+      fila.Costo ||
+      fila.costo ||
+      fila.Precio ||
+      fila.precio ||
+      fila["Precio Costo"] ||
+      fila["precio_costo_con_iva"] ||
+      ""
+
+    const nombreFinal = `${laboratorio} ${nombreProd}`.trim()
+    const costo = parsePrecio(costoRaw)
+
+    if (!nombreFinal || isNaN(costo)) continue
+
+    productos.push({
+      nombre: nombreFinal,
+      costo
+    })
+  }
+
+  console.log("TOTAL EXCEL:", json.length)
+  console.log("VALIDOS:", productos.length)
+
+  setPreview(productos.slice(0, 20))
+  mostrarToast(`📊 ${productos.length} productos detectados`, "ok")
+
+  return productos
+}
 
   async function agregar() {
     if (!nombre || !costo || !margen || !stock) {
@@ -113,7 +188,9 @@ const [progreso, setProgreso] = useState(0)
     return
   }
 
-  const productosBase = await procesarCSVPreview()
+  const productosBase = archivo.name.endsWith(".xlsx")
+  ? await procesarExcelPreview()
+  : await procesarCSVPreview()
   if (!productosBase) return
 
   setImportando(true)
@@ -282,7 +359,7 @@ if (isNaN(costo)) continue
         <input type="number" placeholder="% Margen (ej: 40)" value={margenImportacion}
           onChange={(e) => setMargenImportacion(e.target.value)}
           style={{ width: 180, marginRight: 10 }} />
-        <input type="file" accept=".csv" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
+        <input type="file" accept=".csv,.xlsx" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
 
 <button onClick={procesarCSVPreview}>
   👁️ Ver preview
