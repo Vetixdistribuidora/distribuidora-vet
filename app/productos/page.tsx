@@ -34,6 +34,9 @@ export default function Productos() {
   const [editando, setEditando] = useState<any | null>(null)
   const [archivo, setArchivo] = useState<File | null>(null)
   const [margenImportacion, setMargenImportacion] = useState("")
+  const [preview, setPreview] = useState<any[]>([])
+const [importando, setImportando] = useState(false)
+const [progreso, setProgreso] = useState(0)
   const [confirmEliminar, setConfirmEliminar] = useState<any | null>(null)
   const [subiendoFoto, setSubiendoFoto] = useState<number | null>(null)
   const inputFotoRef = useRef<HTMLInputElement>(null)
@@ -104,38 +107,96 @@ export default function Productos() {
   }
 
   async function importarCSV() {
-    if (!archivo) { mostrarToast("⚠️ Seleccioná un archivo", "error"); return }
-    if (!margenImportacion) { mostrarToast("⚠️ Ingresá un margen antes de importar", "error"); return }
-    const texto = await archivo.text()
-    const lineas = texto.split("\n").slice(1)
-    let nuevos = 0, actualizados = 0
-    const margenDefault = Number(margenImportacion)
-    for (let linea of lineas) {
-      if (!linea.trim()) continue
-      const separador = linea.includes(";") ? ";" : ","
-      const [producto, precio] = linea.split(separador)
-      const nombre = producto?.trim()
-      const costo = Number(precio)
-      if (!nombre || !costo) continue
-      const { data: existente } = await supabase.from("productos").select("*").eq("nombre", nombre).maybeSingle()
-      if (existente) {
-        const precioVenta = costo + (costo * existente.margen / 100)
-        await supabase.from("productos").update({ costo, precio_venta: precioVenta }).eq("id", existente.id)
-        await supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: existente.id })
-        actualizados++
-      } else {
-        const precioVenta = costo + (costo * margenDefault / 100)
-        const { data } = await supabase.from("productos").insert([{
-          nombre, costo, margen: margenDefault, precio_venta: precioVenta, stock: 0
-        }]).select()
-        await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 })
-        nuevos++
-      }
-    }
-    mostrarToast(`✅ ${nuevos} nuevos · ${actualizados} actualizados`, "ok")
-    setArchivo(null)
-    cargar()
+  if (!archivo) return
+  if (!margenImportacion) {
+    mostrarToast("⚠️ Ingresá margen", "error")
+    return
   }
+
+  const productosBase = await procesarCSVPreview()
+  if (!productosBase) return
+
+  setImportando(true)
+  setProgreso(0)
+
+  const margenDefault = Number(margenImportacion)
+
+  const productosFinal = productosBase.map(p => {
+    const precioVenta = p.costo + (p.costo * margenDefault / 100)
+    return {
+      nombre: p.nombre,
+      costo: p.costo,
+      margen: margenDefault,
+      precio_venta: precioVenta,
+      stock: 0
+    }
+  })
+
+  const chunkSize = 200
+  let procesados = 0
+
+  for (let i = 0; i < productosFinal.length; i += chunkSize) {
+    const chunk = productosFinal.slice(i, i + chunkSize)
+
+    const { error } = await supabase
+      .from("productos")
+      .upsert(chunk, { onConflict: "nombre" })
+
+    if (error) {
+      console.error(error)
+      mostrarToast("❌ Error en importación", "error")
+      break
+    }
+
+    procesados += chunk.length
+    setProgreso(Math.round((procesados / productosFinal.length) * 100))
+  }
+
+  setImportando(false)
+  setPreview([])
+  setArchivo(null)
+
+  mostrarToast(`✅ ${procesados} productos importados`, "ok")
+  cargar()
+}
+async function procesarCSVPreview() {
+  if (!archivo) {
+    mostrarToast("⚠️ Seleccioná un archivo", "error")
+    return
+  }
+
+  const texto = await archivo.text()
+  const lineas = texto.split("\n").slice(1)
+
+  const productos: any[] = []
+
+  for (let linea of lineas) {
+    if (!linea.trim()) continue
+
+    const separador = linea.includes(";") ? ";" : ","
+    const partes = linea.split(separador)
+
+    const nombre = partes[0]?.trim()
+    let precioRaw = partes[1]?.trim()
+
+    if (!nombre || !precioRaw) continue
+
+    precioRaw = precioRaw.replace(/\./g, "").replace(",", ".")
+
+    const costo = Number(precioRaw)
+    if (isNaN(costo)) continue
+
+    productos.push({ nombre, costo })
+  }
+
+  console.log("TOTAL CSV:", lineas.length)
+  console.log("VALIDOS:", productos.length)
+
+  setPreview(productos.slice(0, 20))
+  mostrarToast(`📊 ${productos.length} productos detectados`, "ok")
+
+  return productos
+}
 
   function abrirSelectorFoto(productoId: number) {
     productoFotoRef.current = productoId
@@ -204,7 +265,43 @@ export default function Productos() {
           onChange={(e) => setMargenImportacion(e.target.value)}
           style={{ width: 180, marginRight: 10 }} />
         <input type="file" accept=".csv" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
-        <button onClick={importarCSV}>📥 Importar CSV</button>
+
+<button onClick={procesarCSVPreview}>
+  👁️ Ver preview
+</button>
+
+<button onClick={importarCSV}>
+  📥 Importar CSV
+</button>
+
+{preview.length > 0 && (
+  <div style={{ marginTop: 20, background: "#fff", padding: 10, borderRadius: 10 }}>
+    <h3>Preview (primeros 20)</h3>
+    {preview.map((p, i) => (
+      <div key={i} style={{ fontSize: 13 }}>
+        {p.nombre} - ${p.costo}
+      </div>
+    ))}
+  </div>
+)}
+{importando && (
+  <div style={{ marginTop: 20 }}>
+    <div style={{
+      height: 20,
+      background: "#e5e7eb",
+      borderRadius: 10,
+      overflow: "hidden"
+    }}>
+      <div style={{
+        width: `${progreso}%`,
+        background: "#22c55e",
+        height: "100%",
+        transition: "width 0.3s"
+      }} />
+    </div>
+    <p>{progreso}% completado</p>
+  </div>
+)}
       </div>
 
       <input placeholder="Buscar producto..." value={busqueda}
