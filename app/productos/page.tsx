@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 
 function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
@@ -35,6 +35,9 @@ export default function Productos() {
   const [archivo, setArchivo] = useState<File | null>(null)
   const [margenImportacion, setMargenImportacion] = useState("")
   const [confirmEliminar, setConfirmEliminar] = useState<any | null>(null)
+  const [subiendoFoto, setSubiendoFoto] = useState<number | null>(null)
+  const inputFotoRef = useRef<HTMLInputElement>(null)
+  const productoFotoRef = useRef<number | null>(null)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
@@ -134,6 +137,47 @@ export default function Productos() {
     cargar()
   }
 
+  function abrirSelectorFoto(productoId: number) {
+    productoFotoRef.current = productoId
+    inputFotoRef.current?.click()
+  }
+
+  async function subirFoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !productoFotoRef.current) return
+    const productoId = productoFotoRef.current
+    e.target.value = ""
+
+    const ext = file.name.split(".").pop()
+    const path = `${productoId}.${ext}`
+    setSubiendoFoto(productoId)
+
+    const { error: uploadError } = await supabase.storage
+      .from("productos")
+      .upload(path, file, { upsert: true })
+
+    if (uploadError) {
+      mostrarToast("❌ Error subiendo imagen", "error")
+      setSubiendoFoto(null)
+      return
+    }
+
+    const { data: urlData } = supabase.storage.from("productos").getPublicUrl(path)
+    const url = urlData.publicUrl + "?t=" + Date.now()
+
+    const { error: updateError } = await supabase.from("productos")
+      .update({ imagen_url: url })
+      .eq("id", productoId)
+
+    if (updateError) {
+      mostrarToast("❌ Error guardando URL", "error")
+    } else {
+      mostrarToast("✅ Foto actualizada", "ok")
+      cargar()
+    }
+    setSubiendoFoto(null)
+  }
+
   if (cargando) return <p style={{ padding: 30 }}>⏳ Cargando productos...</p>
 
   const productosFiltrados = productos.filter(p =>
@@ -143,6 +187,15 @@ export default function Productos() {
   return (
     <div>
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
+
+      {/* Input de foto oculto, compartido para todos los productos */}
+      <input
+        ref={inputFotoRef}
+        type="file"
+        accept=".jpg,.jpeg,.webp,.png"
+        style={{ display: "none" }}
+        onChange={subirFoto}
+      />
 
       <h1>📦 Productos</h1>
 
@@ -171,52 +224,98 @@ export default function Productos() {
         const margenNum = Number(editando?.margen || 0)
         const precioEstimado = costoNum + (costoNum * margenNum / 100)
         return (
-          <div key={p.id} style={{ background: "white", padding: 15, marginBottom: 10, borderRadius: 10 }}>
-            {editando?.id === p.id ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <label><b>🏷️ Nombre</b></label>
-                <input value={editando.nombre || ""} onChange={e => setEditando({ ...editando, nombre: e.target.value })} />
-                <label><b>💰 Costo</b></label>
-                <input type="number" value={editando.costo || ""} onChange={e => setEditando({ ...editando, costo: e.target.value })} />
-                <label><b>📊 % Margen</b></label>
-                <input type="number" value={editando.margen || ""} onChange={e => setEditando({ ...editando, margen: e.target.value })} />
-                <label><b>📦 Stock</b></label>
-                <input type="number" value={editando.stock || ""} onChange={e => setEditando({ ...editando, stock: e.target.value })} />
-                <div style={{ background: "#f1f3f5", padding: 10, borderRadius: 8, marginTop: 10 }}>
-                  💵 <b>Precio estimado:</b> {formatearPrecio(precioEstimado)}
+          <div key={p.id} style={{
+            background: "white", padding: 15, marginBottom: 10, borderRadius: 10,
+            display: "flex", gap: 15, alignItems: "stretch"
+          }}>
+            {/* Contenido principal */}
+            <div style={{ flex: 1 }}>
+              {editando?.id === p.id ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <label><b>🏷️ Nombre</b></label>
+                  <input value={editando.nombre || ""} onChange={e => setEditando({ ...editando, nombre: e.target.value })} />
+                  <label><b>💰 Costo</b></label>
+                  <input type="number" value={editando.costo || ""} onChange={e => setEditando({ ...editando, costo: e.target.value })} />
+                  <label><b>📊 % Margen</b></label>
+                  <input type="number" value={editando.margen || ""} onChange={e => setEditando({ ...editando, margen: e.target.value })} />
+                  <label><b>📦 Stock</b></label>
+                  <input type="number" value={editando.stock || ""} onChange={e => setEditando({ ...editando, stock: e.target.value })} />
+                  <div style={{ background: "#f1f3f5", padding: 10, borderRadius: 8, marginTop: 10 }}>
+                    💵 <b>Precio estimado:</b> {formatearPrecio(precioEstimado)}
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={guardarEdicion}>💾 Guardar</button>
+                    <button onClick={() => setEditando(null)}>✖️ Cancelar</button>
+                  </div>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={guardarEdicion}>💾 Guardar</button>
-                  <button onClick={() => setEditando(null)}>✖️ Cancelar</button>
+              ) : (
+                <div>
+                  <b style={{ color: "#111827", fontSize: "15px" }}>{p.nombre}</b>
+                  {p.stock <= 5 && (
+                    <span style={{
+                      marginLeft: 10,
+                      background: "#fff3cd",
+                      color: "#92400e",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      padding: "2px 8px",
+                      borderRadius: "6px",
+                      border: "1px solid #fbbf24"
+                    }}>
+                      ⚠️ Stock bajo
+                    </span>
+                  )}
+                  <p style={{ color: "#374151", margin: "6px 0 4px" }}>
+                    💰 Costo: {formatearPrecio(p.costo)} · 📊 Margen: {p.margen}% · 💵 Venta: {formatearPrecio(p.precio_venta)}
+                  </p>
+                  <p style={{ color: "#374151", margin: "0 0 10px" }}>📦 Stock: {p.stock}</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => setEditando({ ...p })}>✏️ Editar</button>
+                    <button onClick={() => setConfirmEliminar(p)} style={{ background: "red", color: "white" }}>🗑️</button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div>
-  <b style={{ color: "#111827", fontSize: "15px" }}>{p.nombre}</b>
-  {p.stock <= 5 && (
-    <span style={{
-      marginLeft: 10,
-      background: "#fff3cd",
-      color: "#92400e",
-      fontSize: "12px",
-      fontWeight: "600",
-      padding: "2px 8px",
-      borderRadius: "6px",
-      border: "1px solid #fbbf24"
-    }}>
-      ⚠️ Stock bajo
-    </span>
-  )}
-  <p style={{ color: "#374151", margin: "6px 0 4px" }}>
-    💰 Costo: {formatearPrecio(p.costo)} · 📊 Margen: {p.margen}% · 💵 Venta: {formatearPrecio(p.precio_venta)}
-  </p>
-  <p style={{ color: "#374151", margin: "0 0 10px" }}>📦 Stock: {p.stock}</p>
-  <div style={{ display: "flex", gap: 8 }}>
-    <button onClick={() => setEditando({ ...p })}>✏️ Editar</button>
-    <button onClick={() => setConfirmEliminar(p)} style={{ background: "red", color: "white" }}>🗑️</button>
-  </div>
-</div>
-            )}
+              )}
+            </div>
+
+            {/* Panel de foto a la derecha */}
+            <div
+              onClick={() => abrirSelectorFoto(p.id)}
+              title="Clic para cambiar foto"
+              style={{
+                width: 90,
+                minHeight: 90,
+                flexShrink: 0,
+                borderRadius: 10,
+                overflow: "hidden",
+                border: "2px dashed #d1d5db",
+                cursor: "pointer",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "#f9fafb",
+                position: "relative",
+                transition: "border-color 0.2s"
+              }}
+            >
+              {subiendoFoto === p.id ? (
+                <span style={{ fontSize: 12, color: "#6b7280", textAlign: "center", padding: 4 }}>⏳ Subiendo...</span>
+              ) : p.imagen_url ? (
+                <img
+                  src={p.imagen_url}
+                  alt={p.nombre}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              ) : (
+                <div style={{ textAlign: "center", padding: 6 }}>
+                  <div style={{ fontSize: 22 }}>📷</div>
+                  <div style={{ fontSize: 9, color: "#9ca3af", marginTop: 4, lineHeight: 1.3 }}>
+                    JPG / WebP<br />800×800px
+                  </div>
+                </div>
+              )}
+            </div>
+
           </div>
         )
       })}
