@@ -190,7 +190,7 @@ const [progreso, setProgreso] = useState(0)
 
   const productosBase = archivo.name.endsWith(".xlsx")
   ? await procesarExcelPreview()
-  : await procesarCSVPreview()
+  : await procesarArchivoUniversal()
   if (!productosBase) return
 
   setImportando(true)
@@ -292,6 +292,112 @@ if (isNaN(costo)) continue
 
   return productos
 }
+async function procesarArchivoUniversal() {
+  if (!archivo) {
+    mostrarToast("⚠️ Seleccioná un archivo", "error")
+    return
+  }
+
+  function parsePrecio(valor: any) {
+    if (!valor) return NaN
+
+    let str = String(valor).replace(/\$/g, "").trim()
+
+    if (str.includes(",") && str.includes(".")) {
+      str = str.replace(/\./g, "").replace(",", ".")
+    } else if (str.includes(",") && !str.includes(".")) {
+      str = str.replace(",", ".")
+    }
+
+    return Number(str)
+  }
+
+  function normalizarTexto(texto: any) {
+    return String(texto || "").trim()
+  }
+
+  let productos: any[] = []
+
+  // 🟢 CASO EXCEL
+  if (archivo.name.endsWith(".xlsx")) {
+    const data = await archivo.arrayBuffer()
+    const workbook = XLSX.read(data)
+
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const json: any[] = XLSX.utils.sheet_to_json(sheet)
+
+    for (let fila of json) {
+      const laboratorio =
+        fila.Laboratorio ||
+        fila.laboratorio ||
+        fila.Marca ||
+        fila.marca ||
+        ""
+
+      const nombreProd =
+        fila.Producto ||
+        fila.producto ||
+        fila.Nombre ||
+        fila.nombre ||
+        ""
+
+      const costoRaw =
+        fila.Costo ||
+        fila.costo ||
+        fila.Precio ||
+        fila.precio ||
+        fila["Precio Costo"] ||
+        fila["precio_costo_con_iva"] ||
+        ""
+
+      const nombreFinal = `${normalizarTexto(laboratorio)} ${normalizarTexto(nombreProd)}`.trim()
+      const costo = parsePrecio(costoRaw)
+
+      if (!nombreFinal || isNaN(costo)) continue
+
+      productos.push({ nombre: nombreFinal, costo })
+    }
+  }
+
+  // 🔵 CASO CSV (con encoding automático)
+  else {
+    const buffer = await archivo.arrayBuffer()
+
+    let texto = ""
+    try {
+      texto = new TextDecoder("utf-8").decode(buffer)
+    } catch {
+      texto = new TextDecoder("latin1").decode(buffer)
+    }
+
+    const lineas = texto.split("\n").slice(1)
+
+    for (let linea of lineas) {
+      if (!linea.trim()) continue
+
+      const separador = linea.includes(";") ? ";" : ","
+      const partes = linea.split(separador)
+
+      const laboratorio = partes[0]
+      const producto = partes[1]
+      const precioRaw = partes[2] || partes[1]
+
+      const nombreFinal = `${normalizarTexto(laboratorio)} ${normalizarTexto(producto)}`.trim()
+      const costo = parsePrecio(precioRaw)
+
+      if (!nombreFinal || isNaN(costo)) continue
+
+      productos.push({ nombre: nombreFinal, costo })
+    }
+  }
+
+  console.log("TOTAL DETECTADOS:", productos.length)
+
+  setPreview(productos.slice(0, 20))
+  mostrarToast(`📊 ${productos.length} productos detectados`, "ok")
+
+  return productos
+}
 
   function abrirSelectorFoto(productoId: number) {
     productoFotoRef.current = productoId
@@ -361,7 +467,7 @@ if (isNaN(costo)) continue
           style={{ width: 180, marginRight: 10 }} />
         <input type="file" accept=".csv,.xlsx" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
 
-<button onClick={procesarCSVPreview}>
+<button onClick={procesarArchivoUniversal}>
   👁️ Ver preview
 </button>
 
