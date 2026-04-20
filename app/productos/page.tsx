@@ -181,10 +181,28 @@ async function procesarCSVPreview() {
 
     if (!nombre || !precioRaw) continue
 
-    precioRaw = precioRaw.replace(/\./g, "").replace(",", ".")
+    function parsePrecio(precioRaw: string) {
+  if (!precioRaw) return NaN
 
-    const costo = Number(precioRaw)
-    if (isNaN(costo)) continue
+  // limpiar símbolos
+  precioRaw = precioRaw.replace(/\$/g, "").trim()
+
+  // caso 1: formato argentino 1.234,56
+  if (precioRaw.includes(",") && precioRaw.includes(".")) {
+    precioRaw = precioRaw.replace(/\./g, "").replace(",", ".")
+  }
+
+  // caso 2: formato europeo 1234,56
+  else if (precioRaw.includes(",") && !precioRaw.includes(".")) {
+    precioRaw = precioRaw.replace(",", ".")
+  }
+
+  // caso 3: formato USA 1234.56 → NO tocar
+
+  return Number(precioRaw)
+}
+const costo = parsePrecio(precioRaw)
+if (isNaN(costo)) continue
 
     productos.push({ nombre, costo })
   }
