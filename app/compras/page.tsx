@@ -5,7 +5,13 @@ import { supabase } from "../../lib/supabase";
 
 interface Proveedor { id: number; nombre: string; }
 interface Producto { id: number; nombre: string; stock: number; }
-interface ItemForm { producto_id: number; nombre: string; cantidad: number; precio_unitario: number; }
+interface ItemForm { 
+  producto_id: number; 
+  nombre: string; 
+  cantidad: number; 
+  precio_unitario: number;
+  fecha_vencimiento: string; // ← nuevo
+}
 interface Compra {
   id: number;
   fecha: string;
@@ -120,7 +126,13 @@ export default function ComprasPage() {
     const prod = productos.find(p => p.id === Number(productoSel));
     if (!prod) return;
     if (items.find(i => i.producto_id === Number(productoSel))) return;
-    setItems([...items, { producto_id: prod.id, nombre: prod.nombre, cantidad: 1, precio_unitario: 0 }]);
+    setItems([...items, { 
+  producto_id: prod.id, 
+  nombre: prod.nombre, 
+  cantidad: 1, 
+  precio_unitario: 0,
+  fecha_vencimiento: "" // ← nuevo
+}]);
     setProductoSel("");
   }
 
@@ -152,7 +164,12 @@ export default function ComprasPage() {
       p_metodo_pago: form.metodo_pago,
       p_notas: form.notas || null,
       p_pago_inicial: parseFloat(form.pago_inicial) || 0,
-      p_items: items.map(it => ({ producto_id: it.producto_id, cantidad: it.cantidad, precio_unitario: it.precio_unitario })),
+      p_items: items.map(it => ({ 
+  producto_id: it.producto_id, 
+  cantidad: it.cantidad, 
+  precio_unitario: it.precio_unitario,
+  fecha_vencimiento: it.fecha_vencimiento || null
+})),
       p_incluye_iva: form.incluye_iva,
       p_porcentaje_iva: pctIva,
       p_monto_flete: montoFlete,
@@ -452,6 +469,7 @@ const itemsCalculados = calcularItemsConExtras(
     <th className="text-left px-3 py-2">Producto</th>
     <th className="text-center px-3 py-2 w-20">Cant.</th>
     <th className="text-center px-3 py-2 w-28">P. unit.</th>
+    <th className="text-center px-3 py-2 w-32">Vencimiento</th>
     <th className="text-right px-3 py-2">Subtotal</th>
     <th className="text-right px-3 py-2 text-blue-700">IVA</th>
     <th className="text-right px-3 py-2 text-orange-700">Flete</th>
@@ -479,6 +497,16 @@ const itemsCalculados = calcularItemsConExtras(
           onChange={e => actualizarItem(idx, "precio_unitario", parseFloat(e.target.value) || 0)}
           className="w-full text-center border border-gray-300 rounded px-1 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
       </td>
+      <td className="px-3 py-2">
+  <input 
+    type="date" 
+    value={it.fecha_vencimiento}
+    onChange={e => setItems(items.map((item, i) => 
+      i === idx ? { ...item, fecha_vencimiento: e.target.value } : item
+    ))}
+    className="w-full border border-gray-300 rounded px-1 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
+  />
+</td>
 
       <td className="px-3 py-2 text-right text-gray-800 text-xs">
         {fmt(it.subtotal)}
