@@ -247,23 +247,32 @@ export default function Productos() {
   }
 
   async function guardarLote() {
-    if (!modalLote) return
-    if (!formLote.cantidad || !formLote.fecha_vencimiento) {
-      mostrarToast("⚠️ Completá cantidad y fecha", "error"); return
-    }
-    setGuardandoLote(true)
-    const { error } = await supabase.from("lotes").insert({
-      producto_id: modalLote.productoId,
-      cantidad: Number(formLote.cantidad),
-      fecha_vencimiento: formLote.fecha_vencimiento
-    })
-    setGuardandoLote(false)
-    if (error) return mostrarToast("❌ " + error.message, "error")
-    mostrarToast("✅ Lote agregado", "ok")
-    setModalLote(null)
-    setFormLote({ cantidad: "", fecha_vencimiento: "" })
-    cargar()
+  if (!modalLote) return
+  if (!formLote.cantidad || !formLote.fecha_vencimiento) {
+    mostrarToast("⚠️ Completá cantidad y fecha", "error"); return
   }
+  setGuardandoLote(true)
+  const { error } = await supabase.from("lotes").insert({
+    producto_id: modalLote.productoId,
+    cantidad: Number(formLote.cantidad),
+    fecha_vencimiento: formLote.fecha_vencimiento
+  })
+  if (error) { setGuardandoLote(false); return mostrarToast("❌ " + error.message, "error") }
+
+  // Actualizar stock del producto
+  await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "lotes", registro_id: modalLote.productoId })
+  const { error: errorStock } = await supabase
+    .from("productos")
+    .update({ stock: productos.find(p => p.id === modalLote.productoId)?.stock + Number(formLote.cantidad) })
+    .eq("id", modalLote.productoId)
+
+  setGuardandoLote(false)
+  if (errorStock) return mostrarToast("❌ Error actualizando stock", "error")
+  mostrarToast("✅ Lote agregado", "ok")
+  setModalLote(null)
+  setFormLote({ cantidad: "", fecha_vencimiento: "" })
+  cargar()
+}
 
   async function eliminarLote() {
     if (!confirmEliminarLote) return

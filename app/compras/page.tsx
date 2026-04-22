@@ -5,12 +5,12 @@ import { supabase } from "../../lib/supabase";
 
 interface Proveedor { id: number; nombre: string; }
 interface Producto { id: number; nombre: string; stock: number; }
-interface ItemForm { 
-  producto_id: number; 
-  nombre: string; 
-  cantidad: number; 
+interface ItemForm {
+  producto_id: number;
+  nombre: string;
+  cantidad: number;
   precio_unitario: number;
-  fecha_vencimiento: string; // ← nuevo
+  fecha_vencimiento: string;
 }
 interface Compra {
   id: number;
@@ -94,6 +94,10 @@ export default function ComprasPage() {
   const [guardandoPago, setGuardandoPago] = useState(false);
   const [cancelando, setCancelando] = useState(false);
 
+  // Eliminar compra
+  const [confirmEliminarCompra, setConfirmEliminarCompra] = useState<Compra | null>(null);
+  const [eliminandoCompra, setEliminandoCompra] = useState(false);
+
   useEffect(() => { cargarTodo(); }, []);
 
   async function cargarTodo() {
@@ -126,13 +130,10 @@ export default function ComprasPage() {
     const prod = productos.find(p => p.id === Number(productoSel));
     if (!prod) return;
     if (items.find(i => i.producto_id === Number(productoSel))) return;
-    setItems([...items, { 
-  producto_id: prod.id, 
-  nombre: prod.nombre, 
-  cantidad: 1, 
-  precio_unitario: 0,
-  fecha_vencimiento: "" // ← nuevo
-}]);
+    setItems([...items, {
+      producto_id: prod.id, nombre: prod.nombre,
+      cantidad: 1, precio_unitario: 0, fecha_vencimiento: ""
+    }]);
     setProductoSel("");
   }
 
@@ -150,11 +151,7 @@ export default function ComprasPage() {
     if (form.incluye_iva && (pctIva <= 0 || pctIva > 100)) { setErrorForm("El porcentaje de IVA debe estar entre 1 y 100."); return; }
     const valFlete = parseFloat(form.valor_flete) || 0;
     if (form.incluye_flete && valFlete <= 0) { setErrorForm("El valor del flete debe ser mayor a 0."); return; }
-
-    const { flete: montoFlete } = calcularTotales(
-      items, form.incluye_iva, pctIva, form.incluye_flete, form.tipo_flete, valFlete
-    );
-
+    const { flete: montoFlete } = calcularTotales(items, form.incluye_iva, pctIva, form.incluye_flete, form.tipo_flete, valFlete);
     setGuardando(true); setErrorForm(null);
     const { error } = await supabase.rpc("registrar_compra", {
       p_proveedor_id: Number(form.proveedor_id),
@@ -164,12 +161,12 @@ export default function ComprasPage() {
       p_metodo_pago: form.metodo_pago,
       p_notas: form.notas || null,
       p_pago_inicial: parseFloat(form.pago_inicial) || 0,
-      p_items: items.map(it => ({ 
-  producto_id: it.producto_id, 
-  cantidad: it.cantidad, 
-  precio_unitario: it.precio_unitario,
-  fecha_vencimiento: it.fecha_vencimiento || null
-})),
+      p_items: items.map(it => ({
+        producto_id: it.producto_id,
+        cantidad: it.cantidad,
+        precio_unitario: it.precio_unitario,
+        fecha_vencimiento: it.fecha_vencimiento || null
+      })),
       p_incluye_iva: form.incluye_iva,
       p_porcentaje_iva: pctIva,
       p_monto_flete: montoFlete,
@@ -177,6 +174,21 @@ export default function ComprasPage() {
     setGuardando(false);
     if (error) { setErrorForm("Error: " + error.message); return; }
     setModalNueva(false);
+    cargarTodo();
+  }
+
+  async function eliminarCompra() {
+    if (!confirmEliminarCompra) return;
+    setEliminandoCompra(true);
+    // Eliminar en cascada: pagos, detalle, lotes y compra
+    await supabase.from("compras_pagos").delete().eq("compra_id", confirmEliminarCompra.id);
+    await supabase.from("compras_detalle").delete().eq("compra_id", confirmEliminarCompra.id);
+    await supabase.from("lotes").update({ cantidad: 0 }).eq("compra_id", confirmEliminarCompra.id);
+    const { error } = await supabase.from("compras").delete().eq("id", confirmEliminarCompra.id);
+    setEliminandoCompra(false);
+    if (error) { alert("Error al eliminar: " + error.message); return; }
+    setConfirmEliminarCompra(null);
+    if (compraVer?.id === confirmEliminarCompra.id) setCompraVer(null);
     cargarTodo();
   }
 
@@ -199,28 +211,14 @@ export default function ComprasPage() {
     if (saldo <= 0) return;
     setCancelando(true);
     const { error } = await supabase.rpc("registrar_pago_compra", {
-  p_compra_id: compraVer.id,
-  p_monto: saldo,
-  p_metodo_pago: "Efectivo",
-  p_notas: "Cancelación total",
-});
-
-if (error) {
-  console.error("Error al cancelar:", error);
-  alert("Error al cancelar: " + error.message);
-  setCancelando(false);
-  return;
-}
+      p_compra_id: compraVer.id, p_monto: saldo,
+      p_metodo_pago: "Efectivo", p_notas: "Cancelación total",
+    });
+    if (error) { alert("Error al cancelar: " + error.message); setCancelando(false); return; }
     setCancelando(false);
     await cargarTodo();
-
-const { data: compraActualizada } = await supabase
-  .from("compras")
-  .select("*")
-  .eq("id", compraVer.id)
-  .single();
-
-if (compraActualizada) setCompraVer(compraActualizada);
+    const { data: compraActualizada } = await supabase.from("compras").select("*").eq("id", compraVer.id).single();
+    if (compraActualizada) setCompraVer(compraActualizada);
     const { data: p } = await supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha");
     if (p) setPagos(p);
     cargarTodo();
@@ -251,6 +249,22 @@ if (compraActualizada) setCompraVer(compraActualizada);
     cargarTodo();
   }
 
+  function calcularItemsConExtras(items: ItemForm[], incluyeIva: boolean, porcentajeIva: number, incluyeFlete: boolean, tipoFlete: "pct" | "pesos", valorFlete: number) {
+    const { subtotal, iva, flete } = calcularTotales(items, incluyeIva, porcentajeIva, incluyeFlete, tipoFlete, valorFlete);
+    return items.map((it) => {
+      const subtotalItem = it.cantidad * it.precio_unitario;
+      const proporcion = subtotal > 0 ? subtotalItem / subtotal : 0;
+      const ivaItem = incluyeIva ? iva * proporcion : 0;
+      const fleteItem = incluyeFlete ? flete * proporcion : 0;
+      return {
+        ...it, subtotal: subtotalItem,
+        iva: Math.round(ivaItem * 100) / 100,
+        flete: Math.round(fleteItem * 100) / 100,
+        precio_final_unitario: it.cantidad > 0 ? Math.round(((subtotalItem + ivaItem + fleteItem) / it.cantidad) * 100) / 100 : 0
+      };
+    });
+  }
+
   const filtradas = compras.filter(c => {
     const texto = [c.proveedores?.nombre, c.numero_remito].join(" ").toLowerCase();
     return texto.includes(busqueda.toLowerCase()) && (filtroEstado === "todos" || c.estado === filtroEstado);
@@ -261,51 +275,8 @@ if (compraActualizada) setCompraVer(compraActualizada);
   const valFleteForm = parseFloat(form.valor_flete) || 0;
   const { subtotal: subtotalForm, iva: ivaForm, flete: fleteForm, total: totalForm } =
     calcularTotales(items, form.incluye_iva, pctIvaForm, form.incluye_flete, form.tipo_flete, valFleteForm);
+  const itemsCalculados = calcularItemsConExtras(items, form.incluye_iva, pctIvaForm, form.incluye_flete, form.tipo_flete, valFleteForm);
 
-   function calcularItemsConExtras(
-  items: ItemForm[],
-  incluyeIva: boolean,
-  porcentajeIva: number,
-  incluyeFlete: boolean,
-  tipoFlete: "pct" | "pesos",
-  valorFlete: number
-) {
-  const { subtotal, iva, flete } = calcularTotales(
-    items,
-    incluyeIva,
-    porcentajeIva,
-    incluyeFlete,
-    tipoFlete,
-    valorFlete
-  );
-
-  return items.map((it) => {
-    const subtotalItem = it.cantidad * it.precio_unitario;
-    const proporcion = subtotal > 0 ? subtotalItem / subtotal : 0;
-
-    const ivaItem = incluyeIva ? iva * proporcion : 0;
-    const fleteItem = incluyeFlete ? flete * proporcion : 0;
-
-    return {
-  ...it,
-  subtotal: subtotalItem,
-  iva: Math.round(ivaItem * 100) / 100,
-  flete: Math.round(fleteItem * 100) / 100,
-  precio_final_unitario:
-    it.cantidad > 0
-      ? Math.round(((subtotalItem + ivaItem + fleteItem) / it.cantidad) * 100) / 100
-      : 0
-};
-  });
-}
-const itemsCalculados = calcularItemsConExtras(
-  items,
-  form.incluye_iva,
-  pctIvaForm,
-  form.incluye_flete,
-  form.tipo_flete,
-  valFleteForm
-);
   return (
     <div className="p-4 md:p-6" style={{ maxWidth: "100%", overflowX: "hidden" }}>
 
@@ -357,14 +328,10 @@ const itemsCalculados = calcularItemsConExtras(
                       <span className="font-semibold text-gray-900">{c.proveedores?.nombre ?? "—"}</span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${est.color}`}>{est.label}</span>
                       {c.incluye_iva && (
-                        <span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">
-                          IVA {c.porcentaje_iva}%
-                        </span>
+                        <span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">IVA {c.porcentaje_iva}%</span>
                       )}
                       {c.monto_flete > 0 && (
-                        <span className="bg-orange-50 text-orange-700 text-xs px-2 py-0.5 rounded-full font-medium">
-                          🚚 Flete {fmt(c.monto_flete)}
-                        </span>
+                        <span className="bg-orange-50 text-orange-700 text-xs px-2 py-0.5 rounded-full font-medium">🚚 {fmt(c.monto_flete)}</span>
                       )}
                       {vencido && <span className="text-red-600 text-xs font-medium">⚠️ Vencida</span>}
                     </div>
@@ -372,14 +339,12 @@ const itemsCalculados = calcularItemsConExtras(
                       <span>📅 {c.fecha}</span>
                       {c.numero_remito && <span>🧾 {c.numero_remito}</span>}
                       {c.fecha_vencimiento && (
-                        <span className={vencido ? "text-red-600 font-medium" : ""}>
-                          ⏰ Vence: {c.fecha_vencimiento}
-                        </span>
+                        <span className={vencido ? "text-red-600 font-medium" : ""}>⏰ Vence: {c.fecha_vencimiento}</span>
                       )}
                       {c.metodo_pago && <span>💳 {c.metodo_pago}</span>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 flex-shrink-0">
+                  <div className="flex items-center gap-3 flex-shrink-0 flex-wrap justify-end">
                     <div className="text-right">
                       <div className="text-xs text-gray-400">Total</div>
                       <div className="font-semibold text-gray-900 text-sm">{fmt(c.total)}</div>
@@ -398,6 +363,10 @@ const itemsCalculados = calcularItemsConExtras(
                       className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
                       Ver detalle
                     </button>
+                    <button onClick={() => setConfirmEliminarCompra(c)}
+                      className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
+                      🗑️ Eliminar
+                    </button>
                   </div>
                 </div>
               </div>
@@ -409,7 +378,7 @@ const itemsCalculados = calcularItemsConExtras(
       {/* ── MODAL NUEVA COMPRA ── */}
       {modalNueva && (
         <div className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-8">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl my-8">
             <div className="px-6 py-4 border-b border-gray-100">
               <h2 className="text-lg font-semibold text-gray-900">Nueva compra</h2>
             </div>
@@ -440,7 +409,7 @@ const itemsCalculados = calcularItemsConExtras(
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Fecha de vencimiento</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Fecha de vencimiento del remito</label>
                   <input type="date" value={form.fecha_vencimiento} onChange={e => setForm({ ...form, fecha_vencimiento: e.target.value })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
@@ -449,7 +418,7 @@ const itemsCalculados = calcularItemsConExtras(
               {/* Productos */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Productos *</label>
-                <div className="flex gap-2 mb-2">
+                <div className="flex gap-2 mb-3">
                   <select value={productoSel} onChange={e => setProductoSel(e.target.value)}
                     className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">Seleccioná un producto</option>
@@ -457,130 +426,89 @@ const itemsCalculados = calcularItemsConExtras(
                       <option key={p.id} value={p.id}>{p.nombre}</option>)}
                   </select>
                   <button onClick={agregarItem} disabled={!productoSel}
-                    className="bg-gray-100 hover:bg-gray-200 disabled:opacity-40 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                    Agregar
+                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">
+                    + Agregar
                   </button>
                 </div>
+
                 {items.length > 0 && (
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-100 text-gray-700 text-xs font-semibold">
-  <tr>
-    <th className="text-left px-3 py-2">Producto</th>
-    <th className="text-center px-3 py-2 w-20">Cant.</th>
-    <th className="text-center px-3 py-2 w-28">P. unit.</th>
-    <th className="text-center px-3 py-2 w-32">Vencimiento</th>
-    <th className="text-right px-3 py-2">Subtotal</th>
-    <th className="text-right px-3 py-2 text-blue-700">IVA</th>
-    <th className="text-right px-3 py-2 text-orange-700">Flete</th>
-    <th className="text-right px-3 py-2">Total</th>
-    <th className="w-6"></th>
-  </tr>
-</thead>
-
-<tbody className="divide-y divide-gray-100">
-  {itemsCalculados.map((it, idx) => (
-    <tr key={it.producto_id} className="hover:bg-gray-50">
-      
-      <td className="px-3 py-2 text-gray-800 text-xs">
-        {it.nombre}
-      </td>
-
-      <td className="px-3 py-2">
-        <input type="number" min="1" value={it.cantidad}
-          onChange={e => actualizarItem(idx, "cantidad", parseFloat(e.target.value) || 1)}
-          className="w-full text-center border border-gray-300 rounded px-1 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-      </td>
-
-      <td className="px-3 py-2">
-        <input type="number" min="0" step="0.01" value={it.precio_unitario}
-          onChange={e => actualizarItem(idx, "precio_unitario", parseFloat(e.target.value) || 0)}
-          className="w-full text-center border border-gray-300 rounded px-1 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-      </td>
-      <td className="px-3 py-2">
-  <input 
-    type="date" 
-    value={it.fecha_vencimiento}
-    onChange={e => setItems(items.map((item, i) => 
-      i === idx ? { ...item, fecha_vencimiento: e.target.value } : item
-    ))}
-    className="w-full border border-gray-300 rounded px-1 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
-  />
-</td>
-
-      <td className="px-3 py-2 text-right text-gray-800 text-xs">
-        {fmt(it.subtotal)}
-      </td>
-
-      <td className="px-3 py-2 text-right text-blue-700 text-xs font-medium">
-        {fmt(it.iva)}
-      </td>
-
-      <td className="px-3 py-2 text-right text-orange-700 text-xs font-medium">
-        {fmt(it.flete)}
-      </td>
-
-      <td className="px-3 py-2 text-right font-semibold text-gray-900 text-xs">
-        {fmt(it.subtotal + it.iva + it.flete)}
-      </td>
-
-      <td className="px-3 py-2 text-center">
-        <button onClick={() => quitarItem(idx)}
-          className="text-red-500 hover:text-red-700 text-xs">
-          ✕
-        </button>
-      </td>
-    </tr>
-  ))}
-</tbody>
-
-<tfoot className="bg-gray-50 text-sm">
-
-  <tr>
-    <td colSpan={6} className="px-3 py-1.5 text-right text-gray-600 text-xs">
-      Subtotal:
-    </td>
-    <td className="px-3 py-1.5 text-right text-gray-800 text-xs font-medium">
-      {fmt(subtotalForm)}
-    </td>
-    <td></td>
-  </tr>
-
-  {form.incluye_iva && ivaForm > 0 && (
-    <tr>
-      <td colSpan={6} className="px-3 py-1.5 text-right text-blue-700 text-xs">
-        IVA {pctIvaForm}%:
-      </td>
-      <td className="px-3 py-1.5 text-right text-blue-700 text-xs font-medium">
-        {fmt(ivaForm)}
-      </td>
-      <td></td>
-    </tr>
-  )}
-
-  {form.incluye_flete && fleteForm > 0 && (
-    <tr>
-      <td colSpan={6} className="px-3 py-1.5 text-right text-orange-700 text-xs">
-        🚚 Flete{form.tipo_flete === "pct" ? ` ${valFleteForm}%` : ""}:
-      </td>
-      <td className="px-3 py-1.5 text-right text-orange-700 text-xs font-medium">
-        {fmt(fleteForm)}
-      </td>
-      <td></td>
-    </tr>
-  )}
-
-  <tr className="border-t border-gray-200">
-    <td colSpan={6} className="px-3 py-2 text-right font-semibold text-gray-700 text-xs">
-      Total:
-    </td>
-    <td className="px-3 py-2 text-right font-bold text-gray-900 text-sm">
-      {fmt(totalForm)}
-    </td>
-    <td></td>
-  </tr>
-
-</tfoot>
+                  <div className="border border-gray-200 rounded-lg overflow-x-auto">
+                    <table className="w-full text-sm" style={{ minWidth: 780 }}>
+                      <thead className="bg-gray-50 text-gray-600 text-xs font-semibold">
+                        <tr>
+                          <th className="text-left px-4 py-2.5" style={{ minWidth: 180 }}>Producto</th>
+                          <th className="text-center px-3 py-2.5" style={{ width: 90 }}>Cantidad</th>
+                          <th className="text-center px-3 py-2.5" style={{ width: 120 }}>P. unitario</th>
+                          <th className="text-center px-3 py-2.5" style={{ width: 130 }}>Vencimiento</th>
+                          <th className="text-right px-3 py-2.5" style={{ width: 100 }}>Subtotal</th>
+                          <th className="text-right px-3 py-2.5 text-blue-600" style={{ width: 80 }}>IVA</th>
+                          <th className="text-right px-3 py-2.5 text-orange-600" style={{ width: 80 }}>Flete</th>
+                          <th className="text-right px-3 py-2.5" style={{ width: 100 }}>Total</th>
+                          <th style={{ width: 36 }}></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {itemsCalculados.map((it, idx) => (
+                          <tr key={it.producto_id} className="hover:bg-gray-50">
+                            <td className="px-4 py-2.5 text-gray-800 text-xs font-medium">{it.nombre}</td>
+                            <td className="px-3 py-2.5">
+                              <input type="number" min="1" value={it.cantidad}
+                                onChange={e => actualizarItem(idx, "cantidad", parseFloat(e.target.value) || 1)}
+                                className="w-full text-center border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <input type="number" min="0" step="0.01" value={it.precio_unitario}
+                                onChange={e => actualizarItem(idx, "precio_unitario", parseFloat(e.target.value) || 0)}
+                                className="w-full text-center border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <input type="date" value={it.fecha_vencimiento}
+                                onChange={e => setItems(items.map((item, i) =>
+                                  i === idx ? { ...item, fecha_vencimiento: e.target.value } : item
+                                ))}
+                                className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500" />
+                            </td>
+                            <td className="px-3 py-2.5 text-right text-gray-700 text-xs">{fmt(it.subtotal)}</td>
+                            <td className="px-3 py-2.5 text-right text-blue-600 text-xs font-medium">{fmt(it.iva)}</td>
+                            <td className="px-3 py-2.5 text-right text-orange-600 text-xs font-medium">{fmt(it.flete)}</td>
+                            <td className="px-3 py-2.5 text-right font-semibold text-gray-900 text-xs">{fmt(it.subtotal + it.iva + it.flete)}</td>
+                            <td className="px-3 py-2.5 text-center">
+                              <button onClick={() => quitarItem(idx)}
+                                className="w-6 h-6 flex items-center justify-center rounded-md bg-red-50 hover:bg-red-100 text-red-500 hover:text-red-700 text-xs font-bold transition-colors mx-auto">
+                                ✕
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-gray-50">
+                        <tr>
+                          <td colSpan={7} className="px-4 py-1.5 text-right text-gray-500 text-xs">Subtotal:</td>
+                          <td className="px-3 py-1.5 text-right text-gray-700 text-xs font-medium">{fmt(subtotalForm)}</td>
+                          <td></td>
+                        </tr>
+                        {form.incluye_iva && ivaForm > 0 && (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-1.5 text-right text-blue-600 text-xs">IVA {pctIvaForm}%:</td>
+                            <td className="px-3 py-1.5 text-right text-blue-600 text-xs font-medium">{fmt(ivaForm)}</td>
+                            <td></td>
+                          </tr>
+                        )}
+                        {form.incluye_flete && fleteForm > 0 && (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-1.5 text-right text-orange-600 text-xs">
+                              🚚 Flete{form.tipo_flete === "pct" ? ` ${valFleteForm}%` : ""}:
+                            </td>
+                            <td className="px-3 py-1.5 text-right text-orange-600 text-xs font-medium">{fmt(fleteForm)}</td>
+                            <td></td>
+                          </tr>
+                        )}
+                        <tr className="border-t border-gray-200">
+                          <td colSpan={7} className="px-4 py-2 text-right font-semibold text-gray-700 text-xs">Total:</td>
+                          <td className="px-3 py-2 text-right font-bold text-gray-900 text-sm">{fmt(totalForm)}</td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 )}
@@ -597,8 +525,7 @@ const itemsCalculados = calcularItemsConExtras(
                 {form.incluye_iva && (
                   <>
                     <div className="flex items-center gap-1.5 ml-2">
-                      <input type="number" min="0" max="100" step="0.5"
-                        value={form.porcentaje_iva}
+                      <input type="number" min="0" max="100" step="0.5" value={form.porcentaje_iva}
                         onChange={e => setForm({ ...form, porcentaje_iva: e.target.value })}
                         className="w-16 text-center border border-blue-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
                       <span className="text-sm text-blue-700 font-medium">%</span>
@@ -621,26 +548,17 @@ const itemsCalculados = calcularItemsConExtras(
                 {form.incluye_flete && (
                   <>
                     <div className="flex rounded-lg border border-orange-300 overflow-hidden ml-2">
-                      <button
-                        onClick={() => setForm({ ...form, tipo_flete: "pesos" })}
-                        className={`px-2.5 py-1 text-xs font-medium transition-colors ${form.tipo_flete === "pesos" ? "bg-orange-500 text-white" : "bg-white text-orange-700 hover:bg-orange-50"}`}>
-                        $
-                      </button>
-                      <button
-                        onClick={() => setForm({ ...form, tipo_flete: "pct" })}
-                        className={`px-2.5 py-1 text-xs font-medium transition-colors ${form.tipo_flete === "pct" ? "bg-orange-500 text-white" : "bg-white text-orange-700 hover:bg-orange-50"}`}>
-                        %
-                      </button>
+                      <button onClick={() => setForm({ ...form, tipo_flete: "pesos" })}
+                        className={`px-2.5 py-1 text-xs font-medium transition-colors ${form.tipo_flete === "pesos" ? "bg-orange-500 text-white" : "bg-white text-orange-700 hover:bg-orange-50"}`}>$</button>
+                      <button onClick={() => setForm({ ...form, tipo_flete: "pct" })}
+                        className={`px-2.5 py-1 text-xs font-medium transition-colors ${form.tipo_flete === "pct" ? "bg-orange-500 text-white" : "bg-white text-orange-700 hover:bg-orange-50"}`}>%</button>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <input type="number" min="0" step={form.tipo_flete === "pct" ? "0.5" : "1"}
-                        value={form.valor_flete}
-                        onChange={e => setForm({ ...form, valor_flete: e.target.value })}
+                        value={form.valor_flete} onChange={e => setForm({ ...form, valor_flete: e.target.value })}
                         placeholder="0"
                         className="w-20 text-center border border-orange-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white" />
-                      <span className="text-sm text-orange-700 font-medium">
-                        {form.tipo_flete === "pct" ? "%" : "$"}
-                      </span>
+                      <span className="text-sm text-orange-700 font-medium">{form.tipo_flete === "pct" ? "%" : "$"}</span>
                     </div>
                     {items.length > 0 && fleteForm > 0 && (
                       <span className="ml-auto text-xs text-orange-700 font-medium">+{fmt(fleteForm)}</span>
@@ -670,7 +588,7 @@ const itemsCalculados = calcularItemsConExtras(
                 <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
                 <textarea value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })}
                   rows={2} placeholder="Observaciones, condiciones, etc."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
               </div>
             </div>
 
@@ -704,14 +622,10 @@ const itemsCalculados = calcularItemsConExtras(
                     {ESTADO_LABEL[compraVer.estado]?.label}
                   </span>
                   {compraVer.incluye_iva && (
-                    <span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">
-                      IVA {compraVer.porcentaje_iva}%
-                    </span>
+                    <span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">IVA {compraVer.porcentaje_iva}%</span>
                   )}
                   {compraVer.monto_flete > 0 && (
-                    <span className="bg-orange-50 text-orange-700 text-xs px-2 py-0.5 rounded-full font-medium">
-                      🚚 Flete {fmt(compraVer.monto_flete)}
-                    </span>
+                    <span className="bg-orange-50 text-orange-700 text-xs px-2 py-0.5 rounded-full font-medium">🚚 {fmt(compraVer.monto_flete)}</span>
                   )}
                 </div>
                 <p className="text-sm text-gray-500">
@@ -722,7 +636,6 @@ const itemsCalculados = calcularItemsConExtras(
               <button onClick={() => setCompraVer(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none ml-4 flex-shrink-0">✕</button>
             </div>
 
-            {/* Resumen financiero */}
             <div className="px-6 pt-4">
               <div className="grid grid-cols-3 gap-3">
                 {[
@@ -755,7 +668,6 @@ const itemsCalculados = calcularItemsConExtras(
               )}
             </div>
 
-            {/* Tabs */}
             <div className="px-6 mt-4 border-b border-gray-100">
               <div className="flex gap-4">
                 {(["detalle", "pagos"] as const).map(tab => (
@@ -773,96 +685,75 @@ const itemsCalculados = calcularItemsConExtras(
               <div className="p-8 text-center text-gray-400 text-sm">Cargando...</div>
             ) : (
               <div className="px-6 py-4">
-                {tabDetalle === "detalle" && (
-  <div>
-    {(() => {
-      // Recalcular IVA y flete por ítem usando proporciones
-      const subtotalBase = detalle.reduce((s, d) => s + d.cantidad * d.precio_unitario, 0);
-      const detalleConExtras = detalle.map((d) => {
-        const subtotalItem = d.cantidad * d.precio_unitario;
-        const proporcion = subtotalBase > 0 ? subtotalItem / subtotalBase : 0;
-        const ivaItem = compraVer.incluye_iva ? Math.round(compraVer.monto_iva * proporcion * 100) / 100 : 0;
-        const fleteItem = compraVer.monto_flete > 0 ? Math.round(compraVer.monto_flete * proporcion * 100) / 100 : 0;
-        return { ...d, subtotalItem, ivaItem, fleteItem };
-      });
-
-      const hayIva = compraVer.incluye_iva && compraVer.monto_iva > 0;
-      const hayFlete = compraVer.monto_flete > 0;
-
-      return (
-        <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-          <thead className="bg-gray-100 text-gray-700 text-xs font-semibold">
-            <tr>
-              <th className="text-left px-3 py-2">Producto</th>
-              <th className="text-center px-3 py-2">Cant.</th>
-              <th className="text-right px-3 py-2">P. unit.</th>
-              <th className="text-right px-3 py-2">Subtotal</th>
-              {hayIva && <th className="text-right px-3 py-2 text-blue-600">IVA</th>}
-              {hayFlete && <th className="text-right px-3 py-2 text-orange-600">Flete</th>}
-              <th className="text-right px-3 py-2">Total</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {detalleConExtras.map((d) => (
-              <tr key={d.id}>
-                <td className="px-3 py-2 text-gray-800 text-xs">{d.productos?.nombre ?? "—"}</td>
-                <td className="px-3 py-2 text-center text-gray-700 text-xs">{d.cantidad}</td>
-                <td className="px-3 py-2 text-right text-gray-800 text-xs">{fmt(d.precio_unitario)}</td>
-                <td className="px-3 py-2 text-right text-gray-800 text-xs">{fmt(d.subtotalItem)}</td>
-                
-                {hayIva && <td className="px-3 py-2 text-right text-blue-600 text-xs">{fmt(d.ivaItem)}</td>}
-                {hayFlete && <td className="px-3 py-2 text-right text-orange-600 text-xs">{fmt(d.fleteItem)}</td>}
-                <td className="px-3 py-2 text-right font-semibold text-gray-900 text-xs">
-                  {fmt(d.subtotalItem + d.ivaItem + d.fleteItem)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot className="bg-gray-50 text-sm">
-            {(hayIva || hayFlete) && (
-              <tr>
-                <td colSpan={hayIva && hayFlete ? 6 : 5} className="px-3 py-1.5 text-right text-gray-500 text-xs">Subtotal:</td>
-                <td className="px-3 py-1.5 text-right text-gray-700 text-xs">
-                  {fmt(compraVer.total - compraVer.monto_iva - compraVer.monto_flete)}
-                </td>
-              </tr>
-            )}
-            {hayIva && (
-              <tr>
-                <td colSpan={hayIva && hayFlete ? 6 : 5} className="px-3 py-1.5 text-right text-blue-600 text-xs">
-                  IVA {compraVer.porcentaje_iva}%:
-                </td>
-                <td className="px-3 py-1.5 text-right text-blue-600 text-xs">{fmt(compraVer.monto_iva)}</td>
-              </tr>
-            )}
-            {hayFlete && (
-              <tr>
-                <td colSpan={hayIva && hayFlete ? 6 : 5} className="px-3 py-1.5 text-right text-orange-600 text-xs">
-                  🚚 Flete:
-                </td>
-                <td className="px-3 py-1.5 text-right text-orange-600 text-xs">{fmt(compraVer.monto_flete)}</td>
-              </tr>
-            )}
-            <tr className="border-t border-gray-200">
-  <td
-    colSpan={hayIva && hayFlete ? 6 : hayIva || hayFlete ? 5 : 3}
-    className="px-3 py-2 text-right font-semibold text-gray-700 text-xs"
-  >
-    Total:
-  </td>
-  <td className="px-3 py-2 text-right font-bold text-gray-900 text-sm">
-    {fmt(compraVer.total)}
-  </td>
-</tr>
-          </tfoot>
-        </table>
-      );
-    })()}
-    {compraVer.notas && (
-      <p className="mt-3 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">📝 {compraVer.notas}</p>
-    )}
-  </div>
-)}
+                {tabDetalle === "detalle" && (() => {
+                  const subtotalBase = detalle.reduce((s, d) => s + d.cantidad * d.precio_unitario, 0);
+                  const detalleConExtras = detalle.map(d => {
+                    const subtotalItem = d.cantidad * d.precio_unitario;
+                    const proporcion = subtotalBase > 0 ? subtotalItem / subtotalBase : 0;
+                    const ivaItem = compraVer.incluye_iva ? Math.round(compraVer.monto_iva * proporcion * 100) / 100 : 0;
+                    const fleteItem = compraVer.monto_flete > 0 ? Math.round(compraVer.monto_flete * proporcion * 100) / 100 : 0;
+                    return { ...d, subtotalItem, ivaItem, fleteItem };
+                  });
+                  const hayIva = compraVer.incluye_iva && compraVer.monto_iva > 0;
+                  const hayFlete = compraVer.monto_flete > 0;
+                  return (
+                    <div>
+                      <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                        <thead className="bg-gray-100 text-gray-700 text-xs font-semibold">
+                          <tr>
+                            <th className="text-left px-3 py-2">Producto</th>
+                            <th className="text-center px-3 py-2">Cant.</th>
+                            <th className="text-right px-3 py-2">P. unit.</th>
+                            <th className="text-right px-3 py-2">Subtotal</th>
+                            {hayIva && <th className="text-right px-3 py-2 text-blue-600">IVA</th>}
+                            {hayFlete && <th className="text-right px-3 py-2 text-orange-600">Flete</th>}
+                            <th className="text-right px-3 py-2">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {detalleConExtras.map(d => (
+                            <tr key={d.id}>
+                              <td className="px-3 py-2 text-gray-800 text-xs">{d.productos?.nombre ?? "—"}</td>
+                              <td className="px-3 py-2 text-center text-gray-700 text-xs">{d.cantidad}</td>
+                              <td className="px-3 py-2 text-right text-gray-800 text-xs">{fmt(d.precio_unitario)}</td>
+                              <td className="px-3 py-2 text-right text-gray-800 text-xs">{fmt(d.subtotalItem)}</td>
+                              {hayIva && <td className="px-3 py-2 text-right text-blue-600 text-xs">{fmt(d.ivaItem)}</td>}
+                              {hayFlete && <td className="px-3 py-2 text-right text-orange-600 text-xs">{fmt(d.fleteItem)}</td>}
+                              <td className="px-3 py-2 text-right font-semibold text-gray-900 text-xs">{fmt(d.subtotalItem + d.ivaItem + d.fleteItem)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-gray-50 text-sm">
+                          {(hayIva || hayFlete) && (
+                            <tr>
+                              <td colSpan={hayIva && hayFlete ? 6 : 5} className="px-3 py-1.5 text-right text-gray-500 text-xs">Subtotal:</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700 text-xs">{fmt(compraVer.total - compraVer.monto_iva - compraVer.monto_flete)}</td>
+                            </tr>
+                          )}
+                          {hayIva && (
+                            <tr>
+                              <td colSpan={hayIva && hayFlete ? 6 : 5} className="px-3 py-1.5 text-right text-blue-600 text-xs">IVA {compraVer.porcentaje_iva}%:</td>
+                              <td className="px-3 py-1.5 text-right text-blue-600 text-xs">{fmt(compraVer.monto_iva)}</td>
+                            </tr>
+                          )}
+                          {hayFlete && (
+                            <tr>
+                              <td colSpan={hayIva && hayFlete ? 6 : 5} className="px-3 py-1.5 text-right text-orange-600 text-xs">🚚 Flete:</td>
+                              <td className="px-3 py-1.5 text-right text-orange-600 text-xs">{fmt(compraVer.monto_flete)}</td>
+                            </tr>
+                          )}
+                          <tr className="border-t border-gray-200">
+                            <td colSpan={hayIva && hayFlete ? 6 : hayIva || hayFlete ? 5 : 3} className="px-3 py-2 text-right font-semibold text-gray-700 text-xs">Total:</td>
+                            <td className="px-3 py-2 text-right font-bold text-gray-900 text-sm">{fmt(compraVer.total)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                      {compraVer.notas && (
+                        <p className="mt-3 text-xs text-gray-700 bg-gray-50 rounded-lg px-3 py-2">📝 {compraVer.notas}</p>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {tabDetalle === "pagos" && (
                   <div>
@@ -947,6 +838,52 @@ const itemsCalculados = calcularItemsConExtras(
           </div>
         </div>
       )}
+
+      {/* ── MODAL ELIMINAR COMPRA ── */}
+      {confirmEliminarCompra && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div style={{
+            background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 400,
+            boxShadow: "0 24px 64px rgba(0,0,0,0.6)"
+          }}>
+            <div style={{ marginBottom: 6 }}>
+              <span style={{ fontSize: 32 }}>🗑️</span>
+            </div>
+            <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "8px 0 6px" }}>¿Eliminar compra?</h2>
+            <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 8 }}>
+              Proveedor: <span style={{ color: "white", fontWeight: 600 }}>{confirmEliminarCompra.proveedores?.nombre ?? "—"}</span>
+            </p>
+            <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 4 }}>
+              Total: <span style={{ color: "white", fontWeight: 600 }}>{fmt(confirmEliminarCompra.total)}</span>
+              {" · "} Fecha: <span style={{ color: "white" }}>{confirmEliminarCompra.fecha}</span>
+            </p>
+            <p style={{
+              color: "#f87171", fontSize: 12, background: "rgba(239,68,68,0.1)",
+              border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8,
+              padding: "8px 12px", marginTop: 16, marginBottom: 24
+            }}>
+              ⚠️ Se eliminarán también los pagos y lotes asociados. Esta acción no se puede deshacer.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setConfirmEliminarCompra(null)} style={{
+                flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10,
+                color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600
+              }}>Cancelar</button>
+              <button onClick={eliminarCompra} disabled={eliminandoCompra} style={{
+                flex: 1, padding: "11px", background: "#dc2626",
+                border: "none", borderRadius: 10, color: "white",
+                fontSize: 13, fontWeight: 700, cursor: "pointer",
+                opacity: eliminandoCompra ? 0.5 : 1
+              }}>
+                {eliminandoCompra ? "Eliminando..." : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
