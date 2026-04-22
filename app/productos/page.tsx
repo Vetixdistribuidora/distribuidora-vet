@@ -4,6 +4,8 @@ import { useEffect, useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import * as XLSX from "xlsx"
 
+/* ================= UTIL ================= */
+
 function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
   return (
     <div style={{
@@ -22,9 +24,23 @@ function formatearPrecio(num: number) {
   return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function estadoLote(dias: number) {
+  if (dias < 0) return { label: "Vencido", color: "#e03131", bg: "#fff5f5" }
+  if (dias <= 30) return { label: "Crítico", color: "#e03131", bg: "#fff5f5" }
+  if (dias <= 60) return { label: "Próximo", color: "#f08c00", bg: "#fff9db" }
+  return { label: "OK", color: "#2f9e44", bg: "#ebfbee" }
+}
+
 export default function Productos() {
 
   const [productos, setProductos] = useState<any[]>([])
+  const [lotesMap, setLotesMap] = useState<Record<number, any[]>>({})
+  const [lotesAbiertos, setLotesAbiertos] = useState<Set<number>>(new Set())
+  const [modalLote, setModalLote] = useState<any | null>(null)
+  const [formLote, setFormLote] = useState({ cantidad: "", fecha_vencimiento: "" })
+  const [guardandoLote, setGuardandoLote] = useState(false)
+  const [confirmEliminarLote, setConfirmEliminarLote] = useState<any | null>(null)
+
   const [cargando, setCargando] = useState(true)
   const [toast, setToast] = useState<any>(null)
   const [busqueda, setBusqueda] = useState("")
@@ -36,10 +52,11 @@ export default function Productos() {
   const [archivo, setArchivo] = useState<File | null>(null)
   const [margenImportacion, setMargenImportacion] = useState("")
   const [preview, setPreview] = useState<any[]>([])
-const [importando, setImportando] = useState(false)
-const [progreso, setProgreso] = useState(0)
+  const [importando, setImportando] = useState(false)
+  const [progreso, setProgreso] = useState(0)
   const [confirmEliminar, setConfirmEliminar] = useState<any | null>(null)
   const [subiendoFoto, setSubiendoFoto] = useState<number | null>(null)
+
   const inputFotoRef = useRef<HTMLInputElement>(null)
   const productoFotoRef = useRef<number | null>(null)
 
@@ -51,10 +68,78 @@ const [progreso, setProgreso] = useState(0)
   async function cargar() {
     const { data } = await supabase.from("productos").select("*").order("nombre")
     setProductos(data || [])
+
+    if (data) {
+      const { data: lotes } = await supabase
+        .from("lotes")
+        .select("*")
+        .in("producto_id", data.map((p: any) => p.id))
+        .order("fecha_vencimiento", { ascending: true })
+
+      const mapa: Record<number, any[]> = {}
+
+      lotes?.forEach((l: any) => {
+        if (!mapa[l.producto_id]) mapa[l.producto_id] = []
+        mapa[l.producto_id].push(l)
+      })
+
+      setLotesMap(mapa)
+    }
+
     setCargando(false)
   }
 
   useEffect(() => { cargar() }, [])
+
+  /* ================= LOTES ================= */
+
+  async function guardarLote() {
+    if (!modalLote) return
+
+    if (!formLote.cantidad || !formLote.fecha_vencimiento) {
+      mostrarToast("⚠️ Completá cantidad y fecha", "error")
+      return
+    }
+
+    setGuardandoLote(true)
+
+    const { error } = await supabase.from("lotes").insert({
+      producto_id: modalLote.productoId,
+      cantidad: Number(formLote.cantidad),
+      fecha_vencimiento: formLote.fecha_vencimiento
+    })
+
+    setGuardandoLote(false)
+
+    if (error) return mostrarToast("❌ " + error.message, "error")
+
+    mostrarToast("✅ Lote agregado", "ok")
+    setModalLote(null)
+    setFormLote({ cantidad: "", fecha_vencimiento: "" })
+    cargar()
+  }
+
+  async function eliminarLote() {
+    if (!confirmEliminarLote) return
+
+    const { error } = await supabase.from("lotes").delete().eq("id", confirmEliminarLote.id)
+
+    if (error) return mostrarToast("❌ " + error.message, "error")
+
+    mostrarToast("🗑️ Lote eliminado", "ok")
+    setConfirmEliminarLote(null)
+    cargar()
+  }
+
+  function toggleLotes(id: number) {
+    setLotesAbiertos(prev => {
+      const nuevo = new Set(prev)
+      nuevo.has(id) ? nuevo.delete(id) : nuevo.add(id)
+      return nuevo
+    })
+  }
+
+  /* ================= RESTO TU CÓDIGO (SIN TOCAR) ================= */
 
   async function procesarExcelPreview() {
   if (!archivo) {
@@ -519,6 +604,8 @@ async function procesarArchivoUniversal() {
 
       {productosFiltrados.map(p => {
         const costoNum = Number(editando?.costo || 0)
+        const lotes = lotesMap[p.id] || []
+        const lotesVisible = lotesAbiertos.has(p.id)
         const margenNum = Number(editando?.margen || 0)
         const precioEstimado = costoNum + (costoNum * margenNum / 100)
         return (
@@ -549,6 +636,30 @@ async function procesarArchivoUniversal() {
               ) : (
                 <div>
                   <b style={{ color: "#111827", fontSize: "15px" }}>{p.nombre}</b>
+                  {lotes.length > 0 && (() => {
+  const diasMin = Math.min(...lotes.map((l: any) => {
+    return Math.floor(
+      (new Date(l.fecha_vencimiento).getTime() - Date.now()) / 86400000
+    )
+  }))
+
+  const est = estadoLote(diasMin)
+
+  if (diasMin <= 60) return (
+    <span style={{
+      marginLeft: 8,
+      background: est.bg,
+      color: est.color,
+      fontSize: "12px",
+      fontWeight: "600",
+      padding: "2px 8px",
+      borderRadius: "6px",
+      border: `1px solid ${est.color}`
+    }}>
+      📅 {est.label}: {diasMin < 0 ? "vencido" : `${diasMin}d`}
+    </span>
+  )
+})()}
                   {p.stock <= 5 && (
                     <span style={{
                       marginLeft: 10,
@@ -568,9 +679,79 @@ async function procesarArchivoUniversal() {
                   </p>
                   <p style={{ color: "#374151", margin: "0 0 10px" }}>📦 Stock: {p.stock}</p>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => setEditando({ ...p })}>✏️ Editar</button>
-                    <button onClick={() => setConfirmEliminar(p)} style={{ background: "red", color: "white" }}>🗑️</button>
-                  </div>
+  <button onClick={() => setEditando({ ...p })}>✏️ Editar</button>
+
+  <button
+    onClick={() => setConfirmEliminar(p)}
+    style={{ background: "red", color: "white" }}>
+    🗑️
+  </button>
+
+  <button
+    onClick={() => toggleLotes(p.id)}
+    style={{
+      background: "#f1f3f5",
+      border: "none",
+      borderRadius: 6,
+      padding: "4px 10px",
+      fontSize: 12,
+      cursor: "pointer",
+      fontWeight: 600
+    }}>
+    📅 Lotes ({lotes.length}) {lotesVisible ? "▲" : "▼"}
+  </button>
+
+  <button
+    onClick={() => {
+      setModalLote({ productoId: p.id, productoNombre: p.nombre })
+      setFormLote({ cantidad: "", fecha_vencimiento: "" })
+    }}
+    style={{
+      background: "#ebfbee",
+      color: "#2f9e44",
+      border: "none",
+      borderRadius: 6,
+      padding: "4px 10px",
+      fontSize: 12,
+      cursor: "pointer",
+      fontWeight: 600
+    }}>
+    ➕ Lote
+  </button>
+</div>
+{lotesVisible && (
+  <div style={{ marginTop: 12, borderTop: "1px solid #e9ecef", paddingTop: 10 }}>
+    {lotes.length === 0 ? (
+      <p style={{ fontSize: 12, color: "#aaa" }}>
+        Sin lotes registrados.
+      </p>
+    ) : (
+      <table style={{ width: "100%", fontSize: 12 }}>
+        <tbody>
+          {lotes.map((l: any) => {
+            const dias = Math.floor(
+              (new Date(l.fecha_vencimiento).getTime() - Date.now()) / 86400000
+            )
+            const est = estadoLote(dias)
+
+            return (
+              <tr key={l.id}>
+                <td>{l.fecha_vencimiento}</td>
+                <td style={{ color: est.color }}>
+                  {dias < 0 ? "Vencido" : `${dias}d`}
+                </td>
+                <td>{l.cantidad} u.</td>
+                <td>
+                  <button onClick={() => setConfirmEliminarLote(l)}>🗑️</button>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    )}
+  </div>
+)}
                 </div>
               )}
             </div>
