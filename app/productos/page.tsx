@@ -23,7 +23,14 @@ function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
 function formatearPrecio(num: number) {
   return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
-
+const inputStyle = {
+  padding: "8px 10px",
+  borderRadius: 6,
+  border: "1px solid #d1d5db",
+  background: "#ffffff",
+  color: "#111827",
+  fontSize: 14
+}
 function estadoLote(dias: number) {
   if (dias < 0) return { label: "Vencido", color: "#e03131", bg: "#fff5f5" }
   if (dias <= 30) return { label: "Crítico", color: "#e03131", bg: "#fff5f5" }
@@ -508,7 +515,32 @@ async function procesarArchivoUniversal() {
       setSubiendoFoto(null)
       return
     }
+async function guardarLote() {
+  if (!modalLote) return
 
+  if (!formLote.cantidad || !formLote.fecha_vencimiento) {
+    mostrarToast("⚠️ Completá cantidad y fecha", "error")
+    return
+  }
+
+  setGuardandoLote(true)
+
+  const { error } = await supabase.from("lotes").insert({
+    producto_id: modalLote.productoId,
+    cantidad: Number(formLote.cantidad),
+    fecha_vencimiento: formLote.fecha_vencimiento
+  })
+
+  setGuardandoLote(false)
+
+  if (error) return mostrarToast("❌ " + error.message, "error")
+
+  mostrarToast("✅ Lote agregado", "ok")
+  setModalLote(null)
+  setFormLote({ cantidad: "", fecha_vencimiento: "" })
+
+  cargar()
+}
     const { data: urlData } = supabase.storage.from("productos").getPublicUrl(path)
     const url = urlData.publicUrl + "?t=" + Date.now()
 
@@ -750,6 +782,63 @@ async function procesarArchivoUniversal() {
         </tbody>
       </table>
     )}
+  </div>
+  
+)}
+{modalLote && (
+  <div style={{
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.4)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000
+  }}>
+    <div style={{
+      background: "#fff",
+      padding: 20,
+      borderRadius: 12,
+      width: 320
+    }}>
+      <h3 style={{ color: "#111827" }}>Agregar lote</h3>
+      <p style={{ fontSize: 13, color: "#6b7280" }}>
+        {modalLote.productoNombre}
+      </p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <input
+          style={inputStyle}
+          type="number"
+          placeholder="Cantidad"
+          value={formLote.cantidad}
+          onChange={e => setFormLote({ ...formLote, cantidad: e.target.value })}
+        />
+
+        <input
+          style={inputStyle}
+          type="date"
+          value={formLote.fecha_vencimiento}
+          onChange={e => setFormLote({ ...formLote, fecha_vencimiento: e.target.value })}
+        />
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 15 }}>
+        <button onClick={() => setModalLote(null)}>Cancelar</button>
+
+        <button
+          onClick={guardarLote}
+          style={{
+            background: "#2f9e44",
+            color: "white",
+            padding: "6px 12px",
+            borderRadius: 6
+          }}
+        >
+          {guardandoLote ? "Guardando..." : "Guardar"}
+        </button>
+      </div>
+    </div>
   </div>
 )}
                 </div>
