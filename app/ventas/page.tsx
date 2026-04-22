@@ -318,18 +318,44 @@ export default function Ventas() {
 })
   }
 
-  // 🔹 4. ACTUALIZAR STOCK
-  for (const item of carrito) {
-    const producto = productos.find(p => p.id === item.producto_id)
-    if (!producto) continue
+  // 🔹 4. ACTUALIZAR STOCK + FIFO LOTES
+for (const item of carrito) {
+  const producto = productos.find(p => p.id === item.producto_id)
+  if (!producto) continue
 
-    await supabase
-      .from("productos")
-      .update({
-        stock: producto.stock - item.cantidad
-      })
-      .eq("id", item.producto_id)
+  // Descontar stock general
+  await supabase
+    .from("productos")
+    .update({ stock: producto.stock - item.cantidad })
+    .eq("id", item.producto_id)
+
+  // FIFO: descontar de lotes ordenados por vencimiento más próximo
+  let cantidadRestante = item.cantidad
+
+  const { data: lotes } = await supabase
+    .from("lotes")
+    .select("id, cantidad")
+    .eq("producto_id", item.producto_id)
+    .gt("cantidad", 0)
+    .order("fecha_vencimiento", { ascending: true })
+
+  if (lotes) {
+    for (const lote of lotes) {
+      if (cantidadRestante <= 0) break
+
+      const descontar = lote.cantidad >= cantidadRestante
+        ? cantidadRestante
+        : lote.cantidad
+
+      await supabase
+        .from("lotes")
+        .update({ cantidad: lote.cantidad - descontar })
+        .eq("id", lote.id)
+
+      cantidadRestante -= descontar
+    }
   }
+}
 
   // 🔹 5. GUARDAR FACTURA
   const datosImpresion: DatosImpresion = {
