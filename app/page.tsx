@@ -146,7 +146,7 @@ export default function Dashboard() {
                 const est = estadoLote(dias)
                 return (
                   <tr key={l.id} style={{ borderTop: "1px solid #f1f3f5" }}>
-                    <td style={{ padding: "7px 0", fontWeight: 500 }}>{l.producto_nombre}</td>
+                   <td style={{ padding: "7px 0", fontWeight: 600, color: "#111827" }}>{l.producto_nombre}</td>
                     <td style={{ padding: "7px 8px", color: "#555" }}>{l.fecha_vencimiento}</td>
                     <td style={{ padding: "7px 8px", color: est.color, fontWeight: 600 }}>
                       {dias < 0 ? "Vencido" : `${dias}d`}
