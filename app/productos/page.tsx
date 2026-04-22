@@ -2,20 +2,15 @@
 
 import { useEffect, useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
-
-/* ================= UI ================= */
+import * as XLSX from "xlsx"
 
 function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
   return (
     <div style={{
-      position: "fixed",
-      bottom: 30,
-      right: 30,
-      background: tipo === "ok" ? "#16a34a" : "#dc2626",
-      color: "white",
-      padding: "12px 20px",
-      borderRadius: 10,
-      fontWeight: "bold",
+      position: "fixed", bottom: 30, right: 30,
+      background: tipo === "ok" ? "#2f9e44" : "#e03131",
+      color: "white", padding: "12px 20px",
+      borderRadius: 10, fontWeight: "bold",
       zIndex: 1000
     }}>
       {mensaje}
@@ -24,304 +19,626 @@ function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
 }
 
 function formatearPrecio(num: number) {
-  return "$" + num.toLocaleString("es-AR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  })
+  return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
-
-function estadoLote(dias: number) {
-  if (dias < 0) return { label: "Vencido", color: "#dc2626", bg: "#fef2f2" }
-  if (dias <= 30) return { label: "Crítico", color: "#dc2626", bg: "#fef2f2" }
-  if (dias <= 60) return { label: "Próximo", color: "#d97706", bg: "#fffbeb" }
-  return { label: "OK", color: "#16a34a", bg: "#ecfdf5" }
-}
-
-/* ================= ESTILOS ================= */
-
-const inputStyle = {
-  padding: "10px 12px",
-  borderRadius: 8,
-  border: "1px solid #d1d5db",
-  background: "#ffffff",
-  color: "#111827",
-  fontSize: 14
-}
-
-const btnPrimary = {
-  background: "#2563eb",
-  color: "#fff",
-  border: "none",
-  padding: "10px 14px",
-  borderRadius: 8,
-  cursor: "pointer"
-}
-
-const btnDanger = {
-  background: "#dc2626",
-  color: "#fff",
-  border: "none",
-  padding: "8px 12px",
-  borderRadius: 8,
-  cursor: "pointer"
-}
-
-/* ================= COMPONENT ================= */
 
 export default function Productos() {
 
   const [productos, setProductos] = useState<any[]>([])
-  const [lotesMap, setLotesMap] = useState<Record<number, any[]>>({})
-
   const [cargando, setCargando] = useState(true)
   const [toast, setToast] = useState<any>(null)
-
   const [busqueda, setBusqueda] = useState("")
   const [nombre, setNombre] = useState("")
   const [costo, setCosto] = useState("")
   const [margen, setMargen] = useState("")
   const [stock, setStock] = useState("")
-
   const [editando, setEditando] = useState<any | null>(null)
+  const [archivo, setArchivo] = useState<File | null>(null)
+  const [margenImportacion, setMargenImportacion] = useState("")
+  const [preview, setPreview] = useState<any[]>([])
+const [importando, setImportando] = useState(false)
+const [progreso, setProgreso] = useState(0)
   const [confirmEliminar, setConfirmEliminar] = useState<any | null>(null)
-
-  /* FOTO */
+  const [subiendoFoto, setSubiendoFoto] = useState<number | null>(null)
   const inputFotoRef = useRef<HTMLInputElement>(null)
   const productoFotoRef = useRef<number | null>(null)
-  const [subiendoFoto, setSubiendoFoto] = useState<number | null>(null)
-
-  /* LOTES */
-  const [lotesAbiertos, setLotesAbiertos] = useState<Set<number>>(new Set())
-  const [modalLote, setModalLote] = useState<any>(null)
-  const [formLote, setFormLote] = useState({ cantidad: "", fecha: "" })
-  const [confirmEliminarLote, setConfirmEliminarLote] = useState<any>(null)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
     setTimeout(() => setToast(null), 3000)
   }
 
-  /* ================= DATA ================= */
-
   async function cargar() {
-    const { data: productosData } = await supabase
-      .from("productos")
-      .select("*")
-      .order("nombre")
-
-    setProductos(productosData || [])
-
-    if (productosData) {
-      const { data: lotes } = await supabase
-        .from("lotes")
-        .select("*")
-        .in("producto_id", productosData.map(p => p.id))
-
-      const mapa: Record<number, any[]> = {}
-      lotes?.forEach(l => {
-        if (!mapa[l.producto_id]) mapa[l.producto_id] = []
-        mapa[l.producto_id].push(l)
-      })
-
-      setLotesMap(mapa)
-    }
-
+    const { data } = await supabase.from("productos").select("*").order("nombre")
+    setProductos(data || [])
     setCargando(false)
   }
 
   useEffect(() => { cargar() }, [])
 
-  /* ================= PRODUCTOS ================= */
+  async function procesarExcelPreview() {
+  if (!archivo) {
+    mostrarToast("⚠️ Seleccioná un archivo", "error")
+    return
+  }
+
+  const data = await archivo.arrayBuffer()
+  const workbook = XLSX.read(data)
+
+  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+  const json: any[] = XLSX.utils.sheet_to_json(sheet)
+
+  const productos: any[] = []
+
+  function parsePrecio(valor: any) {
+    if (!valor) return NaN
+
+    let str = String(valor).replace(/\$/g, "").trim()
+
+    if (str.includes(",") && str.includes(".")) {
+      str = str.replace(/\./g, "").replace(",", ".")
+    } else if (str.includes(",") && !str.includes(".")) {
+      str = str.replace(",", ".")
+    }
+
+    return Number(str)
+  }
+
+  for (let fila of json) {
+
+    // 🔥 detectar columnas dinámicamente
+    const laboratorio =
+      fila.Laboratorio ||
+      fila.laboratorio ||
+      fila.Marca ||
+      fila.marca ||
+      ""
+
+    const nombreProd =
+      fila.Producto ||
+      fila.producto ||
+      fila.Nombre ||
+      fila.nombre ||
+      ""
+
+    const costoRaw =
+      fila.Costo ||
+      fila.costo ||
+      fila.Precio ||
+      fila.precio ||
+      fila["Precio Costo"] ||
+      fila["precio_costo_con_iva"] ||
+      ""
+
+    const nombreFinal = `${laboratorio} ${nombreProd}`.trim()
+    const costo = parsePrecio(costoRaw)
+
+    if (!nombreFinal || isNaN(costo)) continue
+
+    productos.push({
+      nombre: nombreFinal,
+      costo
+    })
+  }
+
+  console.log("TOTAL EXCEL:", json.length)
+  console.log("VALIDOS:", productos.length)
+
+  setPreview(productos.slice(0, 20))
+  mostrarToast(`📊 ${productos.length} productos detectados`, "ok")
+
+  return productos
+}
 
   async function agregar() {
+    if (!nombre || !costo || !margen || !stock) {
+      mostrarToast("⚠️ Completá todos los campos", "error")
+      return
+    }
     const costoNum = Number(costo)
     const margenNum = Number(margen)
-    const precio = costoNum + (costoNum * margenNum / 100)
-
-    await supabase.from("productos").insert({
-      nombre,
-      costo: costoNum,
-      margen: margenNum,
-      precio_venta: precio,
-      stock: Number(stock)
-    })
-
-    mostrarToast("Producto agregado", "ok")
+    const precioVenta = costoNum + (costoNum * margenNum / 100)
+    const { data, error } = await supabase.from("productos").insert([{
+      nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(stock)
+    }]).select()
+    if (error) return mostrarToast("❌ " + error.message, "error")
+    await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 })
+    mostrarToast("✅ Producto agregado", "ok")
     setNombre(""); setCosto(""); setMargen(""); setStock("")
     cargar()
   }
 
   async function guardarEdicion() {
+    if (!editando.nombre || !editando.costo || !editando.margen) {
+      mostrarToast("⚠️ Completá todos los campos", "error")
+      return
+    }
     const costoNum = Number(editando.costo)
     const margenNum = Number(editando.margen)
-    const precio = costoNum + (costoNum * margenNum / 100)
-
-    await supabase.from("productos")
-      .update({
-        ...editando,
-        precio_venta: precio
-      })
-      .eq("id", editando.id)
-
+    const precioVenta = costoNum + (costoNum * margenNum / 100)
+    const { error } = await supabase.from("productos").update({
+      nombre: editando.nombre, costo: costoNum, margen: margenNum,
+      precio_venta: precioVenta, stock: Number(editando.stock)
+    }).eq("id", editando.id)
+    if (error) return mostrarToast("❌ " + error.message, "error")
+    await supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id })
+    mostrarToast("✅ Producto actualizado", "ok")
     setEditando(null)
-    mostrarToast("Actualizado", "ok")
     cargar()
   }
 
-  /* ================= FOTO ================= */
+  async function confirmarEliminar() {
+    if (!confirmEliminar) return
+    const { error } = await supabase.from("productos").delete().eq("id", confirmEliminar.id)
+    if (error) {
+      mostrarToast("❌ " + error.message, "error")
+      setConfirmEliminar(null)
+      return
+    }
+    await supabase.rpc("registrar_auditoria", { accion: "eliminar", tabla: "productos", registro_id: confirmEliminar.id })
+    mostrarToast("🗑️ Producto eliminado", "ok")
+    setConfirmEliminar(null)
+    cargar()
+  }
 
-  function abrirSelectorFoto(id: number) {
-    productoFotoRef.current = id
+  async function importarCSV() {
+  if (!archivo) return
+  if (!margenImportacion) {
+    mostrarToast("⚠️ Ingresá margen", "error")
+    return
+  }
+
+  const productosBase = archivo.name.endsWith(".xlsx")
+  ? await procesarExcelPreview()
+  : await procesarArchivoUniversal()
+  if (!productosBase) return
+
+  setImportando(true)
+  setProgreso(0)
+
+  const margenDefault = Number(margenImportacion)
+
+  const productosFinal = productosBase.map(p => {
+    const precioVenta = p.costo + (p.costo * margenDefault / 100)
+    return {
+      nombre: p.nombre,
+      costo: p.costo,
+      margen: margenDefault,
+      precio_venta: precioVenta,
+      stock: 0
+    }
+  })
+
+  const chunkSize = 200
+  let procesados = 0
+
+  for (let i = 0; i < productosFinal.length; i += chunkSize) {
+    const chunk = productosFinal.slice(i, i + chunkSize)
+
+    const { error } = await supabase
+      .from("productos")
+      .upsert(chunk, { onConflict: "nombre" })
+
+    if (error) {
+      console.error(error)
+      mostrarToast("❌ Error en importación", "error")
+      break
+    }
+
+    procesados += chunk.length
+    setProgreso(Math.round((procesados / productosFinal.length) * 100))
+  }
+
+  setImportando(false)
+  setPreview([])
+  setArchivo(null)
+
+  mostrarToast(`✅ ${procesados} productos importados`, "ok")
+  cargar()
+}
+async function procesarCSVPreview() {
+  if (!archivo) {
+    mostrarToast("⚠️ Seleccioná un archivo", "error")
+    return
+  }
+
+  const texto = await archivo.text()
+  const lineas = texto.split("\n").slice(1)
+
+  const productos: any[] = []
+
+  for (let linea of lineas) {
+    if (!linea.trim()) continue
+
+    const separador = linea.includes(";") ? ";" : ","
+    const partes = linea.split(separador)
+
+    const nombre = partes[0]?.trim()
+    let precioRaw = partes[1]?.trim()
+
+    if (!nombre || !precioRaw) continue
+
+    function parsePrecio(precioRaw: string) {
+  if (!precioRaw) return NaN
+
+  // limpiar símbolos
+  precioRaw = precioRaw.replace(/\$/g, "").trim()
+
+  // caso 1: formato argentino 1.234,56
+  if (precioRaw.includes(",") && precioRaw.includes(".")) {
+    precioRaw = precioRaw.replace(/\./g, "").replace(",", ".")
+  }
+
+  // caso 2: formato europeo 1234,56
+  else if (precioRaw.includes(",") && !precioRaw.includes(".")) {
+    precioRaw = precioRaw.replace(",", ".")
+  }
+
+  // caso 3: formato USA 1234.56 → NO tocar
+
+  return Number(precioRaw)
+}
+const costo = parsePrecio(precioRaw)
+if (isNaN(costo)) continue
+
+    productos.push({ nombre, costo })
+  }
+
+  console.log("TOTAL CSV:", lineas.length)
+  console.log("VALIDOS:", productos.length)
+
+  setPreview(productos.slice(0, 20))
+  mostrarToast(`📊 ${productos.length} productos detectados`, "ok")
+
+  return productos
+}
+async function procesarArchivoUniversal() {
+  if (!archivo) {
+    mostrarToast("⚠️ Seleccioná un archivo", "error")
+    return
+  }
+
+  function parsePrecio(valor: any) {
+    if (!valor) return NaN
+
+    let str = String(valor).replace(/\$/g, "").trim()
+
+    if (str.includes(",") && str.includes(".")) {
+      str = str.replace(/\./g, "").replace(",", ".")
+    } else if (str.includes(",") && !str.includes(".")) {
+      str = str.replace(",", ".")
+    }
+
+    return Number(str)
+  }
+
+  function normalizarTexto(texto: any) {
+    return String(texto || "").trim()
+  }
+
+  let productos: any[] = []
+
+  // 🟢 CASO EXCEL
+  if (archivo.name.endsWith(".xlsx")) {
+    const data = await archivo.arrayBuffer()
+    const workbook = XLSX.read(data)
+
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const json: any[] = XLSX.utils.sheet_to_json(sheet)
+
+    for (let fila of json) {
+      const laboratorio =
+        fila.Laboratorio ||
+        fila.laboratorio ||
+        fila.Marca ||
+        fila.marca ||
+        ""
+
+      const nombreProd =
+        fila.Producto ||
+        fila.producto ||
+        fila.Nombre ||
+        fila.nombre ||
+        ""
+
+      const costoRaw =
+        fila.Costo ||
+        fila.costo ||
+        fila.Precio ||
+        fila.precio ||
+        fila["Precio Costo"] ||
+        fila["precio_costo_con_iva"] ||
+        ""
+
+      const nombreFinal = `${normalizarTexto(laboratorio)} ${normalizarTexto(nombreProd)}`.trim()
+      const costo = parsePrecio(costoRaw)
+
+      if (!nombreFinal || isNaN(costo)) continue
+
+      productos.push({ nombre: nombreFinal, costo })
+    }
+  }
+
+  // 🔵 CASO CSV (con encoding automático)
+  else {
+    const buffer = await archivo.arrayBuffer()
+
+    let texto = ""
+    try {
+      texto = new TextDecoder("utf-8").decode(buffer)
+    } catch {
+      texto = new TextDecoder("latin1").decode(buffer)
+    }
+
+    const lineas = texto.split("\n").slice(1)
+
+    for (let linea of lineas) {
+      if (!linea.trim()) continue
+
+      const separador = linea.includes(";") ? ";" : ","
+      const partes = linea.split(separador)
+
+      const laboratorio = partes[0]
+      const producto = partes[1]
+      const precioRaw = partes[2] || partes[1]
+
+      const nombreFinal = `${normalizarTexto(laboratorio)} ${normalizarTexto(producto)}`.trim()
+      const costo = parsePrecio(precioRaw)
+
+      if (!nombreFinal || isNaN(costo)) continue
+
+      productos.push({ nombre: nombreFinal, costo })
+    }
+  }
+
+  console.log("TOTAL DETECTADOS:", productos.length)
+
+  setPreview(productos.slice(0, 20))
+  mostrarToast(`📊 ${productos.length} productos detectados`, "ok")
+
+  return productos
+}
+
+  function abrirSelectorFoto(productoId: number) {
+    productoFotoRef.current = productoId
     inputFotoRef.current?.click()
   }
 
-  async function subirFoto(e: any) {
+  async function subirFoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file || !productoFotoRef.current) return
+    const productoId = productoFotoRef.current
+    e.target.value = ""
 
-    const id = productoFotoRef.current
-    setSubiendoFoto(id)
+    const ext = file.name.split(".").pop()
+    const path = `${productoId}.${ext}`
+    setSubiendoFoto(productoId)
 
-    const path = `${id}.${file.name.split(".").pop()}`
+    const { error: uploadError } = await supabase.storage
+      .from("productos")
+      .upload(path, file, { upsert: true })
 
-    await supabase.storage.from("productos").upload(path, file, { upsert: true })
+    if (uploadError) {
+      mostrarToast("❌ Error subiendo imagen", "error")
+      setSubiendoFoto(null)
+      return
+    }
 
-    const { data } = supabase.storage.from("productos").getPublicUrl(path)
+    const { data: urlData } = supabase.storage.from("productos").getPublicUrl(path)
+    const url = urlData.publicUrl + "?t=" + Date.now()
 
-    await supabase.from("productos")
-      .update({ imagen_url: data.publicUrl + "?t=" + Date.now() })
-      .eq("id", id)
+    const { error: updateError } = await supabase.from("productos")
+      .update({ imagen_url: url })
+      .eq("id", productoId)
 
+    if (updateError) {
+      mostrarToast("❌ Error guardando URL", "error")
+    } else {
+      mostrarToast("✅ Foto actualizada", "ok")
+      cargar()
+    }
     setSubiendoFoto(null)
-    cargar()
   }
 
-  /* ================= LOTES ================= */
+  if (cargando) return <p style={{ padding: 30 }}>⏳ Cargando productos...</p>
 
-  async function guardarLote() {
-    await supabase.from("lotes").insert({
-      producto_id: modalLote.id,
-      cantidad: Number(formLote.cantidad),
-      fecha_vencimiento: formLote.fecha
-    })
-
-    setModalLote(null)
-    setFormLote({ cantidad: "", fecha: "" })
-    cargar()
-  }
-
-  async function eliminarLote() {
-    await supabase.from("lotes").delete().eq("id", confirmEliminarLote.id)
-    setConfirmEliminarLote(null)
-    cargar()
-  }
-
-  function toggleLotes(id: number) {
-    setLotesAbiertos(prev => {
-      const n = new Set(prev)
-      n.has(id) ? n.delete(id) : n.add(id)
-      return n
-    })
-  }
-
-  /* ================= RENDER ================= */
-
-  if (cargando) return <p style={{ padding: 30 }}>Cargando...</p>
-
-  const filtrados = productos.filter(p =>
+  const productosFiltrados = productos.filter(p =>
     p.nombre.toLowerCase().includes(busqueda.toLowerCase())
   )
 
   return (
-    <div style={{ background: "#f9fafb", minHeight: "100vh", padding: 20 }}>
-
+    <div>
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 
-      <input ref={inputFotoRef} type="file" style={{ display: "none" }} onChange={subirFoto} />
+      {/* Input de foto oculto, compartido para todos los productos */}
+      <input
+        ref={inputFotoRef}
+        type="file"
+        accept=".jpg,.jpeg,.webp,.png"
+        style={{ display: "none" }}
+        onChange={subirFoto}
+      />
 
       <h1>📦 Productos</h1>
 
-      <input
-        placeholder="Buscar..."
-        value={busqueda}
-        onChange={e => setBusqueda(e.target.value)}
-        style={{ ...inputStyle, width: "100%", marginBottom: 20 }}
-      />
+      <div style={{ marginBottom: 20 }}>
+        <input type="number" placeholder="% Margen (ej: 40)" value={margenImportacion}
+          onChange={(e) => setMargenImportacion(e.target.value)}
+          style={{ width: 180, marginRight: 10 }} />
+        <input type="file" accept=".csv,.xlsx" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-        <input placeholder="Nombre" style={inputStyle} value={nombre} onChange={e => setNombre(e.target.value)} />
-        <input placeholder="Costo" style={inputStyle} value={costo} onChange={e => setCosto(e.target.value)} />
-        <input placeholder="Margen" style={inputStyle} value={margen} onChange={e => setMargen(e.target.value)} />
-        <input placeholder="Stock" style={inputStyle} value={stock} onChange={e => setStock(e.target.value)} />
-        <button style={btnPrimary} onClick={agregar}>Agregar</button>
+<button onClick={procesarArchivoUniversal}>
+  👁️ Ver preview
+</button>
+
+<button onClick={importarCSV}>
+  📥 Importar CSV
+</button>
+
+{preview.length > 0 && (
+  <div style={{ marginTop: 20, background: "#fff", padding: 10, borderRadius: 10 }}>
+    <h3>Preview (primeros 20)</h3>
+    {preview.map((p, i) => (
+      <div key={i} style={{ fontSize: 13 }}>
+        {p.nombre} - ${p.costo}
+      </div>
+    ))}
+  </div>
+)}
+{importando && (
+  <div style={{ marginTop: 20 }}>
+    <div style={{
+      height: 20,
+      background: "#e5e7eb",
+      borderRadius: 10,
+      overflow: "hidden"
+    }}>
+      <div style={{
+        width: `${progreso}%`,
+        background: "#22c55e",
+        height: "100%",
+        transition: "width 0.3s"
+      }} />
+    </div>
+    <p>{progreso}% completado</p>
+  </div>
+)}
       </div>
 
-      {filtrados.map(p => {
-        const lotes = lotesMap[p.id] || []
-        const abierto = lotesAbiertos.has(p.id)
+      <input placeholder="Buscar producto..." value={busqueda}
+        onChange={(e) => setBusqueda(e.target.value)}
+        style={{ width: "100%", marginBottom: 20, padding: 10 }} />
 
-        const diasMin = lotes.length
-          ? Math.min(...lotes.map(l =>
-              Math.floor((new Date(l.fecha_vencimiento).getTime() - Date.now()) / 86400000)
-            ))
-          : null
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 30 }}>
+        <input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
+        <input placeholder="Costo" type="number" value={costo} onChange={e => setCosto(e.target.value)} />
+        <input placeholder="% Margen" type="number" value={margen} onChange={e => setMargen(e.target.value)} />
+        <input placeholder="Stock" type="number" value={stock} onChange={e => setStock(e.target.value)} />
+        <button onClick={agregar}>➕ Agregar</button>
+      </div>
 
-        const estado = diasMin !== null ? estadoLote(diasMin) : null
-
+      {productosFiltrados.map(p => {
+        const costoNum = Number(editando?.costo || 0)
+        const margenNum = Number(editando?.margen || 0)
+        const precioEstimado = costoNum + (costoNum * margenNum / 100)
         return (
           <div key={p.id} style={{
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 10,
-            padding: 15,
-            marginBottom: 10
+            background: "white", padding: 15, marginBottom: 10, borderRadius: 10,
+            display: "flex", gap: 15, alignItems: "stretch"
           }}>
-
-            <b>{p.nombre}</b>
-
-            {estado && diasMin! <= 60 && (
-              <span style={{
-                marginLeft: 10,
-                background: estado.bg,
-                color: estado.color,
-                padding: "2px 8px",
-                borderRadius: 6
-              }}>
-                {estado.label} ({diasMin}d)
-              </span>
-            )}
-
-            <p style={{ color: "#4b5563" }}>
-              💰 {formatearPrecio(p.precio_venta)} · 📦 {p.stock}
-            </p>
-
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => toggleLotes(p.id)}>Lotes ({lotes.length})</button>
-              <button onClick={() => setModalLote(p)}>+ Lote</button>
+            {/* Contenido principal */}
+            <div style={{ flex: 1 }}>
+              {editando?.id === p.id ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <label><b>🏷️ Nombre</b></label>
+                  <input value={editando.nombre || ""} onChange={e => setEditando({ ...editando, nombre: e.target.value })} />
+                  <label><b>💰 Costo</b></label>
+                  <input type="number" value={editando.costo || ""} onChange={e => setEditando({ ...editando, costo: e.target.value })} />
+                  <label><b>📊 % Margen</b></label>
+                  <input type="number" value={editando.margen || ""} onChange={e => setEditando({ ...editando, margen: e.target.value })} />
+                  <label><b>📦 Stock</b></label>
+                  <input type="number" value={editando.stock || ""} onChange={e => setEditando({ ...editando, stock: e.target.value })} />
+                  <div style={{ background: "#f1f3f5", padding: 10, borderRadius: 8, marginTop: 10 }}>
+                    💵 <b>Precio estimado:</b> {formatearPrecio(precioEstimado)}
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={guardarEdicion}>💾 Guardar</button>
+                    <button onClick={() => setEditando(null)}>✖️ Cancelar</button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <b style={{ color: "#111827", fontSize: "15px" }}>{p.nombre}</b>
+                  {p.stock <= 5 && (
+                    <span style={{
+                      marginLeft: 10,
+                      background: "#fff3cd",
+                      color: "#92400e",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      padding: "2px 8px",
+                      borderRadius: "6px",
+                      border: "1px solid #fbbf24"
+                    }}>
+                      ⚠️ Stock bajo
+                    </span>
+                  )}
+                  <p style={{ color: "#374151", margin: "6px 0 4px" }}>
+                    💰 Costo: {formatearPrecio(p.costo)} · 📊 Margen: {p.margen}% · 💵 Venta: {formatearPrecio(p.precio_venta)}
+                  </p>
+                  <p style={{ color: "#374151", margin: "0 0 10px" }}>📦 Stock: {p.stock}</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => setEditando({ ...p })}>✏️ Editar</button>
+                    <button onClick={() => setConfirmEliminar(p)} style={{ background: "red", color: "white" }}>🗑️</button>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {abierto && (
-              <div style={{ marginTop: 10 }}>
-                {lotes.map(l => {
-                  const dias = Math.floor((new Date(l.fecha_vencimiento).getTime() - Date.now()) / 86400000)
-                  const est = estadoLote(dias)
+            {/* Panel de foto a la derecha */}
+            <div
+              onClick={() => abrirSelectorFoto(p.id)}
+              title="Clic para cambiar foto"
+              style={{
+                width: 90,
+                minHeight: 90,
+                flexShrink: 0,
+                borderRadius: 10,
+                overflow: "hidden",
+                border: "2px dashed #d1d5db",
+                cursor: "pointer",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "#f9fafb",
+                position: "relative",
+                transition: "border-color 0.2s"
+              }}
+            >
+              {subiendoFoto === p.id ? (
+                <span style={{ fontSize: 12, color: "#6b7280", textAlign: "center", padding: 4 }}>⏳ Subiendo...</span>
+              ) : p.imagen_url ? (
+                <img
+                  src={p.imagen_url}
+                  alt={p.nombre}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              ) : (
+                <div style={{ textAlign: "center", padding: 6 }}>
+                  <div style={{ fontSize: 22 }}>📷</div>
+                  <div style={{ fontSize: 9, color: "#9ca3af", marginTop: 4, lineHeight: 1.3 }}>
+                    JPG / WebP<br />800×800px
+                  </div>
+                </div>
+              )}
+            </div>
 
-                  return (
-                    <div key={l.id} style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: 12
-                    }}>
-                      {l.fecha_vencimiento} - {l.cantidad}u
-                      <span style={{ color: est.color }}>{est.label}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
           </div>
         )
       })}
+
+      {/* Modal confirmar eliminar */}
+      {confirmEliminar && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">¿Eliminar producto?</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              Vas a eliminar <strong>{confirmEliminar.nombre}</strong>. Esta acción no se puede deshacer.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setConfirmEliminar(null)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+                Cancelar
+              </button>
+              <button onClick={confirmarEliminar}
+                className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors">
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
