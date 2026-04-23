@@ -338,6 +338,16 @@ export default function Productos() {
       )}
 
       {/* Buscador */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+  <p style={{ color: "#6b7280", fontSize: 13, margin: 0 }}>
+    <span style={{ fontWeight: 700, color: "#374151" }}>{productos.length}</span> productos cargados
+    {busqueda && (
+      <span style={{ marginLeft: 8, color: "#9ca3af" }}>
+        · <span style={{ fontWeight: 600, color: "#374151" }}>{productosFiltrados.length}</span> resultado{productosFiltrados.length !== 1 ? "s" : ""}
+      </span>
+    )}
+  </p>
+</div>
       <input placeholder="🔍 Buscar producto..." value={busqueda}
         onChange={e => setBusqueda(e.target.value)}
         style={{
