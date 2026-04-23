@@ -84,11 +84,27 @@ export default function Productos() {
   }
 
   async function cargar() {
-    const { data } = await supabase.from("productos").select("*").order("nombre")
-    setProductos(data || [])
-    setCargando(false)
-    if (data && data.length > 0) await cargarLotes(data.map((p: any) => p.id))
+  let todos: any[] = []
+  let desde = 0
+  const tamano = 1000
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("productos")
+      .select("*")
+      .order("nombre")
+      .range(desde, desde + tamano - 1)
+
+    if (error || !data || data.length === 0) break
+    todos = [...todos, ...data]
+    if (data.length < tamano) break
+    desde += tamano
   }
+
+  setProductos(todos)
+  setCargando(false)
+  if (todos.length > 0) await cargarLotes(todos.map((p: any) => p.id))
+}
 
   async function cargarLotes(ids: number[]) {
     const { data } = await supabase
