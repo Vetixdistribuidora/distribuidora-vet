@@ -55,6 +55,13 @@ const inputDarkStyle: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10,
   color: "white", fontSize: 14, outline: "none", boxSizing: "border-box"
 }
+const selectDarkStyle: React.CSSProperties = {
+  width: "100%", padding: "10px 14px",
+  background: "#1e293b",
+  border: "1px solid rgba(255,255,255,0.1)",
+  borderRadius: 10, color: "white", fontSize: 14,
+  outline: "none", boxSizing: "border-box", cursor: "pointer"
+}
 
 export default function ComprasPage() {
   const [compras, setCompras] = useState<Compra[]>([]);
@@ -329,7 +336,8 @@ export default function ComprasPage() {
                 <div>
                   <label style={labelStyle}>Proveedor *</label>
                   <select value={form.proveedor_id} onChange={e => setForm({ ...form, proveedor_id: e.target.value })}
-                    style={{ ...inputDarkStyle, cursor: "pointer" }}>
+                    style={selectDarkStyle}>
+  <option value="">Seleccioná un proveedor</option>
                     <option value="">Seleccioná un proveedor</option>
                     {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                   </select>
@@ -492,7 +500,8 @@ export default function ComprasPage() {
                 </div>
                 <div>
                   <label style={labelStyle}>Método de pago</label>
-                  <select value={form.metodo_pago} onChange={e => setForm({ ...form, metodo_pago: e.target.value })} style={{ ...inputDarkStyle, cursor: "pointer" }}>
+                  <select value={form.metodo_pago} onChange={e => setForm({ ...form, metodo_pago: e.target.value })} style={selectDarkStyle}>
+  {METODOS.map(m => <option key={m}>{m}</option>)}
                     {METODOS.map(m => <option key={m}>{m}</option>)}
                   </select>
                 </div>
