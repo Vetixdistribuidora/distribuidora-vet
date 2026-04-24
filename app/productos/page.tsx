@@ -107,20 +107,26 @@ export default function Productos() {
 }
 
   async function cargarLotes(ids: number[]) {
+  const mapa: Record<number, any[]> = {}
+  const chunkSize = 200
+  
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize)
     const { data } = await supabase
       .from("lotes")
       .select("*")
-      .in("producto_id", ids)
+      .in("producto_id", chunk)
       .gt("cantidad", 0)
       .order("fecha_vencimiento", { ascending: true })
-    if (!data) return
-    const mapa: Record<number, any[]> = {}
-    data.forEach((l: any) => {
+    
+    data?.forEach((l: any) => {
       if (!mapa[l.producto_id]) mapa[l.producto_id] = []
       mapa[l.producto_id].push(l)
     })
-    setLotesMap(mapa)
   }
+  
+  setLotesMap(mapa)
+}
 
   useEffect(() => { cargar() }, [])
 

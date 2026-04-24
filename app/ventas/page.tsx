@@ -115,15 +115,40 @@ export default function Ventas() {
   }
 
   async function cargarHistorial() {
-    setLoadingHistorial(true)
-    const { data } = await supabase
+  setLoadingHistorial(true)
+  const { data } = await supabase
+    .from("ventas")
+    .select("*, clientes(nombre, apellido)")
+    .order("id", { ascending: false })
+    .limit(200)
+
+  // Si falla el join, traer clientes por separado
+  if (!data || data.some((v: any) => v.clientes === undefined)) {
+    const { data: ventasSolas } = await supabase
       .from("ventas")
-      .select("*, clientes(nombre, apellido)")
+      .select("*")
       .order("id", { ascending: false })
       .limit(200)
+    
+    const clienteIds = [...new Set(ventasSolas?.map((v: any) => v.cliente_id) || [])]
+    const { data: clientesData } = await supabase
+      .from("clientes")
+      .select("id, nombre, apellido")
+      .in("id", clienteIds)
+    
+    const clientesMap: Record<number, any> = {}
+    clientesData?.forEach((c: any) => { clientesMap[c.id] = c })
+    
+    setVentas(ventasSolas?.map((v: any) => ({
+      ...v,
+      clientes: clientesMap[v.cliente_id] || null
+    })) || [])
+  } else {
     setVentas(data || [])
-    setLoadingHistorial(false)
   }
+  setLoadingHistorial(false)
+}
+  
 
   async function verDetalle(v: any) {
     setVentaDetalle(v)
