@@ -69,6 +69,7 @@ export default function Productos() {
   const [subiendoFoto, setSubiendoFoto] = useState<number | null>(null)
   const inputFotoRef = useRef<HTMLInputElement>(null)
   const productoFotoRef = useRef<number | null>(null)
+  const [pagina, setPagina] = useState(1)
 
   // Lotes
   const [lotesMap, setLotesMap] = useState<Record<number, any[]>>({})
@@ -297,13 +298,23 @@ export default function Productos() {
 }
 
   async function eliminarLote() {
-    if (!confirmEliminarLote) return
-    const { error } = await supabase.from("lotes").delete().eq("id", confirmEliminarLote.id)
-    if (error) return mostrarToast("❌ " + error.message, "error")
-    mostrarToast("🗑️ Lote eliminado", "ok")
-    setConfirmEliminarLote(null)
-    cargar()
+  if (!confirmEliminarLote) return
+  
+  // Descontar del stock antes de eliminar
+  const producto = productos.find(p => p.id === confirmEliminarLote.producto_id)
+  if (producto) {
+    await supabase
+      .from("productos")
+      .update({ stock: Math.max(0, producto.stock - confirmEliminarLote.cantidad) })
+      .eq("id", confirmEliminarLote.producto_id)
   }
+
+  const { error } = await supabase.from("lotes").delete().eq("id", confirmEliminarLote.id)
+  if (error) return mostrarToast("❌ " + error.message, "error")
+  mostrarToast("🗑️ Lote eliminado", "ok")
+  setConfirmEliminarLote(null)
+  cargar()
+}
 
   function toggleLotes(id: number) {
     setLotesAbiertos(prev => {
@@ -316,8 +327,9 @@ export default function Productos() {
   if (cargando) return <p style={{ padding: 30, color: "#9ca3af" }}>⏳ Cargando productos...</p>
 
   const productosFiltrados = productos.filter(p =>
-    p.nombre.toLowerCase().includes(busqueda.toLowerCase())
-  )
+  p.nombre.toLowerCase().includes(busqueda.toLowerCase())
+)
+const productosVisibles = productosFiltrados.slice(0, pagina * 50)
 
   return (
     <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
@@ -371,7 +383,7 @@ export default function Productos() {
   </p>
 </div>
       <input placeholder="🔍 Buscar producto..." value={busqueda}
-        onChange={e => setBusqueda(e.target.value)}
+        onChange={e => { setBusqueda(e.target.value); setPagina(1) }}
         style={{
           width: "100%", marginBottom: 16, padding: "10px 14px",
           borderRadius: 10, border: "1px solid #d1d5db", fontSize: 14,
@@ -398,7 +410,7 @@ export default function Productos() {
       </div>
 
       {/* Lista de productos */}
-      {productosFiltrados.map(p => {
+      {productosVisibles.map(p => {
         const costoNum = Number(editando?.costo || 0)
         const margenNum = Number(editando?.margen || 0)
         const precioEstimado = costoNum + (costoNum * margenNum / 100)
@@ -411,6 +423,19 @@ export default function Productos() {
           const diasMin = Math.min(...lotes.map((l: any) =>
             Math.floor((new Date(l.fecha_vencimiento).getTime() - Date.now()) / 86400000)
           ))
+          {productosVisibles.length < productosFiltrados.length && (
+  <button
+    onClick={() => setPagina(p => p + 1)}
+    style={{
+      width: "100%", padding: "12px",
+      background: "white", border: "1px solid #e2e8f0",
+      borderRadius: 10, cursor: "pointer",
+      fontSize: 13, fontWeight: 600, color: "#374151",
+      marginTop: 8
+    }}>
+    Ver más ({productosFiltrados.length - productosVisibles.length} restantes)
+  </button>
+)}
           if (diasMin <= 60) {
             const est = estadoLote(diasMin)
             badgeLote = (
