@@ -599,13 +599,19 @@ const productosVisibles = productosFiltrados.slice(0, pagina * 50)
                 <div>
                   <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
                     <b style={{ color: "#111827", fontSize: "15px" }}>{p.nombre}</b>
-                    {p.stock <= 5 && (
-                      <span style={{
-                        marginLeft: 6, background: "#fff3cd", color: "#92400e",
-                        fontSize: "11px", fontWeight: "600", padding: "2px 8px",
-                        borderRadius: "6px", border: "1px solid #fbbf24"
-                      }}>⚠️ Stock bajo</span>
-                    )}
+                    {p.stock === 0 ? (
+  <span style={{
+    marginLeft: 6, background: "#fef2f2", color: "#dc2626",
+    fontSize: "11px", fontWeight: "700", padding: "2px 8px",
+    borderRadius: "6px", border: "1px solid #fecaca"
+  }}>🚫 Sin stock</span>
+) : p.stock <= 5 && (
+  <span style={{
+    marginLeft: 6, background: "#fff3cd", color: "#92400e",
+    fontSize: "11px", fontWeight: "600", padding: "2px 8px",
+    borderRadius: "6px", border: "1px solid #fbbf24"
+  }}>⚠️ Stock bajo</span>
+)}
                     {badgeLote}
                   </div>
                   <p style={{ color: "#374151", margin: "0 0 4px", fontSize: 13 }}>

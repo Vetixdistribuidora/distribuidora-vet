@@ -104,10 +104,6 @@ const ventasMesAnterior = ventas?.filter(v => {
 
     setKpis({ totalHoy, totalMes, ganancia, margen, crecimiento, ticketPromedio, cantidadVentas: ventasMes.length, cantidadHoy: ventasHoy.length, capitalStock })
     setAlertas({ stockBajo, sinVentas, sinRotacion })
-    console.log("Ventas totales:", ventas?.length)
-console.log("Ejemplo fecha:", ventas?.[0]?.fecha)
-console.log("Ventas hoy:", ventasHoy.length)
-console.log("Ventas mes:", ventasMes.length)
 setVentasHoyLista(ventasHoy)
     setVentasHoyLista(ventasHoy)
     setVentasMesLista(ventasMes)
