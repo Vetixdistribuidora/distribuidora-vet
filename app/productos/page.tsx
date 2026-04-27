@@ -10,8 +10,7 @@ function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
       position: "fixed", bottom: 30, right: 30,
       background: tipo === "ok" ? "#2f9e44" : "#e03131",
       color: "white", padding: "12px 20px",
-      borderRadius: 10, fontWeight: "bold",
-      zIndex: 1000
+      borderRadius: 10, fontWeight: "bold", zIndex: 1000
     }}>
       {mensaje}
     </div>
@@ -30,24 +29,34 @@ function estadoLote(dias: number) {
 }
 
 const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "10px 14px",
+  width: "100%", padding: "10px 14px",
   background: "rgba(255,255,255,0.05)",
   border: "1px solid rgba(255,255,255,0.1)",
-  borderRadius: "10px",
-  color: "white",
-  fontSize: "14px",
-  outline: "none",
+  borderRadius: "10px", color: "white", fontSize: "14px", outline: "none",
 }
 
 const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: "11px",
-  fontWeight: "600",
-  color: "#9ca3af",
-  letterSpacing: "0.5px",
-  marginBottom: "6px",
-  textTransform: "uppercase",
+  display: "block", fontSize: "11px", fontWeight: "600",
+  color: "#9ca3af", letterSpacing: "0.5px", marginBottom: "6px", textTransform: "uppercase",
+}
+
+const btnPrimario: React.CSSProperties = {
+  background: "linear-gradient(135deg, #2563eb, #3b82f6)",
+  color: "white", border: "none", borderRadius: 8,
+  padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+  boxShadow: "0 2px 8px rgba(59,130,246,0.3)"
+}
+
+const btnSecundario: React.CSSProperties = {
+  background: "#f1f5f9", color: "#374151",
+  border: "1px solid #e2e8f0", borderRadius: 8,
+  padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer"
+}
+
+const btnDanger: React.CSSProperties = {
+  background: "#fef2f2", color: "#dc2626",
+  border: "1px solid #fecaca", borderRadius: 8,
+  padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer"
 }
 
 export default function Productos() {
@@ -70,6 +79,8 @@ export default function Productos() {
   const inputFotoRef = useRef<HTMLInputElement>(null)
   const productoFotoRef = useRef<number | null>(null)
   const [pagina, setPagina] = useState(1)
+  const [mostrarImport, setMostrarImport] = useState(false)
+  const [mostrarAgregar, setMostrarAgregar] = useState(false)
 
   // Lotes
   const [lotesMap, setLotesMap] = useState<Record<number, any[]>>({})
@@ -85,80 +96,57 @@ export default function Productos() {
   }
 
   async function cargar() {
-  let todos: any[] = []
-  let desde = 0
-  const tamano = 1000
-
-  while (true) {
-    const { data, error } = await supabase
-      .from("productos")
-      .select("*")
-      .order("nombre")
-      .range(desde, desde + tamano - 1)
-
-    if (error || !data || data.length === 0) break
-    todos = [...todos, ...data]
-    if (data.length < tamano) break
-    desde += tamano
+    let todos: any[] = []
+    let desde = 0
+    const tamano = 1000
+    while (true) {
+      const { data, error } = await supabase.from("productos").select("*").order("nombre").range(desde, desde + tamano - 1)
+      if (error || !data || data.length === 0) break
+      todos = [...todos, ...data]
+      if (data.length < tamano) break
+      desde += tamano
+    }
+    setProductos(todos)
+    setCargando(false)
+    if (todos.length > 0) await cargarLotes(todos.map((p: any) => p.id))
   }
-
-  setProductos(todos)
-  setCargando(false)
-  if (todos.length > 0) await cargarLotes(todos.map((p: any) => p.id))
-}
 
   async function cargarLotes(ids: number[]) {
-  const mapa: Record<number, any[]> = {}
-  const chunkSize = 200
-  
-  for (let i = 0; i < ids.length; i += chunkSize) {
-    const chunk = ids.slice(i, i + chunkSize)
-    const { data } = await supabase
-      .from("lotes")
-      .select("*")
-      .in("producto_id", chunk)
-      .gt("cantidad", 0)
-      .order("fecha_vencimiento", { ascending: true })
-    
-    data?.forEach((l: any) => {
-      if (!mapa[l.producto_id]) mapa[l.producto_id] = []
-      mapa[l.producto_id].push(l)
-    })
+    const mapa: Record<number, any[]> = {}
+    const chunkSize = 200
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize)
+      const { data } = await supabase.from("lotes").select("*").in("producto_id", chunk).gt("cantidad", 0).order("fecha_vencimiento", { ascending: true })
+      data?.forEach((l: any) => {
+        if (!mapa[l.producto_id]) mapa[l.producto_id] = []
+        mapa[l.producto_id].push(l)
+      })
+    }
+    setLotesMap(mapa)
   }
-  
-  setLotesMap(mapa)
-}
 
   useEffect(() => { cargar() }, [])
 
   async function agregar() {
-    if (!nombre || !costo || !margen || !stock) {
-      mostrarToast("⚠️ Completá todos los campos", "error"); return
-    }
+    if (!nombre || !costo || !margen || !stock) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
     const costoNum = Number(costo)
     const margenNum = Number(margen)
     const precioVenta = costoNum + (costoNum * margenNum / 100)
-    const { data, error } = await supabase.from("productos").insert([{
-      nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(stock)
-    }]).select()
+    const { data, error } = await supabase.from("productos").insert([{ nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(stock) }]).select()
     if (error) return mostrarToast("❌ " + error.message, "error")
     await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 })
     mostrarToast("✅ Producto agregado", "ok")
     setNombre(""); setCosto(""); setMargen(""); setStock("")
+    setMostrarAgregar(false)
     cargar()
   }
 
   async function guardarEdicion() {
-    if (!editando.nombre || !editando.costo || !editando.margen) {
-      mostrarToast("⚠️ Completá todos los campos", "error"); return
-    }
+    if (!editando.nombre || !editando.costo || !editando.margen) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
     const costoNum = Number(editando.costo)
     const margenNum = Number(editando.margen)
     const precioVenta = costoNum + (costoNum * margenNum / 100)
-    const { error } = await supabase.from("productos").update({
-      nombre: editando.nombre, costo: costoNum, margen: margenNum,
-      precio_venta: precioVenta, stock: Number(editando.stock)
-    }).eq("id", editando.id)
+    const { error } = await supabase.from("productos").update({ nombre: editando.nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(editando.stock) }).eq("id", editando.id)
     if (error) return mostrarToast("❌ " + error.message, "error")
     await supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id })
     mostrarToast("✅ Producto actualizado", "ok")
@@ -177,18 +165,6 @@ export default function Productos() {
   }
 
   function parsePrecio(valor: any) {
-    if (!valor) return NaN
-    let str = String(valor).replace(/\$/g, "").trim()
-    if (str.includes(",") && str.includes(".")) str = str.replace(/\./g, "").replace(",", ".")
-    else if (str.includes(",") && !str.includes(".")) str = str.replace(",", ".")
-    return Number(str)
-  }
-
-  async function procesarArchivoUniversal() {
-  if (!archivo) { mostrarToast("⚠️ Seleccioná un archivo", "error"); return }
-  let productos: any[] = []
-
-  function parsePrecio(valor: any) {
     if (!valor && valor !== 0) return NaN
     let str = String(valor).replace(/\$/g, "").replace(/\s/g, "").trim()
     if (str.includes(",") && str.includes(".")) str = str.replace(/\./g, "").replace(",", ".")
@@ -197,120 +173,63 @@ export default function Productos() {
     return isNaN(num) || num <= 0 ? NaN : num
   }
 
-  if (archivo.name.endsWith(".xlsx") || archivo.name.endsWith(".xls")) {
-    const data = await archivo.arrayBuffer()
-    const workbook = XLSX.read(data)
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    const json: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" })
+  async function procesarArchivoUniversal() {
+    if (!archivo) { mostrarToast("⚠️ Seleccioná un archivo", "error"); return }
+    let prods: any[] = []
 
-    if (json.length === 0) {
-      mostrarToast("❌ El archivo está vacío", "error")
-      return
-    }
-
-    // Log para debug — te muestra las columnas disponibles
-    console.log("Columnas detectadas:", Object.keys(json[0]))
-    console.log("Primera fila:", json[0])
-
-    const columnas = Object.keys(json[0])
-
-    // Detectar columna de precio — busca la que tenga más números válidos
-    let columnaPrecio = ""
-    let mejorPuntaje = 0
-    for (const col of columnas) {
-      const puntaje = json.slice(0, 20).filter(fila => {
-        const val = parsePrecio(fila[col])
-        return !isNaN(val) && val > 0
-      }).length
-      if (puntaje > mejorPuntaje) {
-        mejorPuntaje = puntaje
-        columnaPrecio = col
+    if (archivo.name.endsWith(".xlsx") || archivo.name.endsWith(".xls")) {
+      const data = await archivo.arrayBuffer()
+      const workbook = XLSX.read(data)
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const json: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" })
+      if (json.length === 0) { mostrarToast("❌ El archivo está vacío", "error"); return }
+      const columnas = Object.keys(json[0])
+      let columnaPrecio = ""
+      let mejorPuntaje = 0
+      for (const col of columnas) {
+        const puntaje = json.slice(0, 20).filter(fila => !isNaN(parsePrecio(fila[col]))).length
+        if (puntaje > mejorPuntaje) { mejorPuntaje = puntaje; columnaPrecio = col }
+      }
+      const columnasNombre = columnas.filter(col => {
+        if (col === columnaPrecio) return false
+        return json.slice(0, 10).some(fila => { const val = String(fila[col] || "").trim(); return val.length > 1 && isNaN(Number(val)) })
+      })
+      for (const fila of json) {
+        const precio = parsePrecio(fila[columnaPrecio])
+        if (isNaN(precio)) continue
+        const nombreFinal = columnasNombre.map(col => String(fila[col] || "").trim()).filter(v => v.length > 0).join(" ").trim()
+        if (!nombreFinal) continue
+        prods.push({ nombre: nombreFinal, costo: precio })
+      }
+    } else {
+      const buffer = await archivo.arrayBuffer()
+      let texto = ""
+      try { texto = new TextDecoder("utf-8").decode(buffer) } catch { texto = new TextDecoder("latin1").decode(buffer) }
+      const lineas = texto.split("\n")
+      const sep = lineas[0].includes(";") ? ";" : ","
+      const cols = lineas[0].split(sep).map(c => c.trim())
+      let idxPrecio = -1, mejorPuntaje = 0
+      for (let i = 0; i < cols.length; i++) {
+        const puntaje = lineas.slice(1, 20).filter(l => !isNaN(parsePrecio(l.split(sep)[i]))).length
+        if (puntaje > mejorPuntaje) { mejorPuntaje = puntaje; idxPrecio = i }
+      }
+      const idxsNombre = cols.map((_, i) => i).filter(i => i !== idxPrecio)
+      for (const linea of lineas.slice(1)) {
+        if (!linea.trim()) continue
+        const partes = linea.split(sep)
+        const precio = parsePrecio(partes[idxPrecio])
+        if (isNaN(precio)) continue
+        const nombreFinal = idxsNombre.map(i => String(partes[i] || "").trim()).filter(v => v.length > 0).join(" ").trim()
+        if (!nombreFinal) continue
+        prods.push({ nombre: nombreFinal, costo: precio })
       }
     }
 
-    // Detectar columnas de nombre — todas las que no son precio y tienen texto
-    const columnasNombre = columnas.filter(col => {
-      if (col === columnaPrecio) return false
-      // Verificar que tenga contenido de texto
-      const tieneTexto = json.slice(0, 10).some(fila => {
-        const val = String(fila[col] || "").trim()
-        return val.length > 1 && isNaN(Number(val))
-      })
-      return tieneTexto
-    })
-
-    console.log("Columna precio detectada:", columnaPrecio)
-    console.log("Columnas nombre detectadas:", columnasNombre)
-
-    for (const fila of json) {
-      const precio = parsePrecio(fila[columnaPrecio])
-      if (isNaN(precio)) continue
-
-      // Combinar todas las columnas de nombre
-      const nombreFinal = columnasNombre
-        .map(col => String(fila[col] || "").trim())
-        .filter(v => v.length > 0)
-        .join(" ")
-        .trim()
-
-      if (!nombreFinal) continue
-      productos.push({ nombre: nombreFinal, costo: precio })
-    }
-
-  } else {
-    // CSV
-    const buffer = await archivo.arrayBuffer()
-    let texto = ""
-    try { texto = new TextDecoder("utf-8").decode(buffer) }
-    catch { texto = new TextDecoder("latin1").decode(buffer) }
-
-    const lineas = texto.split("\n")
-    const encabezado = lineas[0]
-    const sep = encabezado.includes(";") ? ";" : ","
-    const cols = encabezado.split(sep).map(c => c.trim())
-
-    console.log("Columnas CSV:", cols)
-
-    // Detectar columna precio en CSV
-    let idxPrecio = -1
-    let mejorPuntaje = 0
-    for (let i = 0; i < cols.length; i++) {
-      const puntaje = lineas.slice(1, 20).filter(linea => {
-        const partes = linea.split(sep)
-        return !isNaN(parsePrecio(partes[i]))
-      }).length
-      if (puntaje > mejorPuntaje) { mejorPuntaje = puntaje; idxPrecio = i }
-    }
-
-    const idxsNombre = cols.map((_, i) => i).filter(i => i !== idxPrecio)
-
-    for (const linea of lineas.slice(1)) {
-      if (!linea.trim()) continue
-      const partes = linea.split(sep)
-      const precio = parsePrecio(partes[idxPrecio])
-      if (isNaN(precio)) continue
-      const nombreFinal = idxsNombre
-        .map(i => String(partes[i] || "").trim())
-        .filter(v => v.length > 0)
-        .join(" ")
-        .trim()
-      if (!nombreFinal) continue
-      productos.push({ nombre: nombreFinal, costo: precio })
-    }
+    if (prods.length === 0) { mostrarToast("❌ No se detectaron productos.", "error"); return }
+    setPreview(prods.slice(0, 20))
+    mostrarToast(`📊 ${prods.length} productos detectados`, "ok")
+    return prods
   }
-
-  console.log("Total productos detectados:", productos.length)
-  console.log("Ejemplo:", productos.slice(0, 3))
-
-  if (productos.length === 0) {
-    mostrarToast("❌ No se detectaron productos. Revisá el formato del archivo.", "error")
-    return
-  }
-
-  setPreview(productos.slice(0, 20))
-  mostrarToast(`📊 ${productos.length} productos detectados`, "ok")
-  return productos
-}
 
   async function importarCSV() {
     if (!archivo) return
@@ -319,10 +238,7 @@ export default function Productos() {
     if (!productosBase) return
     setImportando(true); setProgreso(0)
     const margenDefault = Number(margenImportacion)
-    const productosFinal = productosBase.map(p => ({
-      nombre: p.nombre, costo: p.costo, margen: margenDefault,
-      precio_venta: p.costo + (p.costo * margenDefault / 100), stock: 0
-    }))
+    const productosFinal = productosBase.map(p => ({ nombre: p.nombre, costo: p.costo, margen: margenDefault, precio_venta: p.costo + (p.costo * margenDefault / 100), stock: 0 }))
     const chunkSize = 200; let procesados = 0
     for (let i = 0; i < productosFinal.length; i += chunkSize) {
       const chunk = productosFinal.slice(i, i + chunkSize)
@@ -360,51 +276,32 @@ export default function Productos() {
   }
 
   async function guardarLote() {
-  if (!modalLote) return
-  if (!formLote.cantidad || !formLote.fecha_vencimiento) {
-    mostrarToast("⚠️ Completá cantidad y fecha", "error"); return
+    if (!modalLote) return
+    if (!formLote.cantidad || !formLote.fecha_vencimiento) { mostrarToast("⚠️ Completá cantidad y fecha", "error"); return }
+    setGuardandoLote(true)
+    const { error } = await supabase.from("lotes").insert({ producto_id: modalLote.productoId, cantidad: Number(formLote.cantidad), fecha_vencimiento: formLote.fecha_vencimiento })
+    if (error) { setGuardandoLote(false); return mostrarToast("❌ " + error.message, "error") }
+    await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "lotes", registro_id: modalLote.productoId })
+    const { error: errorStock } = await supabase.from("productos").update({ stock: productos.find(p => p.id === modalLote.productoId)?.stock + Number(formLote.cantidad) }).eq("id", modalLote.productoId)
+    setGuardandoLote(false)
+    if (errorStock) return mostrarToast("❌ Error actualizando stock", "error")
+    mostrarToast("✅ Lote agregado", "ok")
+    setModalLote(null); setFormLote({ cantidad: "", fecha_vencimiento: "" })
+    cargar()
   }
-  setGuardandoLote(true)
-  const { error } = await supabase.from("lotes").insert({
-    producto_id: modalLote.productoId,
-    cantidad: Number(formLote.cantidad),
-    fecha_vencimiento: formLote.fecha_vencimiento
-  })
-  if (error) { setGuardandoLote(false); return mostrarToast("❌ " + error.message, "error") }
-
-  // Actualizar stock del producto
-  await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "lotes", registro_id: modalLote.productoId })
-  const { error: errorStock } = await supabase
-    .from("productos")
-    .update({ stock: productos.find(p => p.id === modalLote.productoId)?.stock + Number(formLote.cantidad) })
-    .eq("id", modalLote.productoId)
-
-  setGuardandoLote(false)
-  if (errorStock) return mostrarToast("❌ Error actualizando stock", "error")
-  mostrarToast("✅ Lote agregado", "ok")
-  setModalLote(null)
-  setFormLote({ cantidad: "", fecha_vencimiento: "" })
-  cargar()
-}
 
   async function eliminarLote() {
-  if (!confirmEliminarLote) return
-  
-  // Descontar del stock antes de eliminar
-  const producto = productos.find(p => p.id === confirmEliminarLote.producto_id)
-  if (producto) {
-    await supabase
-      .from("productos")
-      .update({ stock: Math.max(0, producto.stock - confirmEliminarLote.cantidad) })
-      .eq("id", confirmEliminarLote.producto_id)
+    if (!confirmEliminarLote) return
+    const producto = productos.find(p => p.id === confirmEliminarLote.producto_id)
+    if (producto) {
+      await supabase.from("productos").update({ stock: Math.max(0, producto.stock - confirmEliminarLote.cantidad) }).eq("id", confirmEliminarLote.producto_id)
+    }
+    const { error } = await supabase.from("lotes").delete().eq("id", confirmEliminarLote.id)
+    if (error) return mostrarToast("❌ " + error.message, "error")
+    mostrarToast("🗑️ Lote eliminado", "ok")
+    setConfirmEliminarLote(null)
+    cargar()
   }
-
-  const { error } = await supabase.from("lotes").delete().eq("id", confirmEliminarLote.id)
-  if (error) return mostrarToast("❌ " + error.message, "error")
-  mostrarToast("🗑️ Lote eliminado", "ok")
-  setConfirmEliminarLote(null)
-  cargar()
-}
 
   function toggleLotes(id: number) {
     setLotesAbiertos(prev => {
@@ -416,153 +313,122 @@ export default function Productos() {
 
   if (cargando) return <p style={{ padding: 30, color: "#9ca3af" }}>⏳ Cargando productos...</p>
 
-  const productosFiltrados = productos.filter(p =>
-  p.nombre.toLowerCase().includes(busqueda.toLowerCase())
-)
-const productosVisibles = productosFiltrados.slice(0, pagina * 50)
+  const productosFiltrados = productos.filter(p => p.nombre.toLowerCase().includes(busqueda.toLowerCase()))
+  const productosVisibles = productosFiltrados.slice(0, pagina * 50)
 
   return (
     <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
+      <input ref={inputFotoRef} type="file" accept=".jpg,.jpeg,.webp,.png" style={{ display: "none" }} onChange={subirFoto} />
 
-      <input ref={inputFotoRef} type="file" accept=".jpg,.jpeg,.webp,.png"
-        style={{ display: "none" }} onChange={subirFoto} />
-
-      {/* Importación */}
-      <div style={{
-        background: "white", borderRadius: 12, padding: "16px 20px",
-        marginBottom: 16, border: "1px solid #e5e7eb", display: "flex",
-        alignItems: "center", gap: 10, flexWrap: "wrap"
-      }}>
-        <input type="number" placeholder="% Margen" value={margenImportacion}
-          onChange={e => setMargenImportacion(e.target.value)}
-          style={{ width: 120, padding: "8px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13 }} />
-        <input type="file" accept=".csv,.xlsx" onChange={e => setArchivo(e.target.files?.[0] || null)}
-          style={{ fontSize: 13 }} />
-        <button onClick={procesarArchivoUniversal} style={btnSecundario}>👁️ Preview</button>
-        <button onClick={importarCSV} style={btnPrimario}>📥 Importar</button>
+      {/* Barra de acciones superior */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <input placeholder="🔍 Buscar producto..." value={busqueda}
+          onChange={e => { setBusqueda(e.target.value); setPagina(1) }}
+          style={{ flex: 1, minWidth: 200, padding: "10px 14px", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+        <span style={{ fontSize: 13, color: "#6b7280", whiteSpace: "nowrap" }}>
+          <b style={{ color: "#374151" }}>{productos.length}</b> productos
+          {busqueda && <span style={{ color: "#9ca3af" }}> · <b style={{ color: "#374151" }}>{productosFiltrados.length}</b> resultados</span>}
+        </span>
+        <button onClick={() => setMostrarAgregar(!mostrarAgregar)} style={btnSecundario}>
+          {mostrarAgregar ? "✕ Cerrar" : "➕ Agregar"}
+        </button>
+        <button onClick={() => setMostrarImport(!mostrarImport)} style={btnSecundario}>
+          {mostrarImport ? "✕ Cerrar" : "📥 Importar"}
+        </button>
       </div>
 
-      {preview.length > 0 && (
-        <div style={{ background: "white", borderRadius: 10, padding: 14, marginBottom: 16, border: "1px solid #e5e7eb" }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>Preview (primeros 20)</p>
-          {preview.map((p, i) => (
-            <div key={i} style={{ fontSize: 12, color: "#6b7280", padding: "2px 0" }}>{p.nombre} — ${p.costo}</div>
-          ))}
-        </div>
-      )}
-
-      {importando && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ height: 8, background: "#e5e7eb", borderRadius: 10, overflow: "hidden" }}>
-            <div style={{ width: `${progreso}%`, background: "#22c55e", height: "100%", transition: "width 0.3s" }} />
+      {/* Panel agregar — colapsable */}
+      {mostrarAgregar && (
+        <div style={{ background: "#0f172a", borderRadius: 14, padding: "20px 24px", marginBottom: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
+          <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 }}>Nuevo producto</p>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+            {[
+              { placeholder: "Nombre del producto", value: nombre, onChange: setNombre, type: "text" },
+              { placeholder: "Costo", value: costo, onChange: setCosto, type: "number" },
+              { placeholder: "% Margen", value: margen, onChange: setMargen, type: "number" },
+              { placeholder: "Stock", value: stock, onChange: setStock, type: "number" },
+            ].map(f => (
+              <input key={f.placeholder} type={f.type} placeholder={f.placeholder} value={f.value}
+                onChange={e => f.onChange(e.target.value)}
+                style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+            ))}
+            <button onClick={agregar} style={btnPrimario}>Guardar</button>
           </div>
-          <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{progreso}% completado</p>
         </div>
       )}
 
-      {/* Buscador */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-  <p style={{ color: "#6b7280", fontSize: 13, margin: 0 }}>
-    <span style={{ fontWeight: 700, color: "#374151" }}>{productos.length}</span> productos cargados
-    {busqueda && (
-      <span style={{ marginLeft: 8, color: "#9ca3af" }}>
-        · <span style={{ fontWeight: 600, color: "#374151" }}>{productosFiltrados.length}</span> resultado{productosFiltrados.length !== 1 ? "s" : ""}
-      </span>
-    )}
-  </p>
-</div>
-      <input placeholder="🔍 Buscar producto..." value={busqueda}
-        onChange={e => { setBusqueda(e.target.value); setPagina(1) }}
-        style={{
-          width: "100%", marginBottom: 16, padding: "10px 14px",
-          borderRadius: 10, border: "1px solid #d1d5db", fontSize: 14,
-          boxSizing: "border-box"
-        }} />
+      {/* Panel importar — colapsable */}
+      {mostrarImport && (
+        <div style={{ background: "white", borderRadius: 14, padding: "16px 20px", marginBottom: 16, border: "1px solid #e2e8f0" }}>
+          <p style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.5 }}>Importar lista de precios</p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <input type="number" placeholder="% Margen" value={margenImportacion}
+              onChange={e => setMargenImportacion(e.target.value)}
+              style={{ width: 110, padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, outline: "none" }} />
+            <input type="file" accept=".csv,.xlsx" onChange={e => setArchivo(e.target.files?.[0] || null)} style={{ fontSize: 13 }} />
+            <button onClick={procesarArchivoUniversal} style={btnSecundario}>👁️ Preview</button>
+            <button onClick={importarCSV} style={btnPrimario}>📥 Importar</button>
+          </div>
+          {importando && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ height: 6, background: "#e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ width: `${progreso}%`, background: "#22c55e", height: "100%", transition: "width 0.3s" }} />
+              </div>
+              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{progreso}% completado</p>
+            </div>
+          )}
+          {preview.length > 0 && (
+            <div style={{ marginTop: 12, padding: "10px 14px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Preview (primeros 20)</p>
+              {preview.map((p, i) => (
+                <div key={i} style={{ fontSize: 12, color: "#6b7280", padding: "1px 0" }}>{p.nombre} — ${p.costo}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* Formulario agregar */}
-      <div style={{
-        background: "white", borderRadius: 12, padding: "16px 20px",
-        marginBottom: 20, border: "1px solid #e5e7eb",
-        display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end"
-      }}>
-        {[
-          { placeholder: "Nombre", value: nombre, onChange: setNombre, type: "text" },
-          { placeholder: "Costo", value: costo, onChange: setCosto, type: "number" },
-          { placeholder: "% Margen", value: margen, onChange: setMargen, type: "number" },
-          { placeholder: "Stock", value: stock, onChange: setStock, type: "number" },
-        ].map(f => (
-          <input key={f.placeholder} type={f.type} placeholder={f.placeholder} value={f.value}
-            onChange={e => f.onChange(e.target.value)}
-            style={{ padding: "9px 13px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, width: 130 }} />
-        ))}
-        <button onClick={agregar} style={btnPrimario}>➕ Agregar</button>
-      </div>
+      {/* Lista de productos — formato compacto */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {productosVisibles.map(p => {
+          const lotes = lotesMap[p.id] || []
+          const lotesVisible = lotesAbiertos.has(p.id)
+          const costoNum = Number(editando?.costo || 0)
+          const margenNum = Number(editando?.margen || 0)
+          const precioEstimado = costoNum + (costoNum * margenNum / 100)
 
-      {/* Lista de productos */}
-      {productosVisibles.map(p => {
-        const costoNum = Number(editando?.costo || 0)
-        const margenNum = Number(editando?.margen || 0)
-        const precioEstimado = costoNum + (costoNum * margenNum / 100)
-        const lotes = lotesMap[p.id] || []
-        const lotesVisible = lotesAbiertos.has(p.id)
-
-        // Badge del lote más próximo a vencer
-        let badgeLote = null
-        if (lotes.length > 0) {
-          const diasMin = Math.min(...lotes.map((l: any) =>
-            Math.floor((new Date(l.fecha_vencimiento).getTime() - Date.now()) / 86400000)
-          ))
-          {productosVisibles.length < productosFiltrados.length && (
-  <button
-    onClick={() => setPagina(p => p + 1)}
-    style={{
-      width: "100%", padding: "12px",
-      background: "white", border: "1px solid #e2e8f0",
-      borderRadius: 10, cursor: "pointer",
-      fontSize: 13, fontWeight: 600, color: "#374151",
-      marginTop: 8
-    }}>
-    Ver más ({productosFiltrados.length - productosVisibles.length} restantes)
-  </button>
-)}
-          if (diasMin <= 60) {
-            const est = estadoLote(diasMin)
-            badgeLote = (
-              <span style={{
-                marginLeft: 8, background: est.bg, color: est.color,
-                fontSize: "11px", fontWeight: "700", padding: "2px 8px",
-                borderRadius: "6px", border: `1px solid ${est.color}`
-              }}>
-                📅 {est.label}: {diasMin < 0 ? "vencido" : `${diasMin}d`}
-              </span>
-            )
+          let badgeLote = null
+          if (lotes.length > 0) {
+            const diasMin = Math.min(...lotes.map((l: any) => Math.floor((new Date(l.fecha_vencimiento).getTime() - Date.now()) / 86400000)))
+            if (diasMin <= 60) {
+              const est = estadoLote(diasMin)
+              badgeLote = (
+                <span style={{ background: est.bg, color: est.color, fontSize: "10px", fontWeight: "700", padding: "1px 7px", borderRadius: "5px", border: `1px solid ${est.color}` }}>
+                  📅 {diasMin < 0 ? "Vencido" : `${diasMin}d`}
+                </span>
+              )
+            }
           }
-        }
 
-        return (
-          <div key={p.id} style={{
-            background: "white", padding: 16, marginBottom: 10, borderRadius: 12,
-            border: "1px solid #e5e7eb", display: "flex", gap: 15, alignItems: "stretch",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.05)"
-          }}>
-            <div style={{ flex: 1 }}>
-
+          return (
+            <div key={p.id} style={{
+              background: "white", borderRadius: 10,
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
+            }}>
               {/* MODO EDICIÓN */}
               {editando?.id === p.id ? (
-                <div style={{
-                  background: "#0f172a", borderRadius: 12, padding: 20,
-                  border: "1px solid rgba(255,255,255,0.08)"
-                }}>
-                  <p style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 16 }}>
+                <div style={{ background: "#0f172a", borderRadius: 10, padding: 18, border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <p style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>
                     Editando: <span style={{ color: "white" }}>{p.nombre}</span>
                   </p>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12 }}>
                     {[
                       { label: "Nombre", key: "nombre", type: "text" },
-                      { label: "Stock", key: "stock", type: "number" },
                       { label: "Costo", key: "costo", type: "number" },
                       { label: "% Margen", key: "margen", type: "number" },
+                      { label: "Stock", key: "stock", type: "number" },
                     ].map(f => (
                       <div key={f.key}>
                         <label style={labelStyle}>{f.label}</label>
@@ -572,90 +438,88 @@ const productosVisibles = productosFiltrados.slice(0, pagina * 50)
                       </div>
                     ))}
                   </div>
-                  <div style={{
-                    background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.2)",
-                    borderRadius: 8, padding: "10px 14px", marginTop: 14
-                  }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
                     <span style={{ color: "#93c5fd", fontSize: 13 }}>
                       💵 Precio estimado: <b style={{ color: "white" }}>{formatearPrecio(precioEstimado)}</b>
                     </span>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                    <button onClick={guardarEdicion} style={{
-                      background: "linear-gradient(135deg, #2563eb, #3b82f6)",
-                      color: "white", border: "none", borderRadius: 8,
-                      padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer"
-                    }}>💾 Guardar</button>
-                    <button onClick={() => setEditando(null)} style={{
-                      background: "rgba(255,255,255,0.07)", color: "#9ca3af",
-                      border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8,
-                      padding: "9px 18px", fontSize: 13, cursor: "pointer"
-                    }}>✖️ Cancelar</button>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={guardarEdicion} style={{ background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>💾 Guardar</button>
+                      <button onClick={() => setEditando(null)} style={{ background: "rgba(255,255,255,0.07)", color: "#9ca3af", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+                    </div>
                   </div>
                 </div>
 
               ) : (
-                /* MODO VISTA */
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
-                    <b style={{ color: "#111827", fontSize: "15px" }}>{p.nombre}</b>
-                    {p.stock === 0 ? (
-  <span style={{
-    marginLeft: 6, background: "#fef2f2", color: "#dc2626",
-    fontSize: "11px", fontWeight: "700", padding: "2px 8px",
-    borderRadius: "6px", border: "1px solid #fecaca"
-  }}>🚫 Sin stock</span>
-) : p.stock <= 5 && (
-  <span style={{
-    marginLeft: 6, background: "#fff3cd", color: "#92400e",
-    fontSize: "11px", fontWeight: "600", padding: "2px 8px",
-    borderRadius: "6px", border: "1px solid #fbbf24"
-  }}>⚠️ Stock bajo</span>
-)}
-                    {badgeLote}
-                  </div>
-                  <p style={{ color: "#374151", margin: "0 0 4px", fontSize: 13 }}>
-                    💰 Costo: {formatearPrecio(p.costo)} · 📊 Margen: {p.margen}% · 💵 Venta: {formatearPrecio(p.precio_venta)}
-                  </p>
-                  <p style={{ color: "#374151", margin: "0 0 12px", fontSize: 13 }}>📦 Stock: {p.stock}</p>
+                /* MODO VISTA — compacto */
+                <div style={{ padding: "10px 14px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
 
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button onClick={() => setEditando({ ...p })} style={btnSecundario}>✏️ Editar</button>
-                    <button onClick={() => setConfirmEliminar(p)} style={btnDanger}>🗑️</button>
-                    <button onClick={() => toggleLotes(p.id)} style={{
-                      background: lotes.length > 0 ? "#eff6ff" : "#f9fafb",
-                      color: lotes.length > 0 ? "#2563eb" : "#6b7280",
-                      border: `1px solid ${lotes.length > 0 ? "#bfdbfe" : "#e5e7eb"}`,
-                      borderRadius: 8, padding: "6px 12px", fontSize: 12,
-                      cursor: "pointer", fontWeight: 600
-                    }}>
-                      📅 Lotes ({lotes.length}) {lotesVisible ? "▲" : "▼"}
-                    </button>
-                    <button onClick={() => {
-                      setModalLote({ productoId: p.id, productoNombre: p.nombre })
-                      setFormLote({ cantidad: "", fecha_vencimiento: "" })
-                    }} style={{
-                      background: "#f0fdf4", color: "#16a34a",
-                      border: "1px solid #bbf7d0", borderRadius: 8,
-                      padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600
-                    }}>
-                      ➕ Lote
-                    </button>
+                    {/* Foto miniatura */}
+                    <div onClick={() => abrirSelectorFoto(p.id)} title="Cambiar foto"
+                      style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 8, overflow: "hidden", border: "1px solid #e2e8f0", cursor: "pointer", background: "#f9fafb", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {subiendoFoto === p.id ? (
+                        <span style={{ fontSize: 9, color: "#9ca3af" }}>...</span>
+                      ) : p.imagen_url ? (
+                        <img src={p.imagen_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <span style={{ fontSize: 16 }}>📷</span>
+                      )}
+                    </div>
+
+                    {/* Info principal */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>{p.nombre}</span>
+                        {p.stock === 0 ? (
+                          <span style={{ background: "#fef2f2", color: "#dc2626", fontSize: "10px", fontWeight: "700", padding: "1px 6px", borderRadius: "5px", border: "1px solid #fecaca" }}>🚫 Sin stock</span>
+                        ) : p.stock <= 5 ? (
+                          <span style={{ background: "#fff3cd", color: "#92400e", fontSize: "10px", fontWeight: "600", padding: "1px 6px", borderRadius: "5px", border: "1px solid #fbbf24" }}>⚠️ Stock bajo</span>
+                        ) : null}
+                        {badgeLote}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
+                        Costo: <b style={{ color: "#374151" }}>{formatearPrecio(p.costo)}</b>
+                        <span style={{ margin: "0 6px", color: "#d1d5db" }}>·</span>
+                        Margen: <b style={{ color: "#374151" }}>{p.margen}%</b>
+                        <span style={{ margin: "0 6px", color: "#d1d5db" }}>·</span>
+                        Venta: <b style={{ color: "#374151" }}>{formatearPrecio(p.precio_venta)}</b>
+                        <span style={{ margin: "0 6px", color: "#d1d5db" }}>·</span>
+                        Stock: <b style={{ color: p.stock === 0 ? "#dc2626" : p.stock <= 5 ? "#92400e" : "#374151" }}>{p.stock}</b>
+                      </div>
+                    </div>
+
+                    {/* Acciones */}
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => toggleLotes(p.id)} style={{
+                        background: lotes.length > 0 ? "#eff6ff" : "#f9fafb",
+                        color: lotes.length > 0 ? "#2563eb" : "#9ca3af",
+                        border: `1px solid ${lotes.length > 0 ? "#bfdbfe" : "#e5e7eb"}`,
+                        borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600
+                      }}>
+                        📅 {lotes.length}
+                      </button>
+                      <button onClick={() => { setModalLote({ productoId: p.id, productoNombre: p.nombre }); setFormLote({ cantidad: "", fecha_vencimiento: "" }) }} style={{
+                        background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0",
+                        borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600
+                      }}>+ Lote</button>
+                      <button onClick={() => setEditando({ ...p })} style={{ background: "#f1f5f9", color: "#374151", border: "1px solid #e2e8f0", borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>✏️</button>
+                      <button onClick={() => setConfirmEliminar(p)} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>🗑️</button>
+                    </div>
                   </div>
 
                   {/* Panel lotes expandible */}
                   {lotesVisible && (
-                    <div style={{ marginTop: 12, borderTop: "1px solid #f1f5f9", paddingTop: 10 }}>
+                    <div style={{ marginTop: 10, borderTop: "1px solid #f1f5f9", paddingTop: 8 }}>
                       {lotes.length === 0 ? (
                         <p style={{ fontSize: 12, color: "#9ca3af" }}>Sin lotes registrados.</p>
                       ) : (
                         <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                           <thead>
                             <tr style={{ color: "#6b7280" }}>
-                              <th style={{ textAlign: "left", paddingBottom: 6, fontWeight: 600 }}>Vencimiento</th>
-                              <th style={{ textAlign: "left", paddingBottom: 6, fontWeight: 600 }}>Días</th>
-                              <th style={{ textAlign: "left", paddingBottom: 6, fontWeight: 600 }}>Estado</th>
-                              <th style={{ textAlign: "left", paddingBottom: 6, fontWeight: 600 }}>Cantidad</th>
+                              <th style={{ textAlign: "left", paddingBottom: 4, fontWeight: 600 }}>Vencimiento</th>
+                              <th style={{ textAlign: "left", paddingBottom: 4, fontWeight: 600 }}>Días</th>
+                              <th style={{ textAlign: "left", paddingBottom: 4, fontWeight: 600 }}>Estado</th>
+                              <th style={{ textAlign: "left", paddingBottom: 4, fontWeight: 600 }}>Cantidad</th>
                               <th></th>
                             </tr>
                           </thead>
@@ -664,23 +528,15 @@ const productosVisibles = productosFiltrados.slice(0, pagina * 50)
                               const dias = Math.floor((new Date(l.fecha_vencimiento).getTime() - Date.now()) / 86400000)
                               const est = estadoLote(dias)
                               return (
-                                <tr key={l.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-                                  <td style={{ padding: "6px 0", color: "#374151" }}>{l.fecha_vencimiento}</td>
-                                  <td style={{ padding: "6px 8px", color: est.color, fontWeight: 700 }}>
-                                    {dias < 0 ? "Vencido" : `${dias}d`}
+                                <tr key={l.id} style={{ borderTop: "1px solid #f8fafc" }}>
+                                  <td style={{ padding: "4px 0", color: "#374151" }}>{l.fecha_vencimiento}</td>
+                                  <td style={{ padding: "4px 8px", color: est.color, fontWeight: 700 }}>{dias < 0 ? "Vencido" : `${dias}d`}</td>
+                                  <td style={{ padding: "4px 8px" }}>
+                                    <span style={{ background: est.bg, color: est.color, padding: "1px 7px", borderRadius: 5, fontWeight: 700, fontSize: 11 }}>{est.label}</span>
                                   </td>
-                                  <td style={{ padding: "6px 8px" }}>
-                                    <span style={{
-                                      background: est.bg, color: est.color,
-                                      padding: "2px 8px", borderRadius: 6, fontWeight: 700, fontSize: 11
-                                    }}>{est.label}</span>
-                                  </td>
-                                  <td style={{ padding: "6px 8px", color: "#374151" }}>{l.cantidad} u.</td>
+                                  <td style={{ padding: "4px 8px", color: "#374151" }}>{l.cantidad} u.</td>
                                   <td style={{ textAlign: "right" }}>
-                                    <button onClick={() => setConfirmEliminarLote(l)}
-                                      style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 14 }}>
-                                      🗑️
-                                    </button>
+                                    <button onClick={() => setConfirmEliminarLote(l)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 13 }}>🗑️</button>
                                   </td>
                                 </tr>
                               )
@@ -693,70 +549,38 @@ const productosVisibles = productosFiltrados.slice(0, pagina * 50)
                 </div>
               )}
             </div>
+          )
+        })}
+      </div>
 
-            {/* Foto */}
-            <div onClick={() => abrirSelectorFoto(p.id)} title="Clic para cambiar foto"
-              style={{
-                width: 90, minHeight: 90, flexShrink: 0, borderRadius: 10,
-                overflow: "hidden", border: "2px dashed #d1d5db", cursor: "pointer",
-                display: "flex", flexDirection: "column", alignItems: "center",
-                justifyContent: "center", background: "#f9fafb"
-              }}>
-              {subiendoFoto === p.id ? (
-                <span style={{ fontSize: 11, color: "#6b7280", textAlign: "center", padding: 4 }}>⏳ Subiendo...</span>
-              ) : p.imagen_url ? (
-                <img src={p.imagen_url} alt={p.nombre} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                <div style={{ textAlign: "center", padding: 6 }}>
-                  <div style={{ fontSize: 22 }}>📷</div>
-                  <div style={{ fontSize: 9, color: "#9ca3af", marginTop: 4, lineHeight: 1.3 }}>JPG / WebP<br />800×800px</div>
-                </div>
-              )}
-            </div>
-          </div>
-        )
-      })}
+      {/* Botón ver más */}
+      {productosVisibles.length < productosFiltrados.length && (
+        <button onClick={() => setPagina(p => p + 1)} style={{
+          width: "100%", padding: "12px", background: "white",
+          border: "1px solid #e2e8f0", borderRadius: 10, cursor: "pointer",
+          fontSize: 13, fontWeight: 600, color: "#374151", marginTop: 10
+        }}>
+          Ver más ({productosFiltrados.length - productosVisibles.length} restantes)
+        </button>
+      )}
 
       {/* ── MODAL AGREGAR LOTE ── */}
       {modalLote && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
-          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16
-        }}>
-          <div style={{
-            background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 380,
-            boxShadow: "0 24px 64px rgba(0,0,0,0.6)"
-          }}>
-            <div style={{ marginBottom: 24 }}>
-              <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: 0 }}>Agregar lote</h2>
-              <p style={{ color: "#6b7280", fontSize: 13, marginTop: 4 }}>{modalLote.productoNombre}</p>
-            </div>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 380, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+            <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "0 0 4px" }}>Agregar lote</h2>
+            <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>{modalLote.productoNombre}</p>
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Cantidad</label>
-              <input type="number" min="1" placeholder="Ej: 50" value={formLote.cantidad}
-                onChange={e => setFormLote({ ...formLote, cantidad: e.target.value })}
-                style={inputStyle} />
+              <input type="number" min="1" placeholder="Ej: 50" value={formLote.cantidad} onChange={e => setFormLote({ ...formLote, cantidad: e.target.value })} style={inputStyle} />
             </div>
             <div style={{ marginBottom: 24 }}>
               <label style={labelStyle}>Fecha de vencimiento</label>
-              <input type="date" value={formLote.fecha_vencimiento}
-                onChange={e => setFormLote({ ...formLote, fecha_vencimiento: e.target.value })}
-                style={{ ...inputStyle, colorScheme: "dark" }} />
+              <input type="date" value={formLote.fecha_vencimiento} onChange={e => setFormLote({ ...formLote, fecha_vencimiento: e.target.value })} style={{ ...inputStyle, colorScheme: "dark" }} />
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setModalLote(null)} style={{
-                flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10,
-                color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600
-              }}>Cancelar</button>
-              <button onClick={guardarLote} disabled={guardandoLote} style={{
-                flex: 1, padding: "11px",
-                background: "linear-gradient(135deg, #16a34a, #22c55e)",
-                border: "none", borderRadius: 10, color: "white",
-                fontSize: 13, fontWeight: 700, cursor: "pointer",
-                opacity: guardandoLote ? 0.5 : 1
-              }}>
+              <button onClick={() => setModalLote(null)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+              <button onClick={guardarLote} disabled={guardandoLote} style={{ flex: 1, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardandoLote ? 0.5 : 1 }}>
                 {guardandoLote ? "Guardando..." : "✅ Guardar lote"}
               </button>
             </div>
@@ -766,30 +590,15 @@ const productosVisibles = productosFiltrados.slice(0, pagina * 50)
 
       {/* ── MODAL ELIMINAR LOTE ── */}
       {confirmEliminarLote && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
-          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16
-        }}>
-          <div style={{
-            background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 360,
-            boxShadow: "0 24px 64px rgba(0,0,0,0.6)"
-          }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 360, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
             <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, marginBottom: 8 }}>¿Eliminar lote?</h2>
             <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 24 }}>
-              Lote con vencimiento <span style={{ color: "white", fontWeight: 600 }}>{confirmEliminarLote.fecha_vencimiento}</span> ({confirmEliminarLote.cantidad} u.). Esta acción no se puede deshacer.
+              Vencimiento <span style={{ color: "white", fontWeight: 600 }}>{confirmEliminarLote.fecha_vencimiento}</span> · {confirmEliminarLote.cantidad} u.
             </p>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setConfirmEliminarLote(null)} style={{
-                flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10,
-                color: "#9ca3af", fontSize: 13, cursor: "pointer"
-              }}>Cancelar</button>
-              <button onClick={eliminarLote} style={{
-                flex: 1, padding: "11px", background: "#dc2626",
-                border: "none", borderRadius: 10, color: "white",
-                fontSize: 13, fontWeight: 700, cursor: "pointer"
-              }}>Eliminar</button>
+              <button onClick={() => setConfirmEliminarLote(null)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+              <button onClick={eliminarLote} style={{ flex: 1, padding: "11px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Eliminar</button>
             </div>
           </div>
         </div>
@@ -797,53 +606,19 @@ const productosVisibles = productosFiltrados.slice(0, pagina * 50)
 
       {/* ── MODAL ELIMINAR PRODUCTO ── */}
       {confirmEliminar && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
-          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16
-        }}>
-          <div style={{
-            background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 360,
-            boxShadow: "0 24px 64px rgba(0,0,0,0.6)"
-          }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 360, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
             <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, marginBottom: 8 }}>¿Eliminar producto?</h2>
             <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 24 }}>
               Vas a eliminar <span style={{ color: "white", fontWeight: 600 }}>{confirmEliminar.nombre}</span>. Esta acción no se puede deshacer.
             </p>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setConfirmEliminar(null)} style={{
-                flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10,
-                color: "#9ca3af", fontSize: 13, cursor: "pointer"
-              }}>Cancelar</button>
-              <button onClick={confirmarEliminarFn} style={{
-                flex: 1, padding: "11px", background: "#dc2626",
-                border: "none", borderRadius: 10, color: "white",
-                fontSize: 13, fontWeight: 700, cursor: "pointer"
-              }}>Eliminar</button>
+              <button onClick={() => setConfirmEliminar(null)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+              <button onClick={confirmarEliminarFn} style={{ flex: 1, padding: "11px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Eliminar</button>
             </div>
           </div>
         </div>
       )}
     </div>
   )
-}
-
-const btnPrimario: React.CSSProperties = {
-  background: "linear-gradient(135deg, #2563eb, #3b82f6)",
-  color: "white", border: "none", borderRadius: 8,
-  padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer",
-  boxShadow: "0 2px 8px rgba(59,130,246,0.3)"
-}
-
-const btnSecundario: React.CSSProperties = {
-  background: "#f1f5f9", color: "#374151",
-  border: "1px solid #e2e8f0", borderRadius: 8,
-  padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer"
-}
-
-const btnDanger: React.CSSProperties = {
-  background: "#fef2f2", color: "#dc2626",
-  border: "1px solid #fecaca", borderRadius: 8,
-  padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer"
 }
