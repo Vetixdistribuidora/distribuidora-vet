@@ -46,19 +46,36 @@ export default function Dashboard() {
   }
 
   async function cargarDatos() {
-    const hoy = new Date().toISOString().slice(0, 10)
-    const inicioMes = new Date(); inicioMes.setDate(1)
-    const mesAnterior = new Date(); mesAnterior.setMonth(mesAnterior.getMonth() - 1); mesAnterior.setDate(1)
-
-    const { data: ventas } = await supabase.from("ventas").select("*, clientes(nombre, apellido)")
+   const hoy = new Date().toISOString().slice(0, 10)
+const inicioMes = new Date()
+inicioMes.setDate(1)
+inicioMes.setHours(0, 0, 0, 0)
+const mesAnterior = new Date()
+mesAnterior.setMonth(mesAnterior.getMonth() - 1)
+mesAnterior.setDate(1)
+mesAnterior.setHours(0, 0, 0, 0)
+const { data: ventas } = await supabase.from("ventas").select("*, clientes(nombre, apellido)")
     const { data: productos } = await supabase.from("productos").select("*")
     const { data: detalleVentas } = await supabase.from("detalle_ventas").select("producto_id, cantidad")
 
-    const ventasHoy = ventas?.filter(v => v.fecha.startsWith(hoy)) || []
-    const ventasMes = ventas?.filter(v => v.fecha >= inicioMes.toISOString()) || []
-    const ventasMesAnterior = ventas?.filter(v =>
-      v.fecha >= mesAnterior.toISOString() && v.fecha < inicioMes.toISOString()
-    ) || []
+const ventasHoy = ventas?.filter(v => {
+  const f = v.fecha?.slice(0, 10)
+  return f === hoy
+}) || []
+
+const ventasMes = ventas?.filter(v => {
+  const f = new Date(v.fecha)
+  return f >= inicioMes
+}) || []
+
+const ventasMesAnterior = ventas?.filter(v => {
+  const f = new Date(v.fecha)
+  return f >= mesAnterior && f < inicioMes
+}) || []
+
+    
+
+  
 
     const totalHoy = ventasHoy.reduce((acc, v) => acc + Number(v.total), 0)
     const totalMes = ventasMes.reduce((acc, v) => acc + Number(v.total), 0)
