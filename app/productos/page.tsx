@@ -185,42 +185,132 @@ export default function Productos() {
   }
 
   async function procesarArchivoUniversal() {
-    if (!archivo) { mostrarToast("⚠️ Seleccioná un archivo", "error"); return }
-    let productos: any[] = []
-    if (archivo.name.endsWith(".xlsx")) {
-      const data = await archivo.arrayBuffer()
-      const workbook = XLSX.read(data)
-      const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const json: any[] = XLSX.utils.sheet_to_json(sheet)
-      for (let fila of json) {
-        const laboratorio = fila.Laboratorio || fila.laboratorio || fila.Marca || fila.marca || ""
-        const nombreProd = fila.Producto || fila.producto || fila.Nombre || fila.nombre || ""
-        const costoRaw = fila.Costo || fila.costo || fila.Precio || fila.precio || fila["Precio Costo"] || fila["precio_costo_con_iva"] || ""
-        const nombreFinal = `${String(laboratorio).trim()} ${String(nombreProd).trim()}`.trim()
-        const costo = parsePrecio(costoRaw)
-        if (!nombreFinal || isNaN(costo)) continue
-        productos.push({ nombre: nombreFinal, costo })
-      }
-    } else {
-      const buffer = await archivo.arrayBuffer()
-      let texto = ""
-      try { texto = new TextDecoder("utf-8").decode(buffer) } catch { texto = new TextDecoder("latin1").decode(buffer) }
-      const lineas = texto.split("\n").slice(1)
-      for (let linea of lineas) {
-        if (!linea.trim()) continue
-        const sep = linea.includes(";") ? ";" : ","
-        const partes = linea.split(sep)
-        const laboratorio = partes[0]; const producto = partes[1]; const precioRaw = partes[2] || partes[1]
-        const nombreFinal = `${String(laboratorio || "").trim()} ${String(producto || "").trim()}`.trim()
-        const costo = parsePrecio(precioRaw)
-        if (!nombreFinal || isNaN(costo)) continue
-        productos.push({ nombre: nombreFinal, costo })
+  if (!archivo) { mostrarToast("⚠️ Seleccioná un archivo", "error"); return }
+  let productos: any[] = []
+
+  function parsePrecio(valor: any) {
+    if (!valor && valor !== 0) return NaN
+    let str = String(valor).replace(/\$/g, "").replace(/\s/g, "").trim()
+    if (str.includes(",") && str.includes(".")) str = str.replace(/\./g, "").replace(",", ".")
+    else if (str.includes(",") && !str.includes(".")) str = str.replace(",", ".")
+    const num = Number(str)
+    return isNaN(num) || num <= 0 ? NaN : num
+  }
+
+  if (archivo.name.endsWith(".xlsx") || archivo.name.endsWith(".xls")) {
+    const data = await archivo.arrayBuffer()
+    const workbook = XLSX.read(data)
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const json: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" })
+
+    if (json.length === 0) {
+      mostrarToast("❌ El archivo está vacío", "error")
+      return
+    }
+
+    // Log para debug — te muestra las columnas disponibles
+    console.log("Columnas detectadas:", Object.keys(json[0]))
+    console.log("Primera fila:", json[0])
+
+    const columnas = Object.keys(json[0])
+
+    // Detectar columna de precio — busca la que tenga más números válidos
+    let columnaPrecio = ""
+    let mejorPuntaje = 0
+    for (const col of columnas) {
+      const puntaje = json.slice(0, 20).filter(fila => {
+        const val = parsePrecio(fila[col])
+        return !isNaN(val) && val > 0
+      }).length
+      if (puntaje > mejorPuntaje) {
+        mejorPuntaje = puntaje
+        columnaPrecio = col
       }
     }
-    setPreview(productos.slice(0, 20))
-    mostrarToast(`📊 ${productos.length} productos detectados`, "ok")
-    return productos
+
+    // Detectar columnas de nombre — todas las que no son precio y tienen texto
+    const columnasNombre = columnas.filter(col => {
+      if (col === columnaPrecio) return false
+      // Verificar que tenga contenido de texto
+      const tieneTexto = json.slice(0, 10).some(fila => {
+        const val = String(fila[col] || "").trim()
+        return val.length > 1 && isNaN(Number(val))
+      })
+      return tieneTexto
+    })
+
+    console.log("Columna precio detectada:", columnaPrecio)
+    console.log("Columnas nombre detectadas:", columnasNombre)
+
+    for (const fila of json) {
+      const precio = parsePrecio(fila[columnaPrecio])
+      if (isNaN(precio)) continue
+
+      // Combinar todas las columnas de nombre
+      const nombreFinal = columnasNombre
+        .map(col => String(fila[col] || "").trim())
+        .filter(v => v.length > 0)
+        .join(" ")
+        .trim()
+
+      if (!nombreFinal) continue
+      productos.push({ nombre: nombreFinal, costo: precio })
+    }
+
+  } else {
+    // CSV
+    const buffer = await archivo.arrayBuffer()
+    let texto = ""
+    try { texto = new TextDecoder("utf-8").decode(buffer) }
+    catch { texto = new TextDecoder("latin1").decode(buffer) }
+
+    const lineas = texto.split("\n")
+    const encabezado = lineas[0]
+    const sep = encabezado.includes(";") ? ";" : ","
+    const cols = encabezado.split(sep).map(c => c.trim())
+
+    console.log("Columnas CSV:", cols)
+
+    // Detectar columna precio en CSV
+    let idxPrecio = -1
+    let mejorPuntaje = 0
+    for (let i = 0; i < cols.length; i++) {
+      const puntaje = lineas.slice(1, 20).filter(linea => {
+        const partes = linea.split(sep)
+        return !isNaN(parsePrecio(partes[i]))
+      }).length
+      if (puntaje > mejorPuntaje) { mejorPuntaje = puntaje; idxPrecio = i }
+    }
+
+    const idxsNombre = cols.map((_, i) => i).filter(i => i !== idxPrecio)
+
+    for (const linea of lineas.slice(1)) {
+      if (!linea.trim()) continue
+      const partes = linea.split(sep)
+      const precio = parsePrecio(partes[idxPrecio])
+      if (isNaN(precio)) continue
+      const nombreFinal = idxsNombre
+        .map(i => String(partes[i] || "").trim())
+        .filter(v => v.length > 0)
+        .join(" ")
+        .trim()
+      if (!nombreFinal) continue
+      productos.push({ nombre: nombreFinal, costo: precio })
+    }
   }
+
+  console.log("Total productos detectados:", productos.length)
+  console.log("Ejemplo:", productos.slice(0, 3))
+
+  if (productos.length === 0) {
+    mostrarToast("❌ No se detectaron productos. Revisá el formato del archivo.", "error")
+    return
+  }
+
+  setPreview(productos.slice(0, 20))
+  mostrarToast(`📊 ${productos.length} productos detectados`, "ok")
+  return productos
+}
 
   async function importarCSV() {
     if (!archivo) return

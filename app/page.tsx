@@ -104,6 +104,11 @@ const ventasMesAnterior = ventas?.filter(v => {
 
     setKpis({ totalHoy, totalMes, ganancia, margen, crecimiento, ticketPromedio, cantidadVentas: ventasMes.length, cantidadHoy: ventasHoy.length, capitalStock })
     setAlertas({ stockBajo, sinVentas, sinRotacion })
+    console.log("Ventas totales:", ventas?.length)
+console.log("Ejemplo fecha:", ventas?.[0]?.fecha)
+console.log("Ventas hoy:", ventasHoy.length)
+console.log("Ventas mes:", ventasMes.length)
+setVentasHoyLista(ventasHoy)
     setVentasHoyLista(ventasHoy)
     setVentasMesLista(ventasMes)
 
@@ -116,13 +121,14 @@ const ventasMesAnterior = ventas?.filter(v => {
     setLotesPorVencer(lotes || [])
 
     const ultimos7 = [...Array(7)].map((_, i) => {
-      const fecha = new Date(); fecha.setDate(fecha.getDate() - i)
-      const f = fecha.toISOString().slice(0, 10)
-      const total = ventas?.filter(v => {
-  const fecha = new Date(v.fecha)
-  return fecha.toISOString().slice(0, 10) === f
-}).reduce((acc, v) => acc + Number(v.total), 0) || 0
-    }).reverse()
+  const fecha = new Date(); fecha.setDate(fecha.getDate() - i)
+  const f = fecha.toISOString().slice(0, 10)
+  const total = ventas?.filter(v => {
+    const fv = new Date(v.fecha)
+    return fv.toISOString().slice(0, 10) === f
+  }).reduce((acc, v) => acc + Number(v.total), 0) || 0
+  return { fecha: f.slice(5), total }
+}).reverse()
     setVentasGrafico(ultimos7)
   }
 
