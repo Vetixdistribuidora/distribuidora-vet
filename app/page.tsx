@@ -46,36 +46,40 @@ export default function Dashboard() {
   }
 
   async function cargarDatos() {
-   const hoy = new Date().toISOString().slice(0, 10)
-const inicioMes = new Date()
-inicioMes.setDate(1)
-inicioMes.setHours(0, 0, 0, 0)
-const mesAnterior = new Date()
-mesAnterior.setMonth(mesAnterior.getMonth() - 1)
-mesAnterior.setDate(1)
-mesAnterior.setHours(0, 0, 0, 0)
-const { data: ventas } = await supabase.from("ventas").select("*, clientes(nombre, apellido)")
+    const hoy = new Date().toISOString().slice(0, 10)
+    const inicioMes = new Date(); inicioMes.setDate(1)
+    const mesAnterior = new Date(); mesAnterior.setMonth(mesAnterior.getMonth() - 1); mesAnterior.setDate(1)
+
+    const { data: ventas } = await supabase.from("ventas").select("*, clientes(nombre, apellido)")
     const { data: productos } = await supabase.from("productos").select("*")
     const { data: detalleVentas } = await supabase.from("detalle_ventas").select("producto_id, cantidad")
 
+    const hoyDate = new Date()
+const inicioMesDate = new Date()
+inicioMesDate.setDate(1)
+inicioMesDate.setHours(0, 0, 0, 0)
+
+const inicioMesAnteriorDate = new Date(inicioMesDate)
+inicioMesAnteriorDate.setMonth(inicioMesAnteriorDate.getMonth() - 1)
+
 const ventasHoy = ventas?.filter(v => {
-  const f = v.fecha?.slice(0, 10)
-  return f === hoy
+  const fecha = new Date(v.fecha)
+  return (
+    fecha.getDate() === hoyDate.getDate() &&
+    fecha.getMonth() === hoyDate.getMonth() &&
+    fecha.getFullYear() === hoyDate.getFullYear()
+  )
 }) || []
 
 const ventasMes = ventas?.filter(v => {
-  const f = new Date(v.fecha)
-  return f >= inicioMes
+  const fecha = new Date(v.fecha)
+  return fecha >= inicioMesDate
 }) || []
 
 const ventasMesAnterior = ventas?.filter(v => {
-  const f = new Date(v.fecha)
-  return f >= mesAnterior && f < inicioMes
+  const fecha = new Date(v.fecha)
+  return fecha >= inicioMesAnteriorDate && fecha < inicioMesDate
 }) || []
-
-    
-
-  
 
     const totalHoy = ventasHoy.reduce((acc, v) => acc + Number(v.total), 0)
     const totalMes = ventasMes.reduce((acc, v) => acc + Number(v.total), 0)
@@ -114,8 +118,10 @@ const ventasMesAnterior = ventas?.filter(v => {
     const ultimos7 = [...Array(7)].map((_, i) => {
       const fecha = new Date(); fecha.setDate(fecha.getDate() - i)
       const f = fecha.toISOString().slice(0, 10)
-      const total = ventas?.filter(v => v.fecha.startsWith(f)).reduce((acc, v) => acc + Number(v.total), 0) || 0
-      return { fecha: f.slice(5), total }
+      const total = ventas?.filter(v => {
+  const fecha = new Date(v.fecha)
+  return fecha.toISOString().slice(0, 10) === f
+}).reduce((acc, v) => acc + Number(v.total), 0) || 0
     }).reverse()
     setVentasGrafico(ultimos7)
   }
