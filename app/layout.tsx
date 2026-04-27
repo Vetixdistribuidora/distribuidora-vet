@@ -94,7 +94,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         margin: 0,
         fontFamily: "Segoe UI",
         display: "flex",
-        background: "#f1f3f5"
+        background: "#f1f5f9"
       }}>
 
         {/* SIDEBAR */}
@@ -301,32 +301,50 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           flexDirection: "column"
         }}>
           {/* HEADER */}
-          <div style={{
-            background: "white",
-            padding: "0 25px",
-            borderBottom: "1px solid #e5e7eb",
-            height: "56px",
-            display: "flex",
-            alignItems: "center",
-            gap: "12px",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.06)"
-          }}>
-            <div style={{
-              width: "4px",
-              height: "24px",
-              borderRadius: "4px",
-              background: "linear-gradient(180deg, #3b82f6, #6366f1)"
-            }} />
-            <span style={{ fontSize: "14px" }}>{getPageIcon()}</span>
-            <span style={{ fontWeight: "700", fontSize: "16px", color: "#111827" }}>{getTitle()}</span>
-          </div>
+          {/* HEADER */}
+<div style={{
+  background: "white",
+  padding: "0 28px",
+  borderBottom: "1px solid #e2e8f0",
+  height: "60px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+  flexShrink: 0
+}}>
+  <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+    <div style={{
+      width: "36px", height: "36px", borderRadius: "10px",
+      background: "linear-gradient(135deg, #1e40af, #3b82f6)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: "16px", boxShadow: "0 2px 8px rgba(59,130,246,0.3)"
+    }}>
+      {getPageIcon()}
+    </div>
+    <div>
+      <div style={{ fontWeight: "800", fontSize: "16px", color: "#0f172a", lineHeight: 1.2 }}>
+        {getTitle()}
+      </div>
+      <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "1px", fontWeight: 500 }}>
+        VETIX Distribuidora
+      </div>
+    </div>
+  </div>
+  <div style={{
+    fontSize: "12px", color: "#94a3b8", fontWeight: 500
+  }}>
+    {new Date().toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}
+  </div>
+</div>
 
           {/* CONTENT — protegido */}
           <div style={{
-            padding: "30px",
-            overflowY: "auto",
-            flex: 1
-          }}>
+  padding: "30px",
+  overflowY: "auto",
+  flex: 1,
+  background: "#f1f5f9"
+}}>
             <AuthGuard>{children}</AuthGuard>
           </div> -
         </main>
