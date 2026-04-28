@@ -115,40 +115,38 @@ export default function Ventas() {
   }
 
   async function cargarHistorial() {
-  setLoadingHistorial(true)
-  const { data } = await supabase
-    .from("ventas")
-    .select("*, clientes(nombre, apellido)")
-    .order("id", { ascending: false })
-    .limit(200)
-
-  // Si falla el join, traer clientes por separado
-  if (!data || data.some((v: any) => v.clientes === undefined)) {
-    const { data: ventasSolas } = await supabase
+    setLoadingHistorial(true)
+    const { data } = await supabase
       .from("ventas")
-      .select("*")
+      .select("*, clientes(nombre, apellido)")
       .order("id", { ascending: false })
       .limit(200)
-    
-    const clienteIds = [...new Set(ventasSolas?.map((v: any) => v.cliente_id) || [])]
-    const { data: clientesData } = await supabase
-      .from("clientes")
-      .select("id, nombre, apellido")
-      .in("id", clienteIds)
-    
-    const clientesMap: Record<number, any> = {}
-    clientesData?.forEach((c: any) => { clientesMap[c.id] = c })
-    
-    setVentas(ventasSolas?.map((v: any) => ({
-      ...v,
-      clientes: clientesMap[v.cliente_id] || null
-    })) || [])
-  } else {
-    setVentas(data || [])
+
+    if (!data || data.some((v: any) => v.clientes === undefined)) {
+      const { data: ventasSolas } = await supabase
+        .from("ventas")
+        .select("*")
+        .order("id", { ascending: false })
+        .limit(200)
+      
+      const clienteIds = [...new Set(ventasSolas?.map((v: any) => v.cliente_id) || [])]
+      const { data: clientesData } = await supabase
+        .from("clientes")
+        .select("id, nombre, apellido")
+        .in("id", clienteIds)
+      
+      const clientesMap: Record<number, any> = {}
+      clientesData?.forEach((c: any) => { clientesMap[c.id] = c })
+      
+      setVentas(ventasSolas?.map((v: any) => ({
+        ...v,
+        clientes: clientesMap[v.cliente_id] || null
+      })) || [])
+    } else {
+      setVentas(data || [])
+    }
+    setLoadingHistorial(false)
   }
-  setLoadingHistorial(false)
-}
-  
 
   async function verDetalle(v: any) {
     setVentaDetalle(v)
@@ -164,7 +162,6 @@ export default function Ventas() {
   async function anularVenta() {
     if (!confirmAnular) return
     setAnulando(true)
-    // Devolver stock
     const { data: detalle } = await supabase
       .from("detalle_ventas")
       .select("producto_id, cantidad")
@@ -342,7 +339,7 @@ export default function Ventas() {
             {/* Buscador productos */}
             <div style={{ background: "white", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>Agregar producto</p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px", gap: 10, alignItems: "end" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: 10, alignItems: "end" }}>
                 <div>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>Buscar producto</label>
                   <input type="text" placeholder="Escribí para buscar..." value={busquedaProducto}
@@ -372,58 +369,102 @@ export default function Ventas() {
                     onKeyDown={e => e.key === "Enter" && agregarAlCarrito()}
                     style={{ width: "100%", padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", textAlign: "center" }} />
                 </div>
-                <button onClick={agregarAlCarrito} disabled={!productoId}
-                  style={{ padding: "10px 16px", background: productoId ? "linear-gradient(135deg, #2563eb, #3b82f6)" : "#e2e8f0", color: productoId ? "white" : "#94a3b8", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: productoId ? "pointer" : "not-allowed", boxShadow: productoId ? "0 2px 8px rgba(59,130,246,0.3)" : "none" }}>
-                  + Agregar
-                </button>
               </div>
+              {/* Botón agregar separado, ancho completo */}
+              <button onClick={agregarAlCarrito} disabled={!productoId}
+                style={{
+                  marginTop: 10, width: "100%", padding: "11px",
+                  background: productoId ? "#0f172a" : "#f1f5f9",
+                  color: productoId ? "white" : "#94a3b8",
+                  border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700,
+                  cursor: productoId ? "pointer" : "not-allowed",
+                  letterSpacing: 0.3,
+                  transition: "all 0.15s"
+                }}>
+                + Agregar al carrito
+              </button>
             </div>
 
             {/* Carrito */}
             {carrito.length > 0 && (
-              <div style={{ background: "white", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", margin: 0 }}>
-                    Carrito · {carrito.length} producto{carrito.length !== 1 ? "s" : ""}
-                  </p>
-                  <button onClick={vaciarCarrito} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 7, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Vaciar</button>
+              <div style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", overflow: "hidden" }}>
+                {/* Header del carrito */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid #f1f5f9", background: "#fafafa" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>Carrito</span>
+                    <span style={{ background: "#0f172a", color: "white", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>
+                      {carrito.length} producto{carrito.length !== 1 ? "s" : ""}
+                    </span>
+                    <span style={{ fontSize: 12, color: "#94a3b8" }}>
+                      · {carrito.reduce((acc, i) => acc + i.cantidad, 0)} unidades
+                    </span>
+                  </div>
+                  <button onClick={vaciarCarrito} style={{ background: "transparent", color: "#94a3b8", border: "none", borderRadius: 7, padding: "4px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    Vaciar ✕
+                  </button>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+
+                {/* Items */}
+                <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
                   {carrito.map((item, i) => {
                     const bonif = item.bonificacion || 0
                     const pagan = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
                     const subtotalItem = pagan * item.precio
                     return (
-                      <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", border: "1px solid #e2e8f0" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                      <div key={i} style={{ borderRadius: 10, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+                        {/* Fila principal */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "white" }}>
+                          {/* Nombre del producto — protagonista */}
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontWeight: 700, fontSize: 13, color: "#111827", marginBottom: 2 }}>{item.nombre}</div>
-                            <div style={{ fontSize: 11, color: "#94a3b8" }}>Stock disponible: {item.stockDisponible}</div>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.nombre}</div>
+                            {bonif > 0 && (
+                              <div style={{ fontSize: 11, color: "#d97706", fontWeight: 600, marginTop: 2 }}>
+                                {item.cantidad} u. · {bonif} bonif. · {pagan} pagan
+                              </div>
+                            )}
                           </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 12 }}>
-                            <button onClick={() => restar(i)} style={{ width: 28, height: 28, border: "1px solid #e2e8f0", background: "white", borderRadius: 7, cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151" }}>−</button>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: "#111827", minWidth: 24, textAlign: "center" }}>{item.cantidad}</span>
-                            <button onClick={() => sumar(i)} style={{ width: 28, height: 28, border: "1px solid #e2e8f0", background: "white", borderRadius: 7, cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151" }}>+</button>
-                            <button onClick={() => eliminarItem(i)} style={{ width: 28, height: 28, border: "none", background: "#fef2f2", borderRadius: 7, cursor: "pointer", fontSize: 13, color: "#dc2626", marginLeft: 4 }}>✕</button>
+
+                          {/* Subtotal del item — destacado */}
+                          <div style={{ textAlign: "right", flexShrink: 0 }}>
+                            <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt(subtotalItem)}</div>
+                            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{fmt(item.precio)} c/u</div>
                           </div>
+
+                          {/* Eliminar */}
+                          <button onClick={() => eliminarItem(i)}
+                            style={{ width: 28, height: 28, border: "none", background: "#fef2f2", borderRadius: 7, cursor: "pointer", fontSize: 13, color: "#dc2626", flexShrink: 0 }}>✕</button>
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                          <div>
-                            <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 4, textTransform: "uppercase" }}>Precio u.</label>
+
+                        {/* Fila de controles — fondo sutil */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "#f8fafc", borderTop: "1px solid #f1f5f9" }}>
+                          {/* Cantidad */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+                            <button onClick={() => restar(i)}
+                              style={{ width: 30, height: 30, border: "none", background: "transparent", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#111827", minWidth: 28, textAlign: "center", borderLeft: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0", height: 30, lineHeight: "30px" }}>{item.cantidad}</span>
+                            <button onClick={() => sumar(i)}
+                              style={{ width: 30, height: 30, border: "none", background: "transparent", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                          </div>
+
+                          {/* Precio unitario */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+                            <label style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", whiteSpace: "nowrap" }}>Precio u.</label>
                             <input type="number" value={item.precio} onChange={e => cambiarPrecio(i, Number(e.target.value))}
-                              style={{ width: "100%", padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box" }} />
+                              style={{ flex: 1, padding: "5px 8px", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box", background: "white" }} />
                           </div>
-                          <div>
-                            <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 4, textTransform: "uppercase" }}>Bonif.</label>
+
+                          {/* Bonificación */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <label style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", whiteSpace: "nowrap" }}>Bonif.</label>
                             <input type="number" min="0" value={bonif} onChange={e => cambiarBonificacion(i, Number(e.target.value))}
-                              style={{ width: "100%", padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box" }} />
+                              style={{ width: 54, padding: "5px 8px", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box", background: "white", textAlign: "center" }} />
                           </div>
-                          <div>
-                            <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 4, textTransform: "uppercase" }}>Subtotal</label>
-                            <div style={{ padding: "6px 10px", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 7, fontSize: 12, fontWeight: 700, color: "#0369a1" }}>{fmt(subtotalItem)}</div>
+
+                          {/* Stock info */}
+                          <div style={{ fontSize: 10, color: "#cbd5e1", whiteSpace: "nowrap" }}>
+                            stock: {item.stockDisponible}
                           </div>
                         </div>
-                        {bonif > 0 && <div style={{ marginTop: 8, fontSize: 11, color: "#6b7280" }}>{item.cantidad} u. · {bonif} bonif. · <span style={{ fontWeight: 600, color: "#374151" }}>{pagan} pagan</span></div>}
                       </div>
                     )
                   })}
