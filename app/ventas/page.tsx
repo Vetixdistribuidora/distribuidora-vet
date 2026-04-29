@@ -21,13 +21,8 @@ function fmt(num: number) {
 }
 
 interface DatosImpresion {
-  nroFactura: string
-  clienteSeleccionado: any
-  carrito: any[]
-  subtotal: number
-  ivaNum: number
-  total: number
-  esCuentaCorriente: boolean
+  nroFactura: string; clienteSeleccionado: any; carrito: any[]
+  subtotal: number; ivaNum: number; total: number; esCuentaCorriente: boolean
 }
 
 function generarHTMLEImprimir(datos: DatosImpresion) {
@@ -44,21 +39,34 @@ function generarHTMLEImprimir(datos: DatosImpresion) {
   const html = "<!DOCTYPE html><html><head><style>@page{margin:20px}body{font-family:Arial;padding:20px;display:flex;flex-direction:column;min-height:95vh;box-sizing:border-box}.logo{height:120px}.header{display:flex;justify-content:space-between;align-items:center}.header-right{text-align:center}.header-right h2{margin:0}.nro-factura{font-size:14px;color:#555;margin-top:4px}.datos{display:flex;justify-content:space-between;margin-top:20px}.contenido{flex:1}table{width:100%;margin-top:30px;border-collapse:collapse}th{border:1px solid #ccc;padding:8px;background:#eee}td{padding:6px;text-align:center}.totales{margin-top:40px;display:flex;justify-content:flex-end}.box{width:280px;border-top:2px solid #ccc;padding-top:10px}.box p,.box h2{margin:6px 0}</style></head><body><div class='contenido'><div class='header'><img src='" + logoUrl + "' class='logo'/><div class='header-right'><h2>PRESUPUESTO</h2><div class='nro-factura'>N " + nroFactura + " | Fecha: " + fecha + "</div>" + badgeCC + "</div></div><div class='datos'><div><b>VETIX Distribuidora</b><br/>Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div><div style='text-align:left;'><b>Cliente:</b><br/>" + clienteSeleccionado.nombre + " " + clienteSeleccionado.apellido + "<br/>CUIT: " + (clienteSeleccionado.cuit || "-") + "<br/>Direccion: " + (clienteSeleccionado.localidad || "-") + "<br/>Tel: " + (clienteSeleccionado.telefono || "-") + "</div></div><table><thead><tr><th>Cant.</th><th style='width:40%'>Descripcion</th><th>Precio U.</th><th>Bonif.</th><th>Total</th></tr></thead><tbody>" + filas + "</tbody></table></div><div class='totales'><div class='box'><p><b>Subtotal:</b> " + f(subtotal) + "</p><p><b>IVA (" + ivaNum + "%):</b> " + f(subtotal * ivaNum / 100) + "</p><h2><b>Total:</b> " + f(total) + "</h2></div></div></body></html>"
   const ventana = window.open("", "_blank")
   if (!ventana) { alert("Habilita ventanas emergentes"); return }
-  ventana.document.write(html)
-  ventana.document.close()
+  ventana.document.write(html); ventana.document.close()
   setTimeout(() => ventana.print(), 500)
 }
 
 const ESTADO_VENTA: Record<string, { label: string, color: string, bg: string }> = {
-  cobrada:         { label: "Cobrada",         color: "#16a34a", bg: "#f0fdf4" },
-  cuenta_corriente:{ label: "Cuenta corriente",color: "#d97706", bg: "#fffbeb" },
-  anulada:         { label: "Anulada",         color: "#dc2626", bg: "#fef2f2" },
+  cobrada:          { label: "Cobrada",          color: "#16a34a", bg: "#f0fdf4" },
+  cuenta_corriente: { label: "Cuenta corriente", color: "#d97706", bg: "#fffbeb" },
+  anulada:          { label: "Anulada",          color: "#dc2626", bg: "#fef2f2" },
 }
+
+const responsiveStyles = `
+  @media (max-width: 768px) {
+    .ventas-grid { grid-template-columns: 1fr !important; }
+    .ventas-resumen-sticky { position: static !important; }
+    .ventas-agregar-grid { grid-template-columns: 1fr !important; }
+    .ventas-datos-grid { grid-template-columns: 1fr !important; }
+    .ventas-item-controles { flex-wrap: wrap !important; }
+    .ventas-item-precio { flex: 1 1 120px !important; }
+    .ventas-historial-filtros { flex-direction: column !important; }
+    .ventas-historial-row { flex-direction: column !important; align-items: flex-start !important; }
+    .ventas-historial-row .acciones { width: 100% !important; justify-content: flex-end !important; display: flex !important; }
+    .ventas-resumen-cards { flex-wrap: wrap !important; }
+  }
+`
 
 export default function Ventas() {
   const [tab, setTab] = useState<"nueva" | "historial">("nueva")
 
-  // ── Nueva venta ──
   const [clientes, setClientes] = useState<any[]>([])
   const [productos, setProductos] = useState<any[]>([])
   const [clienteId, setClienteId] = useState("")
@@ -73,7 +81,6 @@ export default function Ventas() {
   const [busquedaProducto, setBusquedaProducto] = useState("")
   const [toast, setToast] = useState<any>(null)
 
-  // ── Historial ──
   const [ventas, setVentas] = useState<any[]>([])
   const [loadingHistorial, setLoadingHistorial] = useState(false)
   const [busquedaHistorial, setBusquedaHistorial] = useState("")
@@ -85,8 +92,7 @@ export default function Ventas() {
   const [anulando, setAnulando] = useState(false)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
-    setToast({ mensaje, tipo })
-    setTimeout(() => setToast(null), 3000)
+    setToast({ mensaje, tipo }); setTimeout(() => setToast(null), 3000)
   }
 
   useEffect(() => { cargar() }, [])
@@ -103,69 +109,38 @@ export default function Ventas() {
       if (p.length < 1000) break
       desde += 1000
     }
-    setClientes(c || [])
-    setProductos(todosProductos)
+    setClientes(c || []); setProductos(todosProductos)
     const { data: ultima } = await supabase.from("ventas").select("nro_factura").order("id", { ascending: false }).limit(1).maybeSingle()
     if (ultima?.nro_factura) {
       const num = parseInt(ultima.nro_factura, 10)
       if (!isNaN(num)) setNroFactura(String(num + 1).padStart(5, "0"))
-    } else {
-      setNroFactura("10047")
-    }
+    } else { setNroFactura("10047") }
   }
 
   async function cargarHistorial() {
     setLoadingHistorial(true)
-    const { data } = await supabase
-      .from("ventas")
-      .select("*, clientes(nombre, apellido)")
-      .order("id", { ascending: false })
-      .limit(200)
-
+    const { data } = await supabase.from("ventas").select("*, clientes(nombre, apellido)").order("id", { ascending: false }).limit(200)
     if (!data || data.some((v: any) => v.clientes === undefined)) {
-      const { data: ventasSolas } = await supabase
-        .from("ventas")
-        .select("*")
-        .order("id", { ascending: false })
-        .limit(200)
-      
+      const { data: ventasSolas } = await supabase.from("ventas").select("*").order("id", { ascending: false }).limit(200)
       const clienteIds = [...new Set(ventasSolas?.map((v: any) => v.cliente_id) || [])]
-      const { data: clientesData } = await supabase
-        .from("clientes")
-        .select("id, nombre, apellido")
-        .in("id", clienteIds)
-      
+      const { data: clientesData } = await supabase.from("clientes").select("id, nombre, apellido").in("id", clienteIds)
       const clientesMap: Record<number, any> = {}
       clientesData?.forEach((c: any) => { clientesMap[c.id] = c })
-      
-      setVentas(ventasSolas?.map((v: any) => ({
-        ...v,
-        clientes: clientesMap[v.cliente_id] || null
-      })) || [])
-    } else {
-      setVentas(data || [])
-    }
+      setVentas(ventasSolas?.map((v: any) => ({ ...v, clientes: clientesMap[v.cliente_id] || null })) || [])
+    } else { setVentas(data || []) }
     setLoadingHistorial(false)
   }
 
   async function verDetalle(v: any) {
-    setVentaDetalle(v)
-    setLoadingDetalle(true)
-    const { data } = await supabase
-      .from("detalle_ventas")
-      .select("*, productos(nombre)")
-      .eq("venta_id", v.id)
-    setDetalleItems(data || [])
-    setLoadingDetalle(false)
+    setVentaDetalle(v); setLoadingDetalle(true)
+    const { data } = await supabase.from("detalle_ventas").select("*, productos(nombre)").eq("venta_id", v.id)
+    setDetalleItems(data || []); setLoadingDetalle(false)
   }
 
   async function anularVenta() {
     if (!confirmAnular) return
     setAnulando(true)
-    const { data: detalle } = await supabase
-      .from("detalle_ventas")
-      .select("producto_id, cantidad")
-      .eq("venta_id", confirmAnular.id)
+    const { data: detalle } = await supabase.from("detalle_ventas").select("producto_id, cantidad").eq("venta_id", confirmAnular.id)
     if (detalle) {
       for (const d of detalle) {
         const { data: prod } = await supabase.from("productos").select("stock").eq("id", d.producto_id).single()
@@ -173,16 +148,14 @@ export default function Ventas() {
       }
     }
     await supabase.from("ventas").update({ estado: "anulada" }).eq("id", confirmAnular.id)
-    setAnulando(false)
-    setConfirmAnular(null)
+    setAnulando(false); setConfirmAnular(null)
     if (ventaDetalle?.id === confirmAnular.id) setVentaDetalle({ ...ventaDetalle, estado: "anulada" })
     mostrarToast("🗑️ Venta anulada y stock restaurado", "ok")
     cargarHistorial()
   }
 
   function seleccionarCliente(id: string) {
-    setClienteId(id)
-    setClienteSeleccionado(clientes.find(c => String(c.id) === id) || null)
+    setClienteId(id); setClienteSeleccionado(clientes.find(c => String(c.id) === id) || null)
   }
 
   function agregarAlCarrito() {
@@ -202,9 +175,7 @@ export default function Ventas() {
     } else {
       setCarrito([...carrito, { producto_id: producto.id, nombre: producto.nombre, cantidad: cant, precio: precioFinal, bonificacion: 0, stockDisponible: producto.stock }])
     }
-    setProductoId("")
-    setBusquedaProducto("")
-    setCantidad("1")
+    setProductoId(""); setBusquedaProducto(""); setCantidad("1")
   }
 
   function sumar(i: number) { const n = [...carrito]; if (n[i].cantidad >= n[i].stockDisponible) { mostrarToast("Stock máximo: " + n[i].stockDisponible, "error"); return }; n[i].cantidad++; setCarrito([...n]) }
@@ -261,8 +232,7 @@ export default function Ventas() {
     await supabase.from("facturas_impresion").insert([{ nro_factura: nroFactura, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura, clienteSeleccionado, carrito: [...carrito], subtotal, ivaNum, total, esCuentaCorriente } }])
     mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : "✅ Venta confirmada", "ok")
     setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setEsCuentaCorriente(false)
-    setGuardando(false)
-    cargar()
+    setGuardando(false); cargar()
   }
 
   function imprimirTicket() {
@@ -279,41 +249,35 @@ export default function Ventas() {
     const texto = [v.clientes?.nombre, v.clientes?.apellido, v.nro_factura].join(" ").toLowerCase()
     return texto.includes(busquedaHistorial.toLowerCase()) && (filtroEstado === "todos" || v.estado === filtroEstado)
   })
-
   const totalHistorial = ventasFiltradas.reduce((acc, v) => acc + Number(v.total), 0)
 
   return (
     <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+      <style>{responsiveStyles}</style>
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "white", padding: 4, borderRadius: 12, border: "1px solid #e2e8f0", width: "fit-content", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-        {([
-          { key: "nueva", label: "➕ Nueva venta" },
-          { key: "historial", label: "📋 Historial" },
-        ] as const).map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            style={{
-              padding: "8px 20px", borderRadius: 9, border: "none", cursor: "pointer",
-              fontSize: 13, fontWeight: 700, transition: "all 0.15s",
-              background: tab === t.key ? "#0f172a" : "transparent",
-              color: tab === t.key ? "white" : "#6b7280",
-              boxShadow: tab === t.key ? "0 2px 8px rgba(0,0,0,0.15)" : "none"
-            }}>
-            {t.label}
-          </button>
+        {([{ key: "nueva", label: "➕ Nueva venta" }, { key: "historial", label: "📋 Historial" }] as const).map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)} style={{
+            padding: "8px 20px", borderRadius: 9, border: "none", cursor: "pointer",
+            fontSize: 13, fontWeight: 700, transition: "all 0.15s",
+            background: tab === t.key ? "#0f172a" : "transparent",
+            color: tab === t.key ? "white" : "#6b7280",
+            boxShadow: tab === t.key ? "0 2px 8px rgba(0,0,0,0.15)" : "none"
+          }}>{t.label}</button>
         ))}
       </div>
 
       {/* ══ TAB NUEVA VENTA ══ */}
       {tab === "nueva" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20, alignItems: "start" }}>
+        <div className="ventas-grid" style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20, alignItems: "start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
             {/* Cliente + Factura */}
             <div style={{ background: "white", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>Datos de la venta</p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 12 }}>
+              <div className="ventas-datos-grid" style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 12 }}>
                 <div>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>Cliente *</label>
                   <select value={clienteId} onChange={e => seleccionarCliente(e.target.value)}
@@ -339,7 +303,7 @@ export default function Ventas() {
             {/* Buscador productos */}
             <div style={{ background: "white", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>Agregar producto</p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: 10, alignItems: "end" }}>
+              <div className="ventas-agregar-grid" style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: 10, alignItems: "end" }}>
                 <div>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>Buscar producto</label>
                   <input type="text" placeholder="Escribí para buscar..." value={busquedaProducto}
@@ -370,16 +334,13 @@ export default function Ventas() {
                     style={{ width: "100%", padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", textAlign: "center" }} />
                 </div>
               </div>
-              {/* Botón agregar separado, ancho completo */}
               <button onClick={agregarAlCarrito} disabled={!productoId}
                 style={{
                   marginTop: 10, width: "100%", padding: "11px",
                   background: productoId ? "#0f172a" : "#f1f5f9",
                   color: productoId ? "white" : "#94a3b8",
                   border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700,
-                  cursor: productoId ? "pointer" : "not-allowed",
-                  letterSpacing: 0.3,
-                  transition: "all 0.15s"
+                  cursor: productoId ? "pointer" : "not-allowed", letterSpacing: 0.3
                 }}>
                 + Agregar al carrito
               </button>
@@ -388,23 +349,19 @@ export default function Ventas() {
             {/* Carrito */}
             {carrito.length > 0 && (
               <div style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", overflow: "hidden" }}>
-                {/* Header del carrito */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid #f1f5f9", background: "#fafafa" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>Carrito</span>
                     <span style={{ background: "#0f172a", color: "white", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>
                       {carrito.length} producto{carrito.length !== 1 ? "s" : ""}
                     </span>
-                    <span style={{ fontSize: 12, color: "#94a3b8" }}>
-                      · {carrito.reduce((acc, i) => acc + i.cantidad, 0)} unidades
-                    </span>
+                    <span style={{ fontSize: 12, color: "#94a3b8" }}>· {carrito.reduce((acc, i) => acc + i.cantidad, 0)} u.</span>
                   </div>
                   <button onClick={vaciarCarrito} style={{ background: "transparent", color: "#94a3b8", border: "none", borderRadius: 7, padding: "4px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                     Vaciar ✕
                   </button>
                 </div>
 
-                {/* Items */}
                 <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
                   {carrito.map((item, i) => {
                     const bonif = item.bonificacion || 0
@@ -414,56 +371,35 @@ export default function Ventas() {
                       <div key={i} style={{ borderRadius: 10, border: "1px solid #e2e8f0", overflow: "hidden" }}>
                         {/* Fila principal */}
                         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "white" }}>
-                          {/* Nombre del producto — protagonista */}
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.nombre}</div>
-                            {bonif > 0 && (
-                              <div style={{ fontSize: 11, color: "#d97706", fontWeight: 600, marginTop: 2 }}>
-                                {item.cantidad} u. · {bonif} bonif. · {pagan} pagan
-                              </div>
-                            )}
+                            {bonif > 0 && <div style={{ fontSize: 11, color: "#d97706", fontWeight: 600, marginTop: 2 }}>{item.cantidad} u. · {bonif} bonif. · {pagan} pagan</div>}
                           </div>
-
-                          {/* Subtotal del item — destacado */}
                           <div style={{ textAlign: "right", flexShrink: 0 }}>
                             <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt(subtotalItem)}</div>
                             <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{fmt(item.precio)} c/u</div>
                           </div>
-
-                          {/* Eliminar */}
-                          <button onClick={() => eliminarItem(i)}
-                            style={{ width: 28, height: 28, border: "none", background: "#fef2f2", borderRadius: 7, cursor: "pointer", fontSize: 13, color: "#dc2626", flexShrink: 0 }}>✕</button>
+                          <button onClick={() => eliminarItem(i)} style={{ width: 28, height: 28, border: "none", background: "#fef2f2", borderRadius: 7, cursor: "pointer", fontSize: 13, color: "#dc2626", flexShrink: 0 }}>✕</button>
                         </div>
 
-                        {/* Fila de controles — fondo sutil */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "#f8fafc", borderTop: "1px solid #f1f5f9" }}>
-                          {/* Cantidad */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
-                            <button onClick={() => restar(i)}
-                              style={{ width: 30, height: 30, border: "none", background: "transparent", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                        {/* Fila controles */}
+                        <div className="ventas-item-controles" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "#f8fafc", borderTop: "1px solid #f1f5f9", flexWrap: "wrap" }}>
+                          <div style={{ display: "flex", alignItems: "center", background: "white", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+                            <button onClick={() => restar(i)} style={{ width: 30, height: 30, border: "none", background: "transparent", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151" }}>−</button>
                             <span style={{ fontSize: 13, fontWeight: 700, color: "#111827", minWidth: 28, textAlign: "center", borderLeft: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0", height: 30, lineHeight: "30px" }}>{item.cantidad}</span>
-                            <button onClick={() => sumar(i)}
-                              style={{ width: 30, height: 30, border: "none", background: "transparent", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                            <button onClick={() => sumar(i)} style={{ width: 30, height: 30, border: "none", background: "transparent", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151" }}>+</button>
                           </div>
-
-                          {/* Precio unitario */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+                          <div className="ventas-item-precio" style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 100 }}>
                             <label style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", whiteSpace: "nowrap" }}>Precio u.</label>
                             <input type="number" value={item.precio} onChange={e => cambiarPrecio(i, Number(e.target.value))}
-                              style={{ flex: 1, padding: "5px 8px", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box", background: "white" }} />
+                              style={{ flex: 1, padding: "5px 8px", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box", background: "white", minWidth: 60 }} />
                           </div>
-
-                          {/* Bonificación */}
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <label style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", whiteSpace: "nowrap" }}>Bonif.</label>
                             <input type="number" min="0" value={bonif} onChange={e => cambiarBonificacion(i, Number(e.target.value))}
                               style={{ width: 54, padding: "5px 8px", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box", background: "white", textAlign: "center" }} />
                           </div>
-
-                          {/* Stock info */}
-                          <div style={{ fontSize: 10, color: "#cbd5e1", whiteSpace: "nowrap" }}>
-                            stock: {item.stockDisponible}
-                          </div>
+                          <div style={{ fontSize: 10, color: "#cbd5e1", whiteSpace: "nowrap" }}>stock: {item.stockDisponible}</div>
                         </div>
                       </div>
                     )
@@ -474,7 +410,7 @@ export default function Ventas() {
           </div>
 
           {/* Resumen sticky */}
-          <div style={{ position: "sticky", top: 20 }}>
+          <div className="ventas-resumen-sticky" style={{ position: "sticky", top: 20 }}>
             <div style={{ background: "#0f172a", borderRadius: 16, padding: 24, border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 1, textTransform: "uppercase", marginBottom: 20 }}>Resumen</p>
               <div style={{ marginBottom: 16 }}>
@@ -532,8 +468,7 @@ export default function Ventas() {
       {/* ══ TAB HISTORIAL ══ */}
       {tab === "historial" && (
         <div>
-          {/* Filtros */}
-          <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="ventas-historial-filtros" style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
             <input type="text" placeholder="Buscar cliente o N° presupuesto..." value={busquedaHistorial}
               onChange={e => setBusquedaHistorial(e.target.value)}
               style={{ flex: 1, minWidth: 200, padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, outline: "none" }} />
@@ -549,9 +484,8 @@ export default function Ventas() {
             </button>
           </div>
 
-          {/* Resumen rápido */}
           {ventasFiltradas.length > 0 && (
-            <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+            <div className="ventas-resumen-cards" style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
               {[
                 { label: "Ventas", valor: ventasFiltradas.length, color: "#3b82f6" },
                 { label: "Total", valor: fmt(totalHistorial), color: "#16a34a" },
@@ -566,7 +500,6 @@ export default function Ventas() {
             </div>
           )}
 
-          {/* Lista */}
           {loadingHistorial ? (
             <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>Cargando...</div>
           ) : ventasFiltradas.length === 0 ? (
@@ -576,31 +509,19 @@ export default function Ventas() {
               {ventasFiltradas.map(v => {
                 const est = ESTADO_VENTA[v.estado] ?? ESTADO_VENTA.cobrada
                 return (
-                  <div key={v.id} style={{ background: "white", borderRadius: 12, padding: "14px 16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div key={v.id} className="ventas-historial-row" style={{ background: "white", borderRadius: 12, padding: "14px 16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                        <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>
-                          {v.clientes?.nombre} {v.clientes?.apellido}
-                        </span>
-                        <span style={{ background: est.bg, color: est.color, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>
-                          {est.label}
-                        </span>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{v.clientes?.nombre} {v.clientes?.apellido}</span>
+                        <span style={{ background: est.bg, color: est.color, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>{est.label}</span>
                       </div>
-                      <div style={{ fontSize: 12, color: "#6b7280" }}>
-                        📅 {v.fecha?.slice(0, 10)} · N° {v.nro_factura}
-                      </div>
+                      <div style={{ fontSize: 12, color: "#6b7280" }}>📅 {v.fecha?.slice(0, 10)} · N° {v.nro_factura}</div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                    <div className="acciones" style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                       <span style={{ fontSize: 16, fontWeight: 800, color: "#111827" }}>{fmt(Number(v.total))}</span>
-                      <button onClick={() => verDetalle(v)}
-                        style={{ padding: "6px 14px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#374151" }}>
-                        Ver detalle
-                      </button>
+                      <button onClick={() => verDetalle(v)} style={{ padding: "6px 14px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#374151" }}>Ver detalle</button>
                       {v.estado !== "anulada" && (
-                        <button onClick={() => setConfirmAnular(v)}
-                          style={{ padding: "6px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#dc2626" }}>
-                          Anular
-                        </button>
+                        <button onClick={() => setConfirmAnular(v)} style={{ padding: "6px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#dc2626" }}>Anular</button>
                       )}
                     </div>
                   </div>
@@ -613,27 +534,16 @@ export default function Ventas() {
 
       {/* ── MODAL DETALLE VENTA ── */}
       {ventaDetalle && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
-          onClick={() => setVentaDetalle(null)}>
-          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 480, maxHeight: "80vh", overflow: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
-            onClick={e => e.stopPropagation()}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }} onClick={() => setVentaDetalle(null)}>
+          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 480, maxHeight: "80vh", overflow: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }} onClick={e => e.stopPropagation()}>
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: 0 }}>
-                  {ventaDetalle.clientes?.nombre} {ventaDetalle.clientes?.apellido}
-                </h2>
-                {(() => {
-                  const est = ESTADO_VENTA[ventaDetalle.estado] ?? ESTADO_VENTA.cobrada
-                  return <span style={{ background: est.bg, color: est.color, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 6 }}>{est.label}</span>
-                })()}
+                <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: 0 }}>{ventaDetalle.clientes?.nombre} {ventaDetalle.clientes?.apellido}</h2>
+                {(() => { const est = ESTADO_VENTA[ventaDetalle.estado] ?? ESTADO_VENTA.cobrada; return <span style={{ background: est.bg, color: est.color, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 6 }}>{est.label}</span> })()}
               </div>
-              <p style={{ color: "#6b7280", fontSize: 12, margin: "6px 0 0" }}>
-                N° {ventaDetalle.nro_factura} · {ventaDetalle.fecha?.slice(0, 10)}
-              </p>
+              <p style={{ color: "#6b7280", fontSize: 12, margin: "6px 0 0" }}>N° {ventaDetalle.nro_factura} · {ventaDetalle.fecha?.slice(0, 10)}</p>
             </div>
-            {loadingDetalle ? (
-              <p style={{ color: "#6b7280", fontSize: 13 }}>Cargando...</p>
-            ) : (
+            {loadingDetalle ? <p style={{ color: "#6b7280", fontSize: 13 }}>Cargando...</p> : (
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
                 {detalleItems.map((d: any) => (
                   <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -652,15 +562,9 @@ export default function Ventas() {
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               {ventaDetalle.estado !== "anulada" && (
-                <button onClick={() => { setConfirmAnular(ventaDetalle); setVentaDetalle(null) }}
-                  style={{ flex: 1, padding: "10px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                  Anular venta
-                </button>
+                <button onClick={() => { setConfirmAnular(ventaDetalle); setVentaDetalle(null) }} style={{ flex: 1, padding: "10px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Anular venta</button>
               )}
-              <button onClick={() => setVentaDetalle(null)}
-                style={{ flex: 1, padding: "10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer" }}>
-                Cerrar
-              </button>
+              <button onClick={() => setVentaDetalle(null)} style={{ flex: 1, padding: "10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer" }}>Cerrar</button>
             </div>
           </div>
         </div>
@@ -668,28 +572,18 @@ export default function Ventas() {
 
       {/* ── MODAL CONFIRMAR ANULACIÓN ── */}
       {confirmAnular && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 }}
-          onClick={() => setConfirmAnular(null)}>
-          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 380, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
-            onClick={e => e.stopPropagation()}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 }} onClick={() => setConfirmAnular(null)}>
+          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 380, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>⚠️</div>
             <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "0 0 8px" }}>¿Anular venta?</h2>
-            <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 8 }}>
-              Cliente: <span style={{ color: "white", fontWeight: 600 }}>{confirmAnular.clientes?.nombre} {confirmAnular.clientes?.apellido}</span>
-            </p>
-            <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 16 }}>
-              Total: <span style={{ color: "white", fontWeight: 600 }}>{fmt(Number(confirmAnular.total))}</span> · N° {confirmAnular.nro_factura}
-            </p>
+            <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 8 }}>Cliente: <span style={{ color: "white", fontWeight: 600 }}>{confirmAnular.clientes?.nombre} {confirmAnular.clientes?.apellido}</span></p>
+            <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 16 }}>Total: <span style={{ color: "white", fontWeight: 600 }}>{fmt(Number(confirmAnular.total))}</span> · N° {confirmAnular.nro_factura}</p>
             <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "10px 12px", marginBottom: 24 }}>
-              <p style={{ color: "#f87171", fontSize: 12, margin: 0 }}>⚠️ El stock de los productos se va a restaurar automáticamente. Esta acción no se puede deshacer.</p>
+              <p style={{ color: "#f87171", fontSize: 12, margin: 0 }}>⚠️ El stock se va a restaurar automáticamente. Esta acción no se puede deshacer.</p>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setConfirmAnular(null)}
-                style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
-                Cancelar
-              </button>
-              <button onClick={anularVenta} disabled={anulando}
-                style={{ flex: 1, padding: "11px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: anulando ? 0.5 : 1 }}>
+              <button onClick={() => setConfirmAnular(null)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+              <button onClick={anularVenta} disabled={anulando} style={{ flex: 1, padding: "11px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: anulando ? 0.5 : 1 }}>
                 {anulando ? "Anulando..." : "Anular venta"}
               </button>
             </div>

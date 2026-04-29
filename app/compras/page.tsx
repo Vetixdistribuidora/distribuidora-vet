@@ -26,9 +26,9 @@ interface PagoCompra {
 
 const METODOS = ["Efectivo", "Transferencia", "Cheque", "Tarjeta", "Otro"];
 const ESTADO_LABEL: Record<string, { label: string; bg: string; color: string }> = {
-  pendiente: { label: "Pendiente", bg: "rgba(239,68,68,0.12)", color: "#f87171" },
-  parcial:   { label: "Parcial",   bg: "rgba(251,191,36,0.12)", color: "#fbbf24" },
-  pagado:    { label: "Pagado",    bg: "rgba(74,222,128,0.12)", color: "#4ade80" },
+  pendiente: { label: "Pendiente", bg: "rgba(239,68,68,0.12)",   color: "#f87171" },
+  parcial:   { label: "Parcial",   bg: "rgba(251,191,36,0.12)",  color: "#fbbf24" },
+  pagado:    { label: "Pagado",    bg: "rgba(74,222,128,0.12)",  color: "#4ade80" },
 };
 
 function fmt(n: number) {
@@ -56,12 +56,32 @@ const inputDarkStyle: React.CSSProperties = {
   color: "white", fontSize: 14, outline: "none", boxSizing: "border-box"
 }
 const selectDarkStyle: React.CSSProperties = {
-  width: "100%", padding: "10px 14px",
-  background: "#1e293b",
-  border: "1px solid rgba(255,255,255,0.1)",
-  borderRadius: 10, color: "white", fontSize: 14,
-  outline: "none", boxSizing: "border-box", cursor: "pointer"
+  width: "100%", padding: "10px 14px", background: "#1e293b",
+  border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10,
+  color: "white", fontSize: 14, outline: "none", boxSizing: "border-box", cursor: "pointer"
 }
+
+const responsiveStyles = `
+  @media (max-width: 768px) {
+    .compras-header { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
+    .compras-header-btn { width: 100% !important; text-align: center !important; }
+    .compras-filtros { flex-direction: column !important; }
+    .compras-filtros input,
+    .compras-filtros select { width: 100% !important; box-sizing: border-box !important; }
+    .compras-card { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
+    .compras-card-numeros { flex-wrap: wrap !important; gap: 10px !important; }
+    .compras-card-acciones { width: 100% !important; justify-content: flex-end !important; display: flex !important; gap: 8px !important; flex-wrap: wrap !important; }
+    .compras-modal-grid { grid-template-columns: 1fr !important; }
+    .compras-tabla-scroll { overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; }
+    .compras-modal-footer { flex-direction: column !important; align-items: stretch !important; }
+    .compras-modal-footer-btns { width: 100% !important; justify-content: stretch !important; }
+    .compras-modal-footer-btns button { flex: 1 !important; }
+    .compras-resumen-grid { grid-template-columns: 1fr !important; gap: 8px !important; }
+    .compras-botones-pago { flex-direction: column !important; }
+    .compras-tabs { padding: 0 16px !important; }
+    .compras-detalle-inner { padding: 16px !important; }
+  }
+`
 
 export default function ComprasPage() {
   const [compras, setCompras] = useState<Compra[]>([]);
@@ -237,14 +257,15 @@ export default function ComprasPage() {
 
   return (
     <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+      <style>{responsiveStyles}</style>
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+      <div className="compras-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
           <span style={{ fontWeight: 700, color: "#374151" }}>{compras.length}</span> compra{compras.length !== 1 ? "s" : ""}
           {totalDeuda > 0 && <span style={{ marginLeft: 8, color: "#dc2626", fontWeight: 600 }}>· Deuda: {fmt(totalDeuda)}</span>}
         </p>
-        <button onClick={abrirNueva} style={{
+        <button className="compras-header-btn" onClick={abrirNueva} style={{
           background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white",
           border: "none", borderRadius: 10, padding: "10px 18px",
           fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 8px rgba(59,130,246,0.3)"
@@ -252,7 +273,7 @@ export default function ComprasPage() {
       </div>
 
       {/* Filtros */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+      <div className="compras-filtros" style={{ display: "flex", gap: 10, marginBottom: 16 }}>
         <input type="text" placeholder="🔍 Buscar proveedor o remito..." value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
           style={{ flex: 1, padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: 10, fontSize: 14, outline: "none" }} />
@@ -277,7 +298,7 @@ export default function ComprasPage() {
             const est = ESTADO_LABEL[c.estado] ?? ESTADO_LABEL.pendiente;
             const vencido = c.fecha_vencimiento && c.estado !== "pagado" && new Date(c.fecha_vencimiento) < new Date();
             return (
-              <div key={c.id} style={{
+              <div key={c.id} className="compras-card" style={{
                 background: vencido ? "#fff5f5" : "white", borderRadius: 14, padding: "14px 18px",
                 border: vencido ? "1px solid #fecaca" : "1px solid #e2e8f0",
                 boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
@@ -294,27 +315,31 @@ export default function ComprasPage() {
                   <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 11, color: "#6b7280" }}>
                     <span>📅 {c.fecha}</span>
                     {c.numero_remito && <span>🧾 {c.numero_remito}</span>}
-                    {c.fecha_vencimiento && <span className={vencido ? "" : ""} style={{ color: vencido ? "#dc2626" : "#6b7280" }}>⏰ {c.fecha_vencimiento}</span>}
+                    {c.fecha_vencimiento && <span style={{ color: vencido ? "#dc2626" : "#6b7280" }}>⏰ {c.fecha_vencimiento}</span>}
                     {c.metodo_pago && <span>💳 {c.metodo_pago}</span>}
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 14, flexShrink: 0, flexWrap: "wrap" }}>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 10, color: "#9ca3af" }}>Total</div>
-                    <div style={{ fontWeight: 700, color: "#111827", fontSize: 14 }}>{fmt(c.total)}</div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 10, color: "#9ca3af" }}>Pagado</div>
-                    <div style={{ fontWeight: 700, color: "#16a34a", fontSize: 14 }}>{fmt(c.total_pagado)}</div>
-                  </div>
-                  {saldo > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <div className="compras-card-numeros" style={{ display: "flex", gap: 14, alignItems: "center" }}>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 10, color: "#9ca3af" }}>Saldo</div>
-                      <div style={{ fontWeight: 800, color: "#dc2626", fontSize: 14 }}>{fmt(saldo)}</div>
+                      <div style={{ fontSize: 10, color: "#9ca3af" }}>Total</div>
+                      <div style={{ fontWeight: 700, color: "#111827", fontSize: 14 }}>{fmt(c.total)}</div>
                     </div>
-                  )}
-                  <button onClick={() => verDetalle(c)} style={{ background: "#f1f5f9", color: "#374151", border: "1px solid #e2e8f0", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Ver detalle</button>
-                  <button onClick={() => setConfirmEliminarCompra(c)} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>🗑️</button>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 10, color: "#9ca3af" }}>Pagado</div>
+                      <div style={{ fontWeight: 700, color: "#16a34a", fontSize: 14 }}>{fmt(c.total_pagado)}</div>
+                    </div>
+                    {saldo > 0 && (
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 10, color: "#9ca3af" }}>Saldo</div>
+                        <div style={{ fontWeight: 800, color: "#dc2626", fontSize: 14 }}>{fmt(saldo)}</div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="compras-card-acciones">
+                    <button onClick={() => verDetalle(c)} style={{ background: "#f1f5f9", color: "#374151", border: "1px solid #e2e8f0", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Ver detalle</button>
+                    <button onClick={() => setConfirmEliminarCompra(c)} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>🗑️</button>
+                  </div>
                 </div>
               </div>
             );
@@ -332,12 +357,10 @@ export default function ComprasPage() {
             <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
               {errorForm && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 13, padding: "10px 14px", borderRadius: 8 }}>{errorForm}</div>}
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div className="compras-modal-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <div>
                   <label style={labelStyle}>Proveedor *</label>
-                  <select value={form.proveedor_id} onChange={e => setForm({ ...form, proveedor_id: e.target.value })}
-                    style={selectDarkStyle}>
-  <option value="">Seleccioná un proveedor</option>
+                  <select value={form.proveedor_id} onChange={e => setForm({ ...form, proveedor_id: e.target.value })} style={selectDarkStyle}>
                     <option value="">Seleccioná un proveedor</option>
                     {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                   </select>
@@ -381,7 +404,7 @@ export default function ComprasPage() {
 
                 {items.length > 0 && (
                   <div style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, overflow: "hidden" }}>
-                    <div style={{ overflowX: "auto" }}>
+                    <div className="compras-tabla-scroll">
                       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
                         <thead>
                           <tr style={{ background: "rgba(255,255,255,0.04)" }}>
@@ -454,7 +477,7 @@ export default function ComprasPage() {
 
               {/* IVA toggle */}
               <div onClick={() => setForm({ ...form, incluye_iva: !form.incluye_iva })}
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 10, cursor: "pointer", background: form.incluye_iva ? "rgba(59,130,246,0.1)" : "rgba(255,255,255,0.04)", border: form.incluye_iva ? "1px solid rgba(59,130,246,0.3)" : "1px solid rgba(255,255,255,0.08)" }}>
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 10, cursor: "pointer", background: form.incluye_iva ? "rgba(59,130,246,0.1)" : "rgba(255,255,255,0.04)", border: form.incluye_iva ? "1px solid rgba(59,130,246,0.3)" : "1px solid rgba(255,255,255,0.08)", flexWrap: "wrap" }}>
                 <div style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, background: form.incluye_iva ? "#3b82f6" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   {form.incluye_iva && <span style={{ color: "white", fontSize: 12 }}>✓</span>}
                 </div>
@@ -472,7 +495,7 @@ export default function ComprasPage() {
 
               {/* Flete toggle */}
               <div onClick={() => setForm({ ...form, incluye_flete: !form.incluye_flete })}
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 10, cursor: "pointer", background: form.incluye_flete ? "rgba(249,115,22,0.1)" : "rgba(255,255,255,0.04)", border: form.incluye_flete ? "1px solid rgba(249,115,22,0.3)" : "1px solid rgba(255,255,255,0.08)" }}>
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 10, cursor: "pointer", background: form.incluye_flete ? "rgba(249,115,22,0.1)" : "rgba(255,255,255,0.04)", border: form.incluye_flete ? "1px solid rgba(249,115,22,0.3)" : "1px solid rgba(255,255,255,0.08)", flexWrap: "wrap" }}>
                 <div style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, background: form.incluye_flete ? "#ea580c" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   {form.incluye_flete && <span style={{ color: "white", fontSize: 12 }}>✓</span>}
                 </div>
@@ -492,7 +515,7 @@ export default function ComprasPage() {
                 )}
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div className="compras-modal-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <div>
                   <label style={labelStyle}>Pago inicial (0 = a crédito)</label>
                   <input type="number" min="0" step="0.01" value={form.pago_inicial}
@@ -501,7 +524,6 @@ export default function ComprasPage() {
                 <div>
                   <label style={labelStyle}>Método de pago</label>
                   <select value={form.metodo_pago} onChange={e => setForm({ ...form, metodo_pago: e.target.value })} style={selectDarkStyle}>
-  {METODOS.map(m => <option key={m}>{m}</option>)}
                     {METODOS.map(m => <option key={m}>{m}</option>)}
                   </select>
                 </div>
@@ -515,9 +537,9 @@ export default function ComprasPage() {
               </div>
             </div>
 
-            <div style={{ padding: "18px 28px", borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div className="compras-modal-footer" style={{ padding: "18px 28px", borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               {items.length > 0 && <span style={{ color: "#9ca3af", fontSize: 13 }}>Total: <b style={{ color: "white" }}>{fmt(totalForm)}</b></span>}
-              <div style={{ display: "flex", gap: 10, marginLeft: "auto" }}>
+              <div className="compras-modal-footer-btns" style={{ display: "flex", gap: 10, marginLeft: "auto" }}>
                 <button onClick={() => setModalNueva(false)} style={{ padding: "10px 20px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
                 <button onClick={guardarCompra} disabled={guardando} style={{ padding: "10px 24px", background: "linear-gradient(135deg, #2563eb, #3b82f6)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardando ? 0.5 : 1 }}>
                   {guardando ? "Guardando..." : "Registrar compra"}
@@ -545,16 +567,16 @@ export default function ComprasPage() {
                   {compraVer.numero_remito && <span> · Remito: {compraVer.numero_remito}</span>}
                 </p>
               </div>
-              <button onClick={() => setCompraVer(null)} style={{ background: "rgba(255,255,255,0.08)", border: "none", color: "white", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 16, fontWeight: 700 }}>✕</button>
+              <button onClick={() => setCompraVer(null)} style={{ background: "rgba(255,255,255,0.08)", border: "none", color: "white", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 16, fontWeight: 700, flexShrink: 0 }}>✕</button>
             </div>
 
             {/* Resumen financiero */}
             <div style={{ padding: "18px 28px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+              <div className="compras-resumen-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
                 {[
-                  { label: "Total", value: fmt(compraVer.total), color: "white" },
-                  { label: "Pagado", value: fmt(compraVer.total_pagado), color: "#4ade80" },
-                  { label: "Saldo", value: fmt(compraVer.total - compraVer.total_pagado), color: compraVer.estado === "pagado" ? "#6b7280" : "#f87171" },
+                  { label: "Total",   value: fmt(compraVer.total),                              color: "white" },
+                  { label: "Pagado",  value: fmt(compraVer.total_pagado),                       color: "#4ade80" },
+                  { label: "Saldo",   value: fmt(compraVer.total - compraVer.total_pagado),     color: compraVer.estado === "pagado" ? "#6b7280" : "#f87171" },
                 ].map(item => (
                   <div key={item.label} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: "12px 16px", textAlign: "center", border: "1px solid rgba(255,255,255,0.06)" }}>
                     <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>{item.label}</div>
@@ -563,7 +585,7 @@ export default function ComprasPage() {
                 ))}
               </div>
               {compraVer.estado !== "pagado" ? (
-                <div style={{ display: "flex", gap: 10 }}>
+                <div className="compras-botones-pago" style={{ display: "flex", gap: 10 }}>
                   <button onClick={() => { setFormPago({ monto: "", metodo_pago: "Efectivo", notas: "" }); setModalPago(true) }}
                     style={{ flex: 1, padding: "10px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                     💳 Pago parcial
@@ -581,7 +603,7 @@ export default function ComprasPage() {
             </div>
 
             {/* Tabs */}
-            <div style={{ display: "flex", padding: "0 28px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="compras-tabs" style={{ display: "flex", padding: "0 28px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
               {(["detalle", "pagos"] as const).map(t => (
                 <button key={t} onClick={() => setTabDetalle(t)}
                   style={{ padding: "14px 18px", border: "none", background: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, color: tabDetalle === t ? "#3b82f6" : "#6b7280", borderBottom: tabDetalle === t ? "2px solid #3b82f6" : "2px solid transparent", marginBottom: -1 }}>
@@ -593,7 +615,7 @@ export default function ComprasPage() {
             {loadingDetalle ? (
               <div style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Cargando...</div>
             ) : (
-              <div style={{ padding: "20px 28px" }}>
+              <div className="compras-detalle-inner" style={{ padding: "20px 28px" }}>
                 {tabDetalle === "detalle" && (() => {
                   const subtotalBase = detalle.reduce((s, d) => s + d.cantidad * d.precio_unitario, 0);
                   const detalleConExtras = detalle.map(d => {
@@ -612,25 +634,25 @@ export default function ComprasPage() {
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                           <thead>
                             <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                              <th style={{ textAlign: "left", padding: "8px 10px", color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Producto</th>
+                              <th style={{ textAlign: "left",   padding: "8px 10px", color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Producto</th>
                               <th style={{ textAlign: "center", padding: "8px 10px", color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Cant.</th>
-                              <th style={{ textAlign: "right", padding: "8px 10px", color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>P. unit.</th>
-                              <th style={{ textAlign: "right", padding: "8px 10px", color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Subtotal</th>
-                              {hayIva && <th style={{ textAlign: "right", padding: "8px 10px", color: "#93c5fd", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>IVA</th>}
+                              <th style={{ textAlign: "right",  padding: "8px 10px", color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>P. unit.</th>
+                              <th style={{ textAlign: "right",  padding: "8px 10px", color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Subtotal</th>
+                              {hayIva   && <th style={{ textAlign: "right", padding: "8px 10px", color: "#93c5fd", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>IVA</th>}
                               {hayFlete && <th style={{ textAlign: "right", padding: "8px 10px", color: "#fb923c", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Flete</th>}
-                              <th style={{ textAlign: "right", padding: "8px 10px", color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Total</th>
+                              <th style={{ textAlign: "right",  padding: "8px 10px", color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Total</th>
                             </tr>
                           </thead>
                           <tbody>
                             {detalleConExtras.map(d => (
                               <tr key={d.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                                <td style={{ padding: "9px 10px", color: "white", fontSize: 12 }}>{d.productos?.nombre ?? "—"}</td>
+                                <td style={{ padding: "9px 10px", color: "white",   fontSize: 12 }}>{d.productos?.nombre ?? "—"}</td>
                                 <td style={{ padding: "9px 10px", textAlign: "center", color: "#9ca3af", fontSize: 12 }}>{d.cantidad}</td>
-                                <td style={{ padding: "9px 10px", textAlign: "right", color: "#d1d5db", fontSize: 12 }}>{fmt(d.precio_unitario)}</td>
-                                <td style={{ padding: "9px 10px", textAlign: "right", color: "#d1d5db", fontSize: 12 }}>{fmt(d.subtotalItem)}</td>
-                                {hayIva && <td style={{ padding: "9px 10px", textAlign: "right", color: "#93c5fd", fontSize: 12 }}>{fmt(d.ivaItem)}</td>}
+                                <td style={{ padding: "9px 10px", textAlign: "right",  color: "#d1d5db", fontSize: 12 }}>{fmt(d.precio_unitario)}</td>
+                                <td style={{ padding: "9px 10px", textAlign: "right",  color: "#d1d5db", fontSize: 12 }}>{fmt(d.subtotalItem)}</td>
+                                {hayIva   && <td style={{ padding: "9px 10px", textAlign: "right", color: "#93c5fd", fontSize: 12 }}>{fmt(d.ivaItem)}</td>}
                                 {hayFlete && <td style={{ padding: "9px 10px", textAlign: "right", color: "#fb923c", fontSize: 12 }}>{fmt(d.fleteItem)}</td>}
-                                <td style={{ padding: "9px 10px", textAlign: "right", color: "white", fontSize: 12, fontWeight: 700 }}>{fmt(d.subtotalItem + d.ivaItem + d.fleteItem)}</td>
+                                <td style={{ padding: "9px 10px", textAlign: "right",  color: "white",   fontSize: 12, fontWeight: 700 }}>{fmt(d.subtotalItem + d.ivaItem + d.fleteItem)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -672,33 +694,35 @@ export default function ComprasPage() {
                     {pagos.length === 0 ? (
                       <p style={{ textAlign: "center", padding: 24, color: "#6b7280", fontSize: 13 }}>Sin pagos registrados todavía.</p>
                     ) : (
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                        <thead>
-                          <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                            {["#", "Fecha", "Método", "Monto", "Notas"].map((h, i) => (
-                              <th key={i} style={{ padding: "8px 10px", textAlign: i === 3 ? "right" : "left", color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {pagos.map((p, idx) => (
-                            <tr key={p.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                              <td style={{ padding: "9px 10px", color: "#6b7280", fontSize: 12 }}>{idx + 1}</td>
-                              <td style={{ padding: "9px 10px", color: "#d1d5db", fontSize: 12 }}>{p.fecha}</td>
-                              <td style={{ padding: "9px 10px", color: "#9ca3af", fontSize: 12 }}>{p.metodo_pago ?? "—"}</td>
-                              <td style={{ padding: "9px 10px", textAlign: "right", color: "#4ade80", fontWeight: 700, fontSize: 13 }}>{fmt(p.monto)}</td>
-                              <td style={{ padding: "9px 10px", color: "#6b7280", fontSize: 12 }}>{p.notas ?? ""}</td>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                              {["#", "Fecha", "Método", "Monto", "Notas"].map((h, i) => (
+                                <th key={i} style={{ padding: "8px 10px", textAlign: i === 3 ? "right" : "left", color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>{h}</th>
+                              ))}
                             </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                            <td colSpan={3} style={{ padding: "10px 10px", textAlign: "right", color: "white", fontSize: 13, fontWeight: 700 }}>Total pagado:</td>
-                            <td style={{ padding: "10px 10px", textAlign: "right", color: "#4ade80", fontSize: 14, fontWeight: 800 }}>{fmt(compraVer.total_pagado)}</td>
-                            <td></td>
-                          </tr>
-                        </tfoot>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {pagos.map((p, idx) => (
+                              <tr key={p.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                                <td style={{ padding: "9px 10px", color: "#6b7280", fontSize: 12 }}>{idx + 1}</td>
+                                <td style={{ padding: "9px 10px", color: "#d1d5db", fontSize: 12 }}>{p.fecha}</td>
+                                <td style={{ padding: "9px 10px", color: "#9ca3af", fontSize: 12 }}>{p.metodo_pago ?? "—"}</td>
+                                <td style={{ padding: "9px 10px", textAlign: "right", color: "#4ade80", fontWeight: 700, fontSize: 13 }}>{fmt(p.monto)}</td>
+                                <td style={{ padding: "9px 10px", color: "#6b7280", fontSize: 12 }}>{p.notas ?? ""}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                              <td colSpan={3} style={{ padding: "10px 10px", textAlign: "right", color: "white", fontSize: 13, fontWeight: 700 }}>Total pagado:</td>
+                              <td style={{ padding: "10px 10px", textAlign: "right", color: "#4ade80", fontSize: 14, fontWeight: 800 }}>{fmt(compraVer.total_pagado)}</td>
+                              <td></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
                     )}
                   </div>
                 )}

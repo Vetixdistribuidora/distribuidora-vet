@@ -48,3 +48,169 @@ button:hover {
 h1, h2, h3, p {
   color: #111;
 }
+/* ── VETIX Responsive Utilities ── */
+
+/* Clases reutilizables para reemplazar grids fijos */
+
+/* Grid 2 columnas que colapsa a 1 en mobile */
+.grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+/* Grid sidebar + contenido que colapsa */
+.grid-sidebar-main {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* Grid ventas: form + resumen sticky */
+.grid-ventas {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 20px;
+  align-items: start;
+}
+
+/* KPIs que se adaptan */
+.grid-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+/* Fila de botones/acciones que wrappea bien */
+.action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Tabla scrolleable en mobile */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Sticky resumen — deja de ser sticky en mobile */
+.sticky-panel {
+  position: sticky;
+  top: 20px;
+}
+
+@media (max-width: 768px) {
+
+  /* Grids colapsan a 1 columna */
+  .grid-2col,
+  .grid-sidebar-main,
+  .grid-ventas {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* El resumen de ventas deja de ser sticky */
+  .sticky-panel {
+    position: static !important;
+  }
+
+  /* Historial modal KPIs — 2 cols en mobile */
+  .grid-kpis-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Compras: fila de totales y botones en columna */
+  .compras-footer {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  /* Filas de items de historial */
+  .historial-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .historial-row .acciones {
+    width: 100% !important;
+    justify-content: flex-end !important;
+  }
+
+  /* Proveedor/cliente card — stack */
+  .card-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+
+  .card-row .card-actions {
+    width: 100%;
+    justify-content: flex-end !important;
+  }
+
+  /* Productos: barra de acciones */
+  .productos-topbar {
+    flex-wrap: wrap !important;
+  }
+
+  /* Panel agregar producto — 1 col */
+  .productos-add-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Producto item: acciones al fondo */
+  .producto-item-row {
+    flex-wrap: wrap !important;
+  }
+
+  .producto-item-acciones {
+    flex-wrap: wrap !important;
+    width: 100% !important;
+    margin-top: 8px !important;
+  }
+
+  /* Dashboard gráfico + vencimientos: 1 col */
+  .grid-grafico {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Modales: padding reducido */
+  .modal-inner {
+    padding: 24px 18px !important;
+  }
+
+  /* Texto de fecha en header */
+  .header-date {
+    display: none !important;
+  }
+
+  /* Tabla compras modal: scroll horizontal */
+  .compras-tabla-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Cuenta corriente: resumen 3 cols → 3 cols pequeñas */
+  .cc-resumen-grid {
+    grid-template-columns: 1fr 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  /* Botones de cancelar deuda se apilan */
+  .cc-botones-pago {
+    flex-direction: column !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Extra pequeño: algunos grids van a 1 col */
+  .grid-kpis {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .cc-resumen-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

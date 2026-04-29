@@ -44,6 +44,7 @@ export default function CuentasCorrientes() {
   const [filtro, setFiltro] = useState<"deudores" | "todos">("deudores")
   const [tab, setTab] = useState<"pendientes" | "historial">("pendientes")
   const [toast, setToast] = useState<any>(null)
+  const [vistaMovil, setVistaMovil] = useState<"lista" | "detalle">("lista")
 
   const [ventaPago, setVentaPago] = useState<any>(null)
   const [montoPago, setMontoPago] = useState("")
@@ -87,6 +88,7 @@ export default function CuentasCorrientes() {
     setClienteActivo(c)
     setTab("pendientes")
     setCargandoVentas(true)
+    setVistaMovil("detalle")
     await cargarVentas(c.id)
     setCargandoVentas(false)
   }
@@ -151,33 +153,41 @@ export default function CuentasCorrientes() {
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 
       {/* KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
         {[
-          { label: "Deuda total", valor: fmt(deudaTotal), color: "#f87171", bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.15)", icon: "💰" },
-          { label: "Clientes deudores", valor: Object.keys(resumen).length, color: "#fbbf24", bg: "rgba(251,191,36,0.08)", border: "rgba(251,191,36,0.15)", icon: "👥" },
-          { label: "Total clientes", valor: clientes.length, color: "#3b82f6", bg: "rgba(59,130,246,0.08)", border: "rgba(59,130,246,0.15)", icon: "📋" },
+          { label: "Deuda total", valor: fmt(deudaTotal), color: "#f87171", icon: "💰" },
+          { label: "Clientes deudores", valor: Object.keys(resumen).length, color: "#fbbf24", icon: "👥" },
+          { label: "Total clientes", valor: clientes.length, color: "#3b82f6", icon: "📋" },
         ].map((k, i) => (
           <div key={i} style={{
             background: "white", border: "1px solid #e2e8f0",
-            borderRadius: 14, padding: "16px 20px",
+            borderRadius: 14, padding: "14px 16px",
             boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
             position: "relative", overflow: "hidden"
           }}>
             <div style={{ position: "absolute", top: 0, left: 0, width: 4, height: "100%", background: k.color, borderRadius: "14px 0 0 14px" }} />
             <div style={{ paddingLeft: 8 }}>
-              <div style={{ fontSize: 20, marginBottom: 6 }}>{k.icon}</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: k.color }}>{k.valor}</div>
-              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{k.label}</div>
+              <div style={{ fontSize: 18, marginBottom: 4 }}>{k.icon}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: k.color }}>{k.valor}</div>
+              <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{k.label}</div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Layout dos columnas */}
-      <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16, alignItems: "start" }}>
+      {/* Layout: en mobile muestra solo una columna a la vez */}
+      <style>{`
+        @media (max-width: 768px) {
+          .cc-layout { grid-template-columns: 1fr !important; }
+          .cc-panel-lista { display: ${vistaMovil === "lista" ? "block" : "none"} !important; }
+          .cc-panel-detalle { display: ${vistaMovil === "detalle" ? "block" : "none"} !important; }
+        }
+      `}</style>
 
-        {/* Panel izquierdo */}
-        <div style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", overflow: "hidden" }}>
+      <div className="cc-layout" style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16, alignItems: "start" }}>
+
+        {/* Panel izquierdo — lista clientes */}
+        <div className="cc-panel-lista" style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", overflow: "hidden" }}>
           <div style={{ padding: "14px 14px 10px", borderBottom: "1px solid #f1f5f9" }}>
             <input placeholder="🔍 Buscar cliente..." value={busqueda}
               onChange={e => setBusqueda(e.target.value)}
@@ -210,7 +220,6 @@ export default function CuentasCorrientes() {
                   borderBottom: "1px solid #f8fafc",
                   background: activo ? "#eff6ff" : "white",
                   borderLeft: activo ? "3px solid #3b82f6" : "3px solid transparent",
-                  transition: "background 0.15s"
                 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
@@ -235,7 +244,7 @@ export default function CuentasCorrientes() {
         </div>
 
         {/* Panel derecho */}
-        <div>
+        <div className="cc-panel-detalle">
           {!clienteActivo ? (
             <div style={{ background: "white", borderRadius: 14, border: "1px solid #e2e8f0", padding: 60, textAlign: "center", color: "#9ca3af", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>👈</div>
@@ -247,17 +256,24 @@ export default function CuentasCorrientes() {
 
               {/* Header cliente */}
               <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {/* Botón volver — solo mobile */}
+                    <button onClick={() => setVistaMovil("lista")}
+                      style={{ display: "none", background: "rgba(255,255,255,0.08)", border: "none", color: "#9ca3af", borderRadius: 7, padding: "4px 10px", fontSize: 11, cursor: "pointer", marginBottom: 10 }}
+                      className="cc-btn-volver">
+                      ← Volver
+                    </button>
+                    <style>{`@media (max-width: 768px) { .cc-btn-volver { display: inline-block !important; } }`}</style>
                     <div style={{ fontSize: 18, fontWeight: 800, color: "white" }}>{clienteActivo.nombre} {clienteActivo.apellido}</div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-                      {clienteActivo.cuit && <span>CUIT: {clienteActivo.cuit} · </span>}
+                    <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4, flexWrap: "wrap", display: "flex", gap: 8 }}>
+                      {clienteActivo.cuit && <span>CUIT: {clienteActivo.cuit}</span>}
                       {clienteActivo.telefono && <span>📞 {clienteActivo.telefono}</span>}
-                      {clienteActivo.localidad && <span> · 📍 {clienteActivo.localidad}</span>}
+                      {clienteActivo.localidad && <span>📍 {clienteActivo.localidad}</span>}
                     </div>
                   </div>
                   {resumen[clienteActivo.id] && (
-                    <div style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: "10px 16px", textAlign: "center" }}>
+                    <div style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: "10px 16px", textAlign: "center", flexShrink: 0 }}>
                       <div style={{ fontSize: 18, fontWeight: 800, color: "#f87171" }}>{fmt(resumen[clienteActivo.id].deuda)}</div>
                       <div style={{ fontSize: 11, color: "#6b7280" }}>deuda total</div>
                     </div>
@@ -269,14 +285,14 @@ export default function CuentasCorrientes() {
               <div style={{ display: "flex", padding: "0 24px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                 {[
                   { key: "pendientes", label: `Pendientes${pendientesList.length ? ` (${pendientesList.length})` : ""}` },
-                  { key: "historial", label: "Historial completo" },
+                  { key: "historial", label: "Historial" },
                 ].map((t: any) => (
                   <button key={t.key} onClick={() => setTab(t.key)} style={{
-                    padding: "14px 18px", border: "none", background: "none", cursor: "pointer",
+                    padding: "14px 16px", border: "none", background: "none", cursor: "pointer",
                     fontSize: 13, fontWeight: 600,
                     color: tab === t.key ? "#3b82f6" : "#6b7280",
                     borderBottom: tab === t.key ? "2px solid #3b82f6" : "2px solid transparent",
-                    marginBottom: -1
+                    marginBottom: -1, whiteSpace: "nowrap"
                   }}>{t.label}</button>
                 ))}
               </div>
@@ -286,7 +302,6 @@ export default function CuentasCorrientes() {
                   <div style={{ textAlign: "center", padding: 40, color: "#6b7280" }}>Cargando...</div>
                 ) : (
                   <>
-                    {/* Tab pendientes */}
                     {tab === "pendientes" && (
                       <>
                         {pendientesList.length === 0 ? (
@@ -298,7 +313,7 @@ export default function CuentasCorrientes() {
                           const progreso = v.total > 0 ? (v.totalPagado / v.total) * 100 : 0
                           return (
                             <div key={v.id} style={{ background: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.2)", borderRadius: 12, padding: 16, marginBottom: 12 }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
                                 <div>
                                   <span style={{ fontWeight: 700, fontSize: 14, color: "white" }}>#{v.nro_factura || v.id}</span>
                                   {v.fecha && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{fechaCorta(v.fecha)}</div>}
@@ -327,8 +342,8 @@ export default function CuentasCorrientes() {
                                   <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#9ca3af" }}>Pagos registrados:</div>
                                   {v.pagos.map((p: any, i: number) => (
                                     <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: i < v.pagos.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
-                                      <span style={{ color: "#d1d5db" }}>{fechaCorta(p.fecha)} — <b style={{ color: "#4ade80" }}>{fmt(p.monto)}</b>{p.nota ? <span style={{ color: "#6b7280" }}> ({p.nota})</span> : ""}</span>
-                                      <button onClick={() => imprimirRecibo(p, v)} style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Recibo</button>
+                                      <span style={{ color: "#d1d5db", flex: 1, minWidth: 0 }}>{fechaCorta(p.fecha)} — <b style={{ color: "#4ade80" }}>{fmt(p.monto)}</b>{p.nota ? <span style={{ color: "#6b7280" }}> ({p.nota})</span> : ""}</span>
+                                      <button onClick={() => imprimirRecibo(p, v)} style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600, flexShrink: 0, marginLeft: 8 }}>Recibo</button>
                                     </div>
                                   ))}
                                 </div>
@@ -343,7 +358,6 @@ export default function CuentasCorrientes() {
                       </>
                     )}
 
-                    {/* Tab historial */}
                     {tab === "historial" && (
                       <>
                         {ventas.length === 0 ? (
@@ -356,7 +370,7 @@ export default function CuentasCorrientes() {
                               border: cobrada ? "1px solid rgba(74,222,128,0.12)" : "1px solid rgba(251,191,36,0.15)",
                               borderRadius: 10, padding: 14, marginBottom: 8
                             }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                   <b style={{ color: "white", fontSize: 13 }}>#{v.nro_factura || v.id}</b>
                                   <span style={{
@@ -374,7 +388,7 @@ export default function CuentasCorrientes() {
                               {v.pagos.length > 0 && (
                                 <div style={{ marginTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 8 }}>
                                   {v.pagos.map((p: any, i: number) => (
-                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "3px 0" }}>
+                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "3px 0", flexWrap: "wrap", gap: 4 }}>
                                       <span style={{ color: "#9ca3af" }}>{fechaCorta(p.fecha)} — <b style={{ color: "#4ade80" }}>{fmt(p.monto)}</b>{p.nota ? <span style={{ color: "#6b7280" }}> ({p.nota})</span> : ""}</span>
                                       <button onClick={() => imprimirRecibo(p, v)} style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>Recibo</button>
                                     </div>
