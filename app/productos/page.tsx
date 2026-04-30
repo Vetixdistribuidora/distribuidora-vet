@@ -85,10 +85,12 @@ export default function Productos() {
   const [cargando, setCargando] = useState(true)
   const [toast, setToast] = useState<any>(null)
   const [busqueda, setBusqueda] = useState("")
+  const [filtroCategoria, setFiltroCategoria] = useState("")
   const [nombre, setNombre] = useState("")
   const [costo, setCosto] = useState("")
   const [margen, setMargen] = useState("")
   const [stock, setStock] = useState("")
+  const [categoria, setCategoria] = useState("")
   const [editando, setEditando] = useState<any | null>(null)
   const [archivo, setArchivo] = useState<File | null>(null)
   const [margenImportacion, setMargenImportacion] = useState("")
@@ -218,11 +220,11 @@ export default function Productos() {
     const costoNum = Number(costo)
     const margenNum = Number(margen)
     const precioVenta = costoNum + (costoNum * margenNum / 100)
-    const { data, error } = await supabase.from("productos").insert([{ nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(stock) }]).select()
+    const { data, error } = await supabase.from("productos").insert([{ nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(stock), categoria: categoria.trim() }]).select()
     if (error) return mostrarToast("❌ " + error.message, "error")
     await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 })
     mostrarToast("✅ Producto agregado", "ok")
-    setNombre(""); setCosto(""); setMargen(""); setStock("")
+    setNombre(""); setCosto(""); setMargen(""); setStock(""); setCategoria("")
     setMostrarAgregar(false); cargar()
   }
 
@@ -231,7 +233,7 @@ export default function Productos() {
     const costoNum = Number(editando.costo)
     const margenNum = Number(editando.margen)
     const precioVenta = costoNum + (costoNum * margenNum / 100)
-    const { error } = await supabase.from("productos").update({ nombre: editando.nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(editando.stock) }).eq("id", editando.id)
+    const { error } = await supabase.from("productos").update({ nombre: editando.nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(editando.stock), categoria: editando.categoria || "" }).eq("id", editando.id)
     if (error) return mostrarToast("❌ " + error.message, "error")
     await supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id })
     mostrarToast("✅ Producto actualizado", "ok")
@@ -393,7 +395,10 @@ export default function Productos() {
 
   if (cargando) return <p style={{ padding: 30, color: "#9ca3af" }}>⏳ Cargando productos...</p>
 
-  const productosFiltrados = productos.filter(p => p.nombre.toLowerCase().includes(busqueda.toLowerCase()))
+  const productosFiltrados = productos.filter(p =>
+    p.nombre.toLowerCase().includes(busqueda.toLowerCase()) &&
+    (!filtroCategoria || p.categoria === filtroCategoria)
+  )
   const productosVisibles = productosFiltrados.slice(0, pagina * 50)
 
   return (
@@ -407,6 +412,17 @@ export default function Productos() {
         <input placeholder="🔍 Buscar producto..." value={busqueda}
           onChange={e => { setBusqueda(e.target.value); setPagina(1) }}
           style={{ flex: 1, minWidth: 200, padding: "10px 14px", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+        {(() => {
+          const cats = [...new Set(productos.map((p: any) => p.categoria).filter(Boolean))].sort()
+          if (cats.length === 0) return null
+          return (
+            <select value={filtroCategoria} onChange={e => { setFiltroCategoria(e.target.value); setPagina(1) }}
+              style={{ padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: 10, fontSize: 13, outline: "none", background: "white", color: "#111827", cursor: "pointer" }}>
+              <option value="">Todas las categorías</option>
+              {cats.map((c: string) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )
+        })()}
         <span style={{ fontSize: 13, color: "#6b7280", whiteSpace: "nowrap" }}>
           <b style={{ color: "#374151" }}>{productos.length}</b> productos
           {busqueda && <span style={{ color: "#9ca3af" }}> · <b style={{ color: "#374151" }}>{productosFiltrados.length}</b> resultados</span>}
@@ -432,7 +448,7 @@ export default function Productos() {
       {mostrarAgregar && (
         <div className="productos-add-panel" style={{ background: "#0f172a", borderRadius: 14, padding: "20px 24px", marginBottom: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
           <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 }}>Nuevo producto</p>
-          <div className="productos-add-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+          <div className="productos-add-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
             <input placeholder="Nombre del producto" value={nombre} onChange={e => setNombre(e.target.value)} type="text"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Costo" value={costo} onChange={e => setCosto(e.target.value)} type="number"
@@ -440,6 +456,8 @@ export default function Productos() {
             <input placeholder="% Margen" value={margen} onChange={e => setMargen(e.target.value)} type="number"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Stock" value={stock} onChange={e => setStock(e.target.value)} type="number"
+              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+            <input placeholder="Categoría" value={categoria} onChange={e => setCategoria(e.target.value)} type="text"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <button onClick={agregar} style={btnPrimario}>Guardar</button>
           </div>
@@ -595,6 +613,12 @@ export default function Productos() {
                       </div>
                     ))}
                   </div>
+                  <div style={{ marginTop: 12 }}>
+                    <label style={labelStyle}>Categoría</label>
+                    <input type="text" placeholder="Ej: Antiparasitarios" value={editando?.categoria ?? ""}
+                      onChange={e => setEditando({ ...editando, categoria: e.target.value })}
+                      style={inputStyle} />
+                  </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 10 }}>
                     <span style={{ color: "#93c5fd", fontSize: 13 }}>
                       💵 Precio estimado: <b style={{ color: "white" }}>{formatearPrecio(precioEstimado)}</b>
@@ -627,6 +651,11 @@ export default function Productos() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                         <span style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>{p.nombre}</span>
+                        {p.categoria && (
+                          <span style={{ background: "#eff6ff", color: "#3b82f6", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, border: "1px solid #bfdbfe" }}>
+                            {p.categoria}
+                          </span>
+                        )}
                         {p.stock === 0 ? (
                           <span style={{ background: "#fef2f2", color: "#dc2626", fontSize: "10px", fontWeight: "700", padding: "1px 6px", borderRadius: "5px", border: "1px solid #fecaca" }}>🚫 Sin stock</span>
                         ) : p.stock <= 5 ? (

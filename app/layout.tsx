@@ -59,6 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/proveedores")) return "Proveedores"
     if (pathname.startsWith("/compras")) return "Compras"
     if (pathname.startsWith("/cuentas")) return "Cuenta Corriente"
+    if (pathname.startsWith("/reportes")) return "Reportes"
     if (pathname.startsWith("/deudores")) return "Deudores"
     return ""
   }
@@ -71,6 +72,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/proveedores")) return "🚚"
     if (pathname.startsWith("/compras")) return "🧾"
     if (pathname.startsWith("/cuentas")) return "📄"
+    if (pathname.startsWith("/reportes")) return "📊"
     if (pathname.startsWith("/deudores")) return "⚠️"
     return ""
   }
@@ -165,6 +167,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <path d="M14 2v6h6" />
             </svg>
             Cuenta Corriente
+          </Link>
+          <Link href="/reportes" style={getItemStyle("/reportes")} onClick={() => setSidebarAbierto(false)}>
+            <svg style={iconStyle("#a78bfa", pathname.startsWith("/reportes"))} fill="none" strokeWidth="2" viewBox="0 0 24 24">
+              <path d="M18 20V10M12 20V4M6 20v-6" />
+            </svg>
+            Reportes
           </Link>
           <Link href="/deudores" style={getItemStyle("/deudores")} onClick={() => setSidebarAbierto(false)}>
             <svg style={iconStyle("#f87171", pathname.startsWith("/deudores"))} fill="none" strokeWidth="2" viewBox="0 0 24 24">
