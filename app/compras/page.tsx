@@ -403,8 +403,8 @@ export default function ComprasPage() {
                 <div>
                   <label style={labelStyle}>Proveedor *</label>
                   <select value={form.proveedor_id} onChange={e => setForm({ ...form, proveedor_id: e.target.value })} style={selectDarkStyle}>
-                    <option value="">Seleccioná un proveedor</option>
-                    {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                    <option value="" style={{ background: "#1e293b", color: "white" }}>Seleccioná un proveedor</option>
+                    {proveedores.map(p => <option key={p.id} value={p.id} style={{ background: "#1e293b", color: "white" }}>{p.nombre}</option>)}
                   </select>
                 </div>
                 <div>
@@ -573,7 +573,7 @@ export default function ComprasPage() {
                 <div>
                   <label style={labelStyle}>Método de pago</label>
                   <select value={form.metodo_pago} onChange={e => setForm({ ...form, metodo_pago: e.target.value })} style={selectDarkStyle}>
-                    {METODOS.map(m => <option key={m}>{m}</option>)}
+                    {METODOS.map(m => <option key={m} style={{ background: "#1e293b", color: "white" }}>{m}</option>)}
                   </select>
                 </div>
               </div>
@@ -807,8 +807,8 @@ export default function ComprasPage() {
             </div>
             <div style={{ marginBottom: 14 }}>
               <label style={labelStyle}>Método</label>
-              <select value={formPago.metodo_pago} onChange={e => setFormPago({ ...formPago, metodo_pago: e.target.value })} style={{ ...inputDarkStyle, cursor: "pointer" }}>
-                {METODOS.map(m => <option key={m}>{m}</option>)}
+              <select value={formPago.metodo_pago} onChange={e => setFormPago({ ...formPago, metodo_pago: e.target.value })} style={selectDarkStyle}>
+                {METODOS.map(m => <option key={m} style={{ background: "#1e293b", color: "white" }}>{m}</option>)}
               </select>
             </div>
             <div style={{ marginBottom: 24 }}>

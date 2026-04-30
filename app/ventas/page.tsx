@@ -602,12 +602,12 @@ export default function Ventas() {
                 <div>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>Cobro</label>
                   <select value={metodoCobro} onChange={e => setMetodoCobro(e.target.value)} disabled={esCuentaCorriente}
-                    style={{ width: "100%", padding: "10px 10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: esCuentaCorriente ? "#4b5563" : "white", fontSize: 13, outline: "none", boxSizing: "border-box" }}>
-                    <option value="efectivo" style={{ background: "#1e293b" }}>Efectivo</option>
-                    <option value="transferencia" style={{ background: "#1e293b" }}>Transferencia</option>
-                    <option value="cheque" style={{ background: "#1e293b" }}>Cheque</option>
-                    <option value="tarjeta" style={{ background: "#1e293b" }}>Tarjeta</option>
-                    <option value="otro" style={{ background: "#1e293b" }}>Otro</option>
+                    style={{ width: "100%", padding: "10px 10px", background: esCuentaCorriente ? "rgba(255,255,255,0.03)" : "#1e293b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: esCuentaCorriente ? "#4b5563" : "white", fontSize: 13, outline: "none", boxSizing: "border-box", cursor: esCuentaCorriente ? "not-allowed" : "pointer" }}>
+                    <option value="efectivo" style={{ background: "#1e293b", color: "white" }}>Efectivo</option>
+                    <option value="transferencia" style={{ background: "#1e293b", color: "white" }}>Transferencia</option>
+                    <option value="cheque" style={{ background: "#1e293b", color: "white" }}>Cheque</option>
+                    <option value="tarjeta" style={{ background: "#1e293b", color: "white" }}>Tarjeta</option>
+                    <option value="otro" style={{ background: "#1e293b", color: "white" }}>Otro</option>
                   </select>
                 </div>
               </div>

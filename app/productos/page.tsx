@@ -491,17 +491,17 @@ export default function Productos() {
               <div>
                 <label style={labelStyle}>Columna de nombre *</label>
                 <select value={colNombre} onChange={e => { setColNombre(e.target.value); setPreview([]) }}
-                  style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, color: "white", fontSize: 13, outline: "none" }}>
-                  <option value="">— elegir —</option>
-                  {columnas.map(c => <option key={c} value={c}>{c}</option>)}
+                  style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", cursor: "pointer" }}>
+                  <option value="" style={{ background: "#1e293b", color: "white" }}>— elegir —</option>
+                  {columnas.map(c => <option key={c} value={c} style={{ background: "#1e293b", color: "white" }}>{c}</option>)}
                 </select>
               </div>
               <div>
                 <label style={labelStyle}>Columna de costo *</label>
                 <select value={colCosto} onChange={e => { setColCosto(e.target.value); setPreview([]) }}
-                  style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, color: "white", fontSize: 13, outline: "none" }}>
-                  <option value="">— elegir —</option>
-                  {columnas.map(c => <option key={c} value={c}>{c}</option>)}
+                  style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", cursor: "pointer" }}>
+                  <option value="" style={{ background: "#1e293b", color: "white" }}>— elegir —</option>
+                  {columnas.map(c => <option key={c} value={c} style={{ background: "#1e293b", color: "white" }}>{c}</option>)}
                 </select>
               </div>
               <div>
