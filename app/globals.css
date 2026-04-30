@@ -1,52 +1,31 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-app: 'DM Sans', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  font-family: var(--font-app);
+  background: #f1f5f9;
+  color: #111827;
+  -webkit-font-smoothing: antialiased;
 }
-input, select {
-  padding: 8px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  color: #111;
-  background: white;
+
+/* Reset mínimo — no imponer colores ni estilos a botones/inputs
+   ya que cada componente define los propios via inline styles */
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 
 button {
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: none;
-  background: #111;
-  color: white;
+  font-family: inherit;
   cursor: pointer;
 }
 
-button:hover {
-  background: #333;
-}
-
-h1, h2, h3, p {
-  color: #111;
+input, select, textarea {
+  font-family: inherit;
 }
 /* ── VETIX Responsive Utilities ── */
 

@@ -123,7 +123,7 @@ export default function ProveedoresPage() {
   const totalDeuda = proveedores.reduce((s, p) => s + (p.saldo_pendiente ?? 0), 0);
 
   return (
-    <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+    <div>
       <style>{responsiveStyles}</style>
 
       {/* Header */}

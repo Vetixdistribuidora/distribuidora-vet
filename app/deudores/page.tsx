@@ -85,7 +85,7 @@ export default function Deudores() {
   )
 
   return (
-    <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+    <div>
       <style>{responsiveStyles}</style>
 
       {/* KPIs */}

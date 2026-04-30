@@ -240,7 +240,7 @@ export default function Clientes() {
   if (cargando) return <p style={{ padding: 30, color: "#9ca3af" }}>⏳ Cargando clientes...</p>
 
   return (
-    <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+    <div>
       <style>{responsiveStyles}</style>
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 

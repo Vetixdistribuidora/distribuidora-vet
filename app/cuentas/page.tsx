@@ -149,7 +149,7 @@ export default function CuentasCorrientes() {
   )
 
   return (
-    <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+    <div>
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 
       {/* KPIs */}

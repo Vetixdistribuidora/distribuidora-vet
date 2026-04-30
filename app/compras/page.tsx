@@ -256,7 +256,7 @@ export default function ComprasPage() {
   ).slice(0, 40);
 
   return (
-    <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+    <div>
       <style>{responsiveStyles}</style>
 
       {/* Header */}

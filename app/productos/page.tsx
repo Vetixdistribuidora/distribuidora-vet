@@ -324,7 +324,7 @@ export default function Productos() {
   const productosVisibles = productosFiltrados.slice(0, pagina * 50)
 
   return (
-    <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+    <div>
       <style>{responsiveStyles}</style>
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
       <input ref={inputFotoRef} type="file" accept=".jpg,.jpeg,.webp,.png" style={{ display: "none" }} onChange={subirFoto} />

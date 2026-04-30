@@ -165,7 +165,7 @@ setVentasHoyLista(ventasHoy)
   ]
 
   return (
-    <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+    <div>
 
       {/* KPIs */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(220px, 100%), 1fr))", gap: 16, marginBottom: 24 }}>

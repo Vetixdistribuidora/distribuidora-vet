@@ -324,7 +324,7 @@ export default function Ventas() {
   const totalHistorial = ventasFiltradas.reduce((acc, v) => acc + Number(v.total), 0)
 
   return (
-    <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+    <div>
       <style>{responsiveStyles}</style>
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 

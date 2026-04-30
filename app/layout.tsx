@@ -81,7 +81,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   if (isLoginPage) {
     return (
       <html lang="es">
-        <body style={{ margin: 0, fontFamily: "Segoe UI", background: "#f1f3f5" }}>
+        <body>
           {children}
         </body>
       </html>
@@ -221,7 +221,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }
         `}</style>
       </head>
-      <body style={{ margin: 0, fontFamily: "Segoe UI", display: "flex", background: "#f1f5f9" }}>
+      <body style={{ display: "flex" }}>
 
         {/* SIDEBAR desktop — fijo */}
         <aside className="desktop-sidebar" style={{ position: "sticky", top: 0, height: "100vh" }}>
