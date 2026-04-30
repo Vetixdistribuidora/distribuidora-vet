@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react"
 import { supabase } from "../../lib/supabase"
+import * as XLSX from "xlsx"
 
 function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
   return (
@@ -23,20 +24,33 @@ function fmt(num: number) {
 interface DatosImpresion {
   nroFactura: string; clienteSeleccionado: any; carrito: any[]
   subtotal: number; ivaNum: number; total: number; esCuentaCorriente: boolean
+  metodoCobro?: string
 }
 
-function generarHTMLEImprimir(datos: DatosImpresion) {
-  const { nroFactura, clienteSeleccionado, carrito, subtotal, ivaNum, total, esCuentaCorriente } = datos
+function generarHTMLEImprimir(datos: DatosImpresion, tipo: "presupuesto" | "remito" = "presupuesto") {
+  const { nroFactura, clienteSeleccionado, carrito, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro } = datos
   const logoUrl = window.location.origin + "/logo.png"
   const fecha = new Date().toLocaleDateString("es-AR")
   const f = (num: number) => "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const esRemito = tipo === "remito"
+  const titulo = esRemito ? "REMITO DE ENTREGA" : "PRESUPUESTO"
   const filas = carrito.map(item => {
     const bonif = item.bonificacion || 0
     const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
+    if (esRemito) {
+      return "<tr><td>" + item.cantidad + "</td><td style='text-align:left;'>" + item.nombre + "</td><td>" + bonif + "</td><td style='width:60px'>&nbsp;</td></tr>"
+    }
     return "<tr><td>" + item.cantidad + "</td><td style='text-align:left;'>" + item.nombre + "</td><td>" + f(item.precio) + "</td><td>" + bonif + "</td><td>" + f(unidadesPagas * item.precio) + "</td></tr>"
   }).join("")
-  const badgeCC = esCuentaCorriente ? "<div style='background:#e67700;color:white;padding:6px 14px;border-radius:6px;font-weight:bold;display:inline-block;margin-top:8px;'>CUENTA CORRIENTE - PENDIENTE DE PAGO</div>" : ""
-  const html = "<!DOCTYPE html><html><head><style>@page{margin:20px}body{font-family:Arial;padding:20px;display:flex;flex-direction:column;min-height:95vh;box-sizing:border-box}.logo{height:120px}.header{display:flex;justify-content:space-between;align-items:center}.header-right{text-align:center}.header-right h2{margin:0}.nro-factura{font-size:14px;color:#555;margin-top:4px}.datos{display:flex;justify-content:space-between;margin-top:20px}.contenido{flex:1}table{width:100%;margin-top:30px;border-collapse:collapse}th{border:1px solid #ccc;padding:8px;background:#eee}td{padding:6px;text-align:center}.totales{margin-top:40px;display:flex;justify-content:flex-end}.box{width:280px;border-top:2px solid #ccc;padding-top:10px}.box p,.box h2{margin:6px 0}</style></head><body><div class='contenido'><div class='header'><img src='" + logoUrl + "' class='logo'/><div class='header-right'><h2>PRESUPUESTO</h2><div class='nro-factura'>N " + nroFactura + " | Fecha: " + fecha + "</div>" + badgeCC + "</div></div><div class='datos'><div><b>VETIX Distribuidora</b><br/>Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div><div style='text-align:left;'><b>Cliente:</b><br/>" + clienteSeleccionado.nombre + " " + clienteSeleccionado.apellido + "<br/>CUIT: " + (clienteSeleccionado.cuit || "-") + "<br/>Direccion: " + (clienteSeleccionado.localidad || "-") + "<br/>Tel: " + (clienteSeleccionado.telefono || "-") + "</div></div><table><thead><tr><th>Cant.</th><th style='width:40%'>Descripcion</th><th>Precio U.</th><th>Bonif.</th><th>Total</th></tr></thead><tbody>" + filas + "</tbody></table></div><div class='totales'><div class='box'><p><b>Subtotal:</b> " + f(subtotal) + "</p><p><b>IVA (" + ivaNum + "%):</b> " + f(subtotal * ivaNum / 100) + "</p><h2><b>Total:</b> " + f(total) + "</h2></div></div></body></html>"
+  const theadCols = esRemito
+    ? "<tr><th>Cant.</th><th style='width:50%'>Descripcion</th><th>Bonif.</th><th>Recibido</th></tr>"
+    : "<tr><th>Cant.</th><th style='width:40%'>Descripcion</th><th>Precio U.</th><th>Bonif.</th><th>Total</th></tr>"
+  const badgeCC = esCuentaCorriente && !esRemito ? "<div style='background:#e67700;color:white;padding:6px 14px;border-radius:6px;font-weight:bold;display:inline-block;margin-top:8px;'>CUENTA CORRIENTE - PENDIENTE DE PAGO</div>" : ""
+  const metodoStr = metodoCobro && metodoCobro !== "sin_especificar" && !esRemito ? "<p style='margin:6px 0'><b>Método de cobro:</b> " + metodoCobro.replace("_", " ").toUpperCase() + "</p>" : ""
+  const totalesHTML = esRemito
+    ? "<div class='totales'><div class='box'><p>Firma y aclaración: ___________________________</p></div></div>"
+    : "<div class='totales'><div class='box'>" + metodoStr + "<p><b>Subtotal:</b> " + f(subtotal) + "</p><p><b>IVA (" + ivaNum + "%):</b> " + f(subtotal * ivaNum / 100) + "</p><h2><b>Total:</b> " + f(total) + "</h2></div></div>"
+  const html = "<!DOCTYPE html><html><head><style>@page{margin:20px}body{font-family:Arial;padding:20px;display:flex;flex-direction:column;min-height:95vh;box-sizing:border-box}.logo{height:120px}.header{display:flex;justify-content:space-between;align-items:center}.header-right{text-align:center}.header-right h2{margin:0}.nro-factura{font-size:14px;color:#555;margin-top:4px}.datos{display:flex;justify-content:space-between;margin-top:20px}.contenido{flex:1}table{width:100%;margin-top:30px;border-collapse:collapse}th{border:1px solid #ccc;padding:8px;background:#eee}td{padding:6px;text-align:center}.totales{margin-top:40px;display:flex;justify-content:flex-end}.box{width:280px;border-top:2px solid #ccc;padding-top:10px}.box p,.box h2{margin:6px 0}</style></head><body><div class='contenido'><div class='header'><img src='" + logoUrl + "' class='logo'/><div class='header-right'><h2>" + titulo + "</h2><div class='nro-factura'>N " + nroFactura + " | Fecha: " + fecha + "</div>" + badgeCC + "</div></div><div class='datos'><div><b>VETIX Distribuidora</b><br/>Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div><div style='text-align:left;'><b>Cliente:</b><br/>" + clienteSeleccionado.nombre + " " + clienteSeleccionado.apellido + "<br/>CUIT: " + (clienteSeleccionado.cuit || "-") + "<br/>Direccion: " + (clienteSeleccionado.localidad || "-") + "<br/>Tel: " + (clienteSeleccionado.telefono || "-") + "</div></div><table><thead>" + theadCols + "</thead><tbody>" + filas + "</tbody></table></div>" + totalesHTML + "</body></html>"
   const ventana = window.open("", "_blank")
   if (!ventana) { alert("Habilita ventanas emergentes"); return }
   ventana.document.write(html); ventana.document.close()
@@ -97,6 +111,7 @@ export default function Ventas() {
   const [confirmAnular, setConfirmAnular] = useState<any>(null)
   const [anulando, setAnulando] = useState(false)
   const [reimprimiendo, setReimprimiendo] = useState(false)
+  const [metodoCobro, setMetodoCobro] = useState("efectivo")
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo }); setTimeout(() => setToast(null), 3000)
@@ -183,12 +198,12 @@ export default function Ventas() {
     cargarHistorial()
   }
 
-  async function reimprimir(venta: any, itemsCargados?: any[]) {
+  async function reimprimir(venta: any, itemsCargados?: any[], tipo: "presupuesto" | "remito" = "presupuesto") {
     setReimprimiendo(true)
     const { data: guardada } = await supabase
       .from("facturas_impresion").select("datos").eq("venta_id", venta.id).maybeSingle()
     if (guardada?.datos) {
-      generarHTMLEImprimir(guardada.datos)
+      generarHTMLEImprimir(guardada.datos, tipo)
     } else {
       // Reconstruir desde datos de la venta
       const items = itemsCargados?.length
@@ -211,9 +226,26 @@ export default function Ventas() {
         ivaNum: ivaCalc >= 0 ? ivaCalc : 0,
         total: totalCalc,
         esCuentaCorriente: venta.estado === "cuenta_corriente",
-      })
+        metodoCobro: venta.metodo_cobro,
+      }, tipo)
     }
     setReimprimiendo(false)
+  }
+
+  function exportarVentas() {
+    const datos = ventasFiltradas.map(v => ({
+      "N° Presupuesto": v.nro_factura,
+      "Fecha": v.fecha?.slice(0, 10) || "",
+      "Cliente": (v.clientes?.nombre || "") + " " + (v.clientes?.apellido || ""),
+      "Estado": ESTADO_VENTA[v.estado]?.label || v.estado,
+      "Método de cobro": v.metodo_cobro || "",
+      "Total": Number(v.total),
+    }))
+    const ws = XLSX.utils.json_to_sheet(datos)
+    ws["!cols"] = [{ wch: 14 }, { wch: 12 }, { wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 14 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Ventas")
+    XLSX.writeFile(wb, "ventas_" + new Date().toISOString().slice(0, 10) + ".xlsx")
   }
 
   function seleccionarCliente(c: any) {
@@ -273,7 +305,8 @@ export default function Ventas() {
     setGuardando(true)
     const { data: venta, error: errorVenta } = await supabase.from("ventas").insert({
       cliente_id: Number(clienteId), total, fecha: new Date(),
-      estado: esCuentaCorriente ? "cuenta_corriente" : "cobrada", nro_factura: nroFactura
+      estado: esCuentaCorriente ? "cuenta_corriente" : "cobrada", nro_factura: nroFactura,
+      metodo_cobro: esCuentaCorriente ? null : metodoCobro
     }).select().single()
     if (errorVenta || !venta) { mostrarToast("Error al guardar venta", "error"); setGuardando(false); return }
     const { error: errorDetalle } = await supabase.from("detalle_ventas").insert(
@@ -300,16 +333,16 @@ export default function Ventas() {
         }
       }
     }
-    await supabase.from("facturas_impresion").insert([{ nro_factura: nroFactura, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura, clienteSeleccionado, carrito: [...carrito], subtotal, ivaNum, total, esCuentaCorriente } }])
+    await supabase.from("facturas_impresion").insert([{ nro_factura: nroFactura, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura, clienteSeleccionado, carrito: [...carrito], subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? null : metodoCobro } }])
     mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : "✅ Venta confirmada", "ok")
     setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false)
     localStorage.removeItem("vetix_borrador")
     setGuardando(false); cargar()
   }
 
-  function imprimirTicket() {
+  function imprimirTicket(tipo: "presupuesto" | "remito" = "presupuesto") {
     if (!clienteSeleccionado || carrito.length === 0) return
-    generarHTMLEImprimir({ nroFactura, clienteSeleccionado, carrito: [...carrito], subtotal, ivaNum, total, esCuentaCorriente })
+    generarHTMLEImprimir({ nroFactura, clienteSeleccionado, carrito: [...carrito], subtotal, ivaNum, total, esCuentaCorriente, metodoCobro }, tipo)
   }
 
   const productosFiltrados = productos.filter(p =>
@@ -549,10 +582,23 @@ export default function Ventas() {
           <div className="ventas-resumen-sticky" style={{ position: "sticky", top: 20 }}>
             <div style={{ background: "#0f172a", borderRadius: 16, padding: 24, border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 1, textTransform: "uppercase", marginBottom: 20 }}>Resumen</p>
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>IVA (%)</label>
-                <input type="number" value={iva} onChange={e => setIva(e.target.value)}
-                  style={{ width: "100%", padding: "10px 14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "white", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+              <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: 10, marginBottom: 16 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>IVA (%)</label>
+                  <input type="number" value={iva} onChange={e => setIva(e.target.value)}
+                    style={{ width: "100%", padding: "10px 10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "white", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>Cobro</label>
+                  <select value={metodoCobro} onChange={e => setMetodoCobro(e.target.value)} disabled={esCuentaCorriente}
+                    style={{ width: "100%", padding: "10px 10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: esCuentaCorriente ? "#4b5563" : "white", fontSize: 13, outline: "none", boxSizing: "border-box" }}>
+                    <option value="efectivo" style={{ background: "#1e293b" }}>Efectivo</option>
+                    <option value="transferencia" style={{ background: "#1e293b" }}>Transferencia</option>
+                    <option value="cheque" style={{ background: "#1e293b" }}>Cheque</option>
+                    <option value="tarjeta" style={{ background: "#1e293b" }}>Tarjeta</option>
+                    <option value="otro" style={{ background: "#1e293b" }}>Otro</option>
+                  </select>
+                </div>
               </div>
               <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 16, marginBottom: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -585,10 +631,16 @@ export default function Ventas() {
                   style={{ width: "100%", padding: "13px", background: guardando || !clienteId || carrito.length === 0 ? "rgba(255,255,255,0.05)" : esCuentaCorriente ? "linear-gradient(135deg, #c2410c, #ea580c)" : "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 14, fontWeight: 700, cursor: guardando || !clienteId || carrito.length === 0 ? "not-allowed" : "pointer", opacity: guardando || !clienteId || carrito.length === 0 ? 0.5 : 1, boxShadow: "0 4px 14px rgba(0,0,0,0.3)" }}>
                   {guardando ? "Guardando..." : esCuentaCorriente ? "📋 Guardar en CC" : "✅ Confirmar venta"}
                 </button>
-                <button onClick={imprimirTicket} disabled={!clienteSeleccionado || carrito.length === 0}
-                  style={{ width: "100%", padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: !clienteSeleccionado || carrito.length === 0 ? 0.4 : 1 }}>
-                  🖨️ Imprimir / PDF
-                </button>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <button onClick={() => imprimirTicket("presupuesto")} disabled={!clienteSeleccionado || carrito.length === 0}
+                    style={{ padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: !clienteSeleccionado || carrito.length === 0 ? 0.4 : 1 }}>
+                    🖨️ Presupuesto
+                  </button>
+                  <button onClick={() => imprimirTicket("remito")} disabled={!clienteSeleccionado || carrito.length === 0}
+                    style={{ padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: !clienteSeleccionado || carrito.length === 0 ? 0.4 : 1 }}>
+                    📦 Remito
+                  </button>
+                </div>
               </div>
               {carrito.length > 0 && (
                 <div style={{ marginTop: 14, padding: "10px 12px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -617,6 +669,9 @@ export default function Ventas() {
             </select>
             <button onClick={cargarHistorial} style={{ padding: "10px 16px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}>
               🔄 Actualizar
+            </button>
+            <button onClick={exportarVentas} disabled={ventasFiltradas.length === 0} style={{ padding: "10px 16px", background: "#16a34a", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: ventasFiltradas.length === 0 ? "not-allowed" : "pointer", color: "white", opacity: ventasFiltradas.length === 0 ? 0.5 : 1 }}>
+              📊 Excel
             </button>
           </div>
 
@@ -701,8 +756,14 @@ export default function Ventas() {
               <button
                 onClick={() => reimprimir(ventaDetalle, detalleItems.length ? detalleItems : undefined)}
                 disabled={reimprimiendo || loadingDetalle}
-                style={{ flex: 1, minWidth: 120, padding: "10px", background: "linear-gradient(135deg, #1e40af, #3b82f6)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: reimprimiendo || loadingDetalle ? 0.6 : 1 }}>
-                {reimprimiendo ? "Generando..." : "🖨️ Reimprimir"}
+                style={{ flex: 1, minWidth: 110, padding: "10px", background: "linear-gradient(135deg, #1e40af, #3b82f6)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: reimprimiendo || loadingDetalle ? 0.6 : 1 }}>
+                {reimprimiendo ? "Generando..." : "🖨️ Presupuesto"}
+              </button>
+              <button
+                onClick={() => reimprimir(ventaDetalle, detalleItems.length ? detalleItems : undefined, "remito")}
+                disabled={reimprimiendo || loadingDetalle}
+                style={{ flex: 1, minWidth: 110, padding: "10px", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, color: "#e2e8f0", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: reimprimiendo || loadingDetalle ? 0.6 : 1 }}>
+                📦 Remito
               </button>
               {ventaDetalle.estado !== "anulada" && (
                 <button onClick={() => { setConfirmAnular(ventaDetalle); setVentaDetalle(null) }} style={{ flex: 1, minWidth: 120, padding: "10px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Anular venta</button>

@@ -109,9 +109,73 @@ export default function Productos() {
   const [formLote, setFormLote] = useState({ cantidad: "", fecha_vencimiento: "" })
   const [guardandoLote, setGuardandoLote] = useState(false)
   const [confirmEliminarLote, setConfirmEliminarLote] = useState<any | null>(null)
+  const [modalPrecios, setModalPrecios] = useState(false)
+  const [ajusteTipo, setAjusteTipo] = useState<"porcentaje" | "pesos">("porcentaje")
+  const [ajusteValor, setAjusteValor] = useState("")
+  const [ajusteAplica, setAjusteAplica] = useState<"costos" | "precios">("costos")
+  const [aplicandoPrecios, setAplicandoPrecios] = useState(false)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo }); setTimeout(() => setToast(null), 3000)
+  }
+
+  async function actualizarPrecios() {
+    const valor = parseFloat(ajusteValor)
+    if (!valor || valor <= 0) { mostrarToast("Ingresá un valor válido", "error"); return }
+    setAplicandoPrecios(true)
+    const updates = productos.map(p => {
+      let nuevoCosto = p.costo
+      let nuevoMargen = p.margen
+      if (ajusteAplica === "costos") {
+        nuevoCosto = ajusteTipo === "porcentaje" ? p.costo * (1 + valor / 100) : p.costo + valor
+      } else {
+        // precios: update precio_venta, recalculate margen
+        const nuevoPrecio = ajusteTipo === "porcentaje" ? p.precio_venta * (1 + valor / 100) : p.precio_venta + valor
+        nuevoMargen = nuevoCosto > 0 ? ((nuevoPrecio / nuevoCosto) - 1) * 100 : p.margen
+        return { id: p.id, costo: nuevoCosto, margen: Math.round(nuevoMargen * 100) / 100, precio_venta: Math.round(nuevoPrecio * 100) / 100 }
+      }
+      const nuevoPrecio = nuevoCosto + (nuevoCosto * nuevoMargen / 100)
+      return { id: p.id, costo: Math.round(nuevoCosto * 100) / 100, margen: nuevoMargen, precio_venta: Math.round(nuevoPrecio * 100) / 100 }
+    })
+    const CHUNK = 50
+    for (let i = 0; i < updates.length; i += CHUNK) {
+      await Promise.all(updates.slice(i, i + CHUNK).map(u =>
+        supabase.from("productos").update({ costo: u.costo, margen: u.margen, precio_venta: u.precio_venta }).eq("id", u.id)
+      ))
+    }
+    setAplicandoPrecios(false)
+    setModalPrecios(false)
+    setAjusteValor("")
+    mostrarToast(`✅ ${productos.length} precios actualizados`, "ok")
+    cargar()
+  }
+
+  function exportarStock() {
+    const data = productos.map(p => ({
+      "Nombre": p.nombre,
+      "Costo ($)": p.costo,
+      "Margen (%)": p.margen,
+      "Precio Venta ($)": p.precio_venta,
+      "Stock (u.)": p.stock,
+      "Capital ($)": Math.round(p.costo * p.stock * 100) / 100,
+    }))
+    const ws = XLSX.utils.json_to_sheet(data)
+    ws["!cols"] = [{ wch: 40 }, { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 14 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Stock")
+    XLSX.writeFile(wb, `stock_${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
+  function exportarListaPrecios() {
+    const data = productos.filter(p => p.stock > 0).map(p => ({
+      "Producto": p.nombre,
+      "Precio ($)": p.precio_venta,
+    }))
+    const ws = XLSX.utils.json_to_sheet(data)
+    ws["!cols"] = [{ wch: 45 }, { wch: 14 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Lista de Precios")
+    XLSX.writeFile(wb, `lista_precios_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
   async function cargar() {
@@ -343,6 +407,15 @@ export default function Productos() {
         </button>
         <button onClick={() => setMostrarImport(!mostrarImport)} style={btnSecundario}>
           {mostrarImport ? "✕ Cerrar" : "📥 Importar"}
+        </button>
+        <button onClick={exportarStock} style={btnSecundario} title="Exportar stock completo">
+          📊 Stock
+        </button>
+        <button onClick={exportarListaPrecios} style={btnSecundario} title="Lista de precios para clientes">
+          📋 Precios
+        </button>
+        <button onClick={() => setModalPrecios(true)} style={{ ...btnPrimario, background: "linear-gradient(135deg, #7c3aed, #8b5cf6)" }}>
+          💲 Actualizar precios
         </button>
       </div>
 
@@ -585,6 +658,91 @@ export default function Productos() {
               <button onClick={() => setModalLote(null)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
               <button onClick={guardarLote} disabled={guardandoLote} style={{ flex: 1, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardandoLote ? 0.5 : 1 }}>
                 {guardandoLote ? "Guardando..." : "✅ Guardar lote"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL ACTUALIZAR PRECIOS ── */}
+      {modalPrecios && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
+          onClick={() => !aplicandoPrecios && setModalPrecios(false)}>
+          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 440, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>💲</div>
+            <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "0 0 4px" }}>Actualizar precios</h2>
+            <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 24 }}>
+              Se aplicará a <b style={{ color: "white" }}>{productos.length} productos</b>
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 8 }}>¿Qué actualizar?</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {([["costos", "Costos (recalcula precio)"], ["precios", "Precios de venta"]] as const).map(([val, label]) => (
+                    <button key={val} onClick={() => setAjusteAplica(val)}
+                      style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid " + (ajusteAplica === val ? "#8b5cf6" : "rgba(255,255,255,0.1)"), background: ajusteAplica === val ? "rgba(139,92,246,0.2)" : "transparent", color: ajusteAplica === val ? "#c4b5fd" : "#9ca3af", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 8 }}>Tipo de ajuste</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {([["porcentaje", "% Porcentaje"], ["pesos", "$ Pesos fijos"]] as const).map(([val, label]) => (
+                    <button key={val} onClick={() => setAjusteTipo(val)}
+                      style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid " + (ajusteTipo === val ? "#3b82f6" : "rgba(255,255,255,0.1)"), background: ajusteTipo === val ? "rgba(59,130,246,0.2)" : "transparent", color: ajusteTipo === val ? "#93c5fd" : "#9ca3af", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 8 }}>
+                  Valor ({ajusteTipo === "porcentaje" ? "%" : "$"})
+                </label>
+                <input
+                  type="number" min="0" step="0.1"
+                  placeholder={ajusteTipo === "porcentaje" ? "Ej: 10 para subir 10%" : "Ej: 500 para sumar $500"}
+                  value={ajusteValor} onChange={e => setAjusteValor(e.target.value)}
+                  style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, color: "white", fontSize: 16, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+              </div>
+
+              {ajusteValor && parseFloat(ajusteValor) > 0 && productos.length > 0 && (() => {
+                const p = productos[0]
+                const valor = parseFloat(ajusteValor)
+                let ejCosto = p.costo, ejPrecio = p.precio_venta
+                if (ajusteAplica === "costos") {
+                  ejCosto = ajusteTipo === "porcentaje" ? p.costo * (1 + valor / 100) : p.costo + valor
+                  ejPrecio = ejCosto + ejCosto * p.margen / 100
+                } else {
+                  ejPrecio = ajusteTipo === "porcentaje" ? p.precio_venta * (1 + valor / 100) : p.precio_venta + valor
+                }
+                return (
+                  <div style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 10, padding: "12px 14px", fontSize: 12 }}>
+                    <div style={{ color: "#9ca3af", marginBottom: 4 }}>Ejemplo con <b style={{ color: "white" }}>{p.nombre.slice(0, 30)}</b>:</div>
+                    <div style={{ color: "#c4b5fd" }}>
+                      Costo: ${p.costo.toLocaleString("es-AR")} → <b>${ejCosto.toLocaleString("es-AR", { maximumFractionDigits: 2 })}</b>
+                      &nbsp;·&nbsp;
+                      Precio: ${p.precio_venta.toLocaleString("es-AR")} → <b>${ejPrecio.toLocaleString("es-AR", { maximumFractionDigits: 2 })}</b>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
+              <button onClick={() => setModalPrecios(false)} disabled={aplicandoPrecios}
+                style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+                Cancelar
+              </button>
+              <button onClick={actualizarPrecios} disabled={aplicandoPrecios || !ajusteValor || parseFloat(ajusteValor) <= 0}
+                style={{ flex: 1, padding: "11px", background: aplicandoPrecios || !ajusteValor ? "rgba(139,92,246,0.3)" : "linear-gradient(135deg, #7c3aed, #8b5cf6)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: aplicandoPrecios || !ajusteValor ? "not-allowed" : "pointer" }}>
+                {aplicandoPrecios ? `Actualizando...` : `Aplicar a ${productos.length} productos`}
               </button>
             </div>
           </div>
