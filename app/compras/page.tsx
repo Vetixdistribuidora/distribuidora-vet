@@ -93,6 +93,7 @@ export default function ComprasPage() {
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [busquedaProducto, setBusquedaProducto] = useState("");
   const [productoDropdown, setProductoDropdown] = useState(false);
+  const [productoIndiceCompras, setProductoIndiceCompras] = useState(-1);
 
   const [modalNueva, setModalNueva] = useState(false);
   const [form, setForm] = useState({
@@ -145,7 +146,7 @@ export default function ComprasPage() {
   function agregarItem(prod: Producto) {
     if (items.find(i => i.producto_id === prod.id)) return;
     setItems([...items, { producto_id: prod.id, nombre: prod.nombre, cantidad: "1", precio_unitario: "", fecha_vencimiento: "" }]);
-    setBusquedaProducto(""); setProductoDropdown(false);
+    setBusquedaProducto(""); setProductoDropdown(false); setProductoIndiceCompras(-1);
   }
 
   function quitarItem(idx: number) { setItems(items.filter((_, i) => i !== idx)); }
@@ -410,16 +411,23 @@ export default function ComprasPage() {
                 <label style={labelStyle}>Productos *</label>
                 <div style={{ position: "relative", marginBottom: 12 }}>
                   <input type="text" placeholder="Buscar y agregar producto..." value={busquedaProducto}
-                    onChange={e => { setBusquedaProducto(e.target.value); setProductoDropdown(true) }}
+                    onChange={e => { setBusquedaProducto(e.target.value); setProductoDropdown(true); setProductoIndiceCompras(-1) }}
                     onFocus={() => setProductoDropdown(true)}
+                    onBlur={() => setTimeout(() => setProductoDropdown(false), 150)}
+                    onKeyDown={e => {
+                      if (e.key === "ArrowDown") { e.preventDefault(); setProductoIndiceCompras(i => Math.min(i + 1, productosFiltradosDropdown.length - 1)) }
+                      else if (e.key === "ArrowUp") { e.preventDefault(); setProductoIndiceCompras(i => Math.max(i - 1, 0)) }
+                      else if (e.key === "Enter" && productoIndiceCompras >= 0) { e.preventDefault(); agregarItem(productosFiltradosDropdown[productoIndiceCompras]); setProductoIndiceCompras(-1) }
+                      else if (e.key === "Escape") { setProductoDropdown(false); setProductoIndiceCompras(-1) }
+                    }}
                     style={inputDarkStyle} />
                   {productoDropdown && busquedaProducto && productosFiltradosDropdown.length > 0 && (
                     <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, zIndex: 10, maxHeight: 220, overflowY: "auto", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
-                      {productosFiltradosDropdown.map(p => (
-                        <div key={p.id} onClick={() => agregarItem(p)}
-                          style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.06)", color: "white" }}
-                          onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = "rgba(59,130,246,0.15)"}
-                          onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "transparent"}>
+                      {productosFiltradosDropdown.map((p, idx) => (
+                        <div key={p.id} onMouseDown={() => agregarItem(p)}
+                          style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.06)", color: "white", background: idx === productoIndiceCompras ? "rgba(59,130,246,0.25)" : "transparent" }}
+                          onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = idx === productoIndiceCompras ? "rgba(59,130,246,0.25)" : "rgba(59,130,246,0.15)"}
+                          onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = idx === productoIndiceCompras ? "rgba(59,130,246,0.25)" : "transparent"}>
                           <span style={{ fontWeight: 500 }}>{p.nombre}</span>
                           <span style={{ fontSize: 11, color: "#6b7280" }}>Stock: {p.stock}</span>
                         </div>

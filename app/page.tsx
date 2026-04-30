@@ -28,6 +28,8 @@ export default function Dashboard() {
   const [kpis, setKpis] = useState<any>({})
   const [alertas, setAlertas] = useState<any>({ stockBajo: [], sinVentas: [], sinRotacion: [] })
   const [ventasGrafico, setVentasGrafico] = useState<any[]>([])
+  const [ventasMensual, setVentasMensual] = useState<any[]>([])
+  const [periodoGrafico, setPeriodoGrafico] = useState<"7dias" | "6meses">("7dias")
   const [lotesPorVencer, setLotesPorVencer] = useState<any[]>([])
   const [ventasHoyLista, setVentasHoyLista] = useState<any[]>([])
   const [ventasMesLista, setVentasMesLista] = useState<any[]>([])
@@ -126,6 +128,18 @@ setVentasHoyLista(ventasHoy)
   return { fecha: f.slice(5), total }
 }).reverse()
     setVentasGrafico(ultimos7)
+
+    const ultimos6Meses = [...Array(6)].map((_, i) => {
+      const fecha = new Date()
+      fecha.setDate(1)
+      fecha.setMonth(fecha.getMonth() - i)
+      const mes = fecha.toISOString().slice(0, 7) // "2025-04"
+      const label = fecha.toLocaleDateString("es-AR", { month: "short", year: "2-digit" })
+      const total = ventas?.filter(v => new Date(v.fecha).toISOString().slice(0, 7) === mes)
+        .reduce((acc, v) => acc + Number(v.total), 0) || 0
+      return { fecha: label, total }
+    }).reverse()
+    setVentasMensual(ultimos6Meses)
   }
 
   async function verDetalleVenta(venta: any) {
@@ -238,12 +252,28 @@ setVentasHoyLista(ventasHoy)
       {/* Gráfico + Vencimientos */}
       <div className="grid-grafico" style={{ display: "grid", gridTemplateColumns: lotesPorVencer.length > 0 ? "1fr 1fr" : "1fr", gap: 16, marginBottom: 24 }}>
         <div style={{ background: "white", borderRadius: 16, padding: 24, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: "#374151" }}>📈 Ventas últimos 7 días</h3>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#374151" }}>
+              {periodoGrafico === "7dias" ? "📈 Ventas últimas 6 semanas" : "📈 Ventas últimos 6 meses"}
+            </h3>
+            <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid #e2e8f0" }}>
+              <button
+                onClick={() => setPeriodoGrafico("7dias")}
+                style={{ padding: "5px 12px", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, background: periodoGrafico === "7dias" ? "#3b82f6" : "white", color: periodoGrafico === "7dias" ? "white" : "#6b7280" }}>
+                7 días
+              </button>
+              <button
+                onClick={() => setPeriodoGrafico("6meses")}
+                style={{ padding: "5px 12px", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, background: periodoGrafico === "6meses" ? "#3b82f6" : "white", color: periodoGrafico === "6meses" ? "white" : "#6b7280" }}>
+                6 meses
+              </button>
+            </div>
+          </div>
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={ventasGrafico}>
+            <LineChart data={periodoGrafico === "7dias" ? ventasGrafico : ventasMensual}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="fecha" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} tickFormatter={v => "$" + (v / 1000).toFixed(0) + "k"} />
+              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} tickFormatter={v => "$" + (v >= 1000000 ? (v/1000000).toFixed(1)+"M" : v >= 1000 ? (v/1000).toFixed(0)+"k" : v)} />
               <Tooltip formatter={(v: any) => [fmt(v), "Total"]} labelStyle={{ color: "#374151" }} contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} />
               <Line type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2.5} dot={{ fill: "#3b82f6", r: 4 }} activeDot={{ r: 6 }} />
             </LineChart>
