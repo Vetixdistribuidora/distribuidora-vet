@@ -95,6 +95,10 @@ export default function Productos() {
   const [preview, setPreview] = useState<any[]>([])
   const [importando, setImportando] = useState(false)
   const [progreso, setProgreso] = useState(0)
+  const [columnas, setColumnas] = useState<string[]>([])
+  const [colNombre, setColNombre] = useState("")
+  const [colCosto, setColCosto] = useState("")
+  const [rawRows, setRawRows] = useState<any[]>([])
   const [confirmEliminar, setConfirmEliminar] = useState<any | null>(null)
   const [subiendoFoto, setSubiendoFoto] = useState<number | null>(null)
   const inputFotoRef = useRef<HTMLInputElement>(null)
@@ -252,79 +256,84 @@ export default function Productos() {
     return isNaN(num) || num <= 0 ? NaN : num
   }
 
-  async function procesarArchivoUniversal() {
-    if (!archivo) { mostrarToast("⚠️ Seleccioná un archivo", "error"); return }
-    let prods: any[] = []
-    if (archivo.name.endsWith(".xlsx") || archivo.name.endsWith(".xls")) {
-      const data = await archivo.arrayBuffer()
-      const workbook = XLSX.read(data)
-      const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const json: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" })
-      if (json.length === 0) { mostrarToast("❌ El archivo está vacío", "error"); return }
-      const columnas = Object.keys(json[0])
-      let columnaPrecio = ""; let mejorPuntaje = 0
-      for (const col of columnas) {
-        const puntaje = json.slice(0, 20).filter(fila => !isNaN(parsePrecio(fila[col]))).length
-        if (puntaje > mejorPuntaje) { mejorPuntaje = puntaje; columnaPrecio = col }
-      }
-      const columnasNombre = columnas.filter(col => {
-        if (col === columnaPrecio) return false
-        return json.slice(0, 10).some(fila => { const val = String(fila[col] || "").trim(); return val.length > 1 && isNaN(Number(val)) })
-      })
-      for (const fila of json) {
-        const precio = parsePrecio(fila[columnaPrecio])
-        if (isNaN(precio)) continue
-        const nombreFinal = columnasNombre.map(col => String(fila[col] || "").trim()).filter(v => v.length > 0).join(" ").trim()
-        if (!nombreFinal) continue
-        prods.push({ nombre: nombreFinal, costo: precio })
-      }
-    } else {
-      const buffer = await archivo.arrayBuffer()
-      let texto = ""
-      try { texto = new TextDecoder("utf-8").decode(buffer) } catch { texto = new TextDecoder("latin1").decode(buffer) }
-      const lineas = texto.split("\n")
-      const sep = lineas[0].includes(";") ? ";" : ","
-      const cols = lineas[0].split(sep).map(c => c.trim())
-      let idxPrecio = -1; let mejorPuntaje = 0
-      for (let i = 0; i < cols.length; i++) {
-        const puntaje = lineas.slice(1, 20).filter(l => !isNaN(parsePrecio(l.split(sep)[i]))).length
-        if (puntaje > mejorPuntaje) { mejorPuntaje = puntaje; idxPrecio = i }
-      }
-      const idxsNombre = cols.map((_, i) => i).filter(i => i !== idxPrecio)
-      for (const linea of lineas.slice(1)) {
-        if (!linea.trim()) continue
-        const partes = linea.split(sep)
-        const precio = parsePrecio(partes[idxPrecio])
-        if (isNaN(precio)) continue
-        const nombreFinal = idxsNombre.map(i => String(partes[i] || "").trim()).filter(v => v.length > 0).join(" ").trim()
-        if (!nombreFinal) continue
-        prods.push({ nombre: nombreFinal, costo: precio })
-      }
-    }
-    if (prods.length === 0) { mostrarToast("❌ No se detectaron productos.", "error"); return }
-    setPreview(prods.slice(0, 20))
-    mostrarToast(`📊 ${prods.length} productos detectados`, "ok")
-    return prods
+  function descargarPlantilla() {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Nombre del producto", "Costo"],
+      ["Ivermectina 1% x 50ml", "1500"],
+      ["Amoxicilina 250mg x 10", "850"],
+    ])
+    ws["!cols"] = [{ wch: 45 }, { wch: 14 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Productos")
+    XLSX.writeFile(wb, "plantilla_productos.xlsx")
   }
 
-  async function importarCSV() {
-    if (!archivo) return
-    if (!margenImportacion) { mostrarToast("⚠️ Ingresá margen", "error"); return }
-    const productosBase = await procesarArchivoUniversal()
-    if (!productosBase) return
+  async function leerArchivo(file: File) {
+    setArchivo(file)
+    setColumnas([]); setColNombre(""); setColCosto(""); setRawRows([]); setPreview([])
+    try {
+      const data = await file.arrayBuffer()
+      let rows: any[] = []
+      if (file.name.endsWith(".xlsx") || file.name.endsWith(".xls")) {
+        const wb2 = XLSX.read(data)
+        const sheet = wb2.Sheets[wb2.SheetNames[0]]
+        rows = XLSX.utils.sheet_to_json(sheet, { defval: "" })
+      } else {
+        let texto = ""
+        try { texto = new TextDecoder("utf-8").decode(data) } catch { texto = new TextDecoder("latin1").decode(data) }
+        const lineas = texto.split("\n").filter((l: string) => l.trim())
+        const sep = lineas[0].includes(";") ? ";" : ","
+        const headers = lineas[0].split(sep).map((c: string) => c.trim().replace(/^"|"$/g, ""))
+        rows = lineas.slice(1).map((l: string) => {
+          const vals = l.split(sep).map((v: string) => v.trim().replace(/^"|"$/g, ""))
+          const obj: any = {}
+          headers.forEach((h: string, i: number) => { obj[h] = vals[i] ?? "" })
+          return obj
+        })
+      }
+      if (rows.length === 0) { mostrarToast("❌ Archivo vacío", "error"); return }
+      const cols = Object.keys(rows[0])
+      setColumnas(cols)
+      setRawRows(rows)
+      const probNombre = cols.find(c => /nombre|descrip|product|articul/i.test(c)) || cols[0]
+      const probCosto = cols.find(c => /precio|costo|price|valor|importe/i.test(c)) || (cols.length > 1 ? cols[cols.length - 1] : cols[0])
+      setColNombre(probNombre)
+      setColCosto(probCosto)
+      mostrarToast(`✅ ${rows.length} filas detectadas, ${cols.length} columnas`, "ok")
+    } catch {
+      mostrarToast("❌ Error leyendo el archivo", "error")
+    }
+  }
+
+  function previsualizarMapeo() {
+    if (!colNombre || !colCosto) return []
+    return rawRows
+      .map(r => ({ nombre: String(r[colNombre] || "").trim(), costo: parsePrecio(r[colCosto]) }))
+      .filter(r => r.nombre && !isNaN(r.costo))
+  }
+
+  async function importarConMapeo() {
+    if (!colNombre || !colCosto) { mostrarToast("⚠️ Seleccioná las columnas", "error"); return }
+    if (!margenImportacion) { mostrarToast("⚠️ Ingresá margen para nuevos productos", "error"); return }
+    const mapeo = previsualizarMapeo()
+    if (mapeo.length === 0) { mostrarToast("❌ Sin productos válidos con ese mapeo", "error"); return }
     setImportando(true); setProgreso(0)
     const margenDefault = Number(margenImportacion)
-    const productosFinal = productosBase.map(p => ({ nombre: p.nombre, costo: p.costo, margen: margenDefault, precio_venta: p.costo + (p.costo * margenDefault / 100), stock: 0 }))
-    const chunkSize = 200; let procesados = 0
-    for (let i = 0; i < productosFinal.length; i += chunkSize) {
-      const chunk = productosFinal.slice(i, i + chunkSize)
-      const { error } = await supabase.from("productos").upsert(chunk, { onConflict: "nombre" })
-      if (error) { mostrarToast("❌ Error en importación", "error"); break }
-      procesados += chunk.length
-      setProgreso(Math.round((procesados / productosFinal.length) * 100))
+    const nombresExistentes = new Map(productos.map((p: any) => [p.nombre.toLowerCase().trim(), p]))
+    const registros = mapeo.map(({ nombre, costo }) => {
+      const existente = nombresExistentes.get(nombre.toLowerCase().trim())
+      const margen = existente ? existente.margen : margenDefault
+      return { nombre, costo: Math.round(costo * 100) / 100, margen, precio_venta: Math.round(costo * (1 + margen / 100) * 100) / 100 }
+    })
+    const CHUNK = 100; let procesados = 0
+    for (let i = 0; i < registros.length; i += CHUNK) {
+      const { error } = await supabase.from("productos").upsert(registros.slice(i, i + CHUNK), { onConflict: "nombre" })
+      if (error) { mostrarToast("❌ " + error.message, "error"); setImportando(false); return }
+      procesados += Math.min(CHUNK, registros.length - i)
+      setProgreso(Math.round((procesados / registros.length) * 100))
     }
-    setImportando(false); setPreview([]); setArchivo(null)
-    mostrarToast(`✅ ${procesados} productos importados`, "ok"); cargar()
+    setImportando(false); setPreview([]); setRawRows([]); setColumnas([]); setColNombre(""); setColCosto(""); setArchivo(null)
+    mostrarToast(`✅ ${procesados} productos importados/actualizados`, "ok"); cargar()
   }
 
   function abrirSelectorFoto(productoId: number) {
@@ -439,32 +448,104 @@ export default function Productos() {
 
       {/* Panel importar */}
       {mostrarImport && (
-        <div style={{ background: "white", borderRadius: 14, padding: "16px 20px", marginBottom: 16, border: "1px solid #e2e8f0" }}>
-          <p style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.5 }}>Importar lista de precios</p>
-          <div className="import-panel-row" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <input type="number" placeholder="% Margen" value={margenImportacion}
-              onChange={e => setMargenImportacion(e.target.value)}
-              style={{ width: 110, padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, outline: "none" }} />
-            <input type="file" accept=".csv,.xlsx" onChange={e => setArchivo(e.target.files?.[0] || null)} style={{ fontSize: 13 }} />
-            <button onClick={procesarArchivoUniversal} style={btnSecundario}>👁️ Preview</button>
-            <button onClick={importarCSV} style={btnPrimario}>📥 Importar</button>
+        <div style={{ background: "#0f172a", borderRadius: 14, padding: "20px 24px", marginBottom: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <p style={{ color: "white", fontSize: 13, fontWeight: 700, margin: 0 }}>📥 Importar lista de precios</p>
+              <p style={{ color: "#6b7280", fontSize: 12, margin: "4px 0 0" }}>Subí el Excel del distribuidor, elegí las columnas y el margen de ganancia.</p>
+            </div>
+            <button onClick={descargarPlantilla} style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", color: "#9ca3af", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              ⬇️ Descargar plantilla
+            </button>
           </div>
-          {importando && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ height: 6, background: "#e5e7eb", borderRadius: 10, overflow: "hidden" }}>
-                <div style={{ width: `${progreso}%`, background: "#22c55e", height: "100%", transition: "width 0.3s" }} />
+
+          {/* File picker */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Archivo (.xlsx, .xls, .csv)</label>
+            <input type="file" accept=".csv,.xlsx,.xls"
+              onChange={e => { const f = e.target.files?.[0]; if (f) leerArchivo(f) }}
+              style={{ display: "block", fontSize: 13, color: "#9ca3af", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 12px", width: "100%", boxSizing: "border-box", cursor: "pointer" }} />
+          </div>
+
+          {/* Column selectors */}
+          {columnas.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={labelStyle}>Columna de nombre *</label>
+                <select value={colNombre} onChange={e => { setColNombre(e.target.value); setPreview([]) }}
+                  style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, color: "white", fontSize: 13, outline: "none" }}>
+                  <option value="">— elegir —</option>
+                  {columnas.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
-              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{progreso}% completado</p>
+              <div>
+                <label style={labelStyle}>Columna de costo *</label>
+                <select value={colCosto} onChange={e => { setColCosto(e.target.value); setPreview([]) }}
+                  style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, color: "white", fontSize: 13, outline: "none" }}>
+                  <option value="">— elegir —</option>
+                  {columnas.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Margen para nuevos (%)</label>
+                <input type="number" placeholder="ej: 35" value={margenImportacion}
+                  onChange={e => setMargenImportacion(e.target.value)}
+                  style={{ width: "100%", padding: "9px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>Productos existentes conservan su margen</div>
+              </div>
             </div>
           )}
-          {preview.length > 0 && (
-            <div style={{ marginTop: 12, padding: "10px 14px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Preview (primeros 20)</p>
-              {preview.map((p, i) => (
-                <div key={i} style={{ fontSize: 12, color: "#6b7280", padding: "1px 0" }}>{p.nombre} — ${p.costo}</div>
-              ))}
-            </div>
-          )}
+
+          {/* Preview and action */}
+          {colNombre && colCosto && (() => {
+            const mapped = previsualizarMapeo()
+            const existentesCount = mapped.filter(r => productos.some((p: any) => p.nombre.toLowerCase().trim() === r.nombre.toLowerCase().trim())).length
+            const nuevosCount = mapped.length - existentesCount
+            return (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    <b style={{ color: "#4ade80" }}>{mapped.length}</b> productos válidos ·{" "}
+                    <b style={{ color: "#60a5fa" }}>{existentesCount}</b> actualizaciones ·{" "}
+                    <b style={{ color: "#fbbf24" }}>{nuevosCount}</b> nuevos
+                  </span>
+                  <button onClick={importarConMapeo} disabled={importando || mapped.length === 0 || !margenImportacion}
+                    style={{ marginLeft: "auto", background: mapped.length > 0 && margenImportacion ? "linear-gradient(135deg, #16a34a, #22c55e)" : "rgba(255,255,255,0.05)", border: "none", borderRadius: 8, color: "white", padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: mapped.length > 0 && margenImportacion ? "pointer" : "not-allowed", opacity: importando ? 0.6 : 1 }}>
+                    {importando ? `Importando... ${progreso}%` : `📥 Importar ${mapped.length} productos`}
+                  </button>
+                </div>
+                {importando && (
+                  <div style={{ height: 5, background: "rgba(255,255,255,0.08)", borderRadius: 10, overflow: "hidden", marginBottom: 10 }}>
+                    <div style={{ width: `${progreso}%`, background: "linear-gradient(90deg, #16a34a, #22c55e)", height: "100%", transition: "width 0.3s" }} />
+                  </div>
+                )}
+                {mapped.length > 0 && (
+                  <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                    <div style={{ padding: "7px 12px", background: "rgba(255,255,255,0.04)", display: "flex", gap: 20 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", flex: 1 }}>NOMBRE</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", width: 90, textAlign: "right" }}>COSTO</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", width: 50, textAlign: "center" }}>EST.</span>
+                    </div>
+                    {mapped.slice(0, 8).map((r, i) => {
+                      const esExistente = productos.some((p: any) => p.nombre.toLowerCase().trim() === r.nombre.toLowerCase().trim())
+                      return (
+                        <div key={i} style={{ display: "flex", gap: 20, padding: "7px 12px", borderTop: "1px solid rgba(255,255,255,0.04)", alignItems: "center" }}>
+                          <span style={{ fontSize: 12, color: "#d1d5db", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.nombre}</span>
+                          <span style={{ fontSize: 12, color: "#4ade80", width: 90, textAlign: "right", fontWeight: 600 }}>${r.costo.toLocaleString("es-AR")}</span>
+                          <span style={{ width: 50, textAlign: "center" }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: esExistente ? "rgba(59,130,246,0.15)" : "rgba(251,191,36,0.15)", color: esExistente ? "#60a5fa" : "#fbbf24" }}>
+                              {esExistente ? "ACT." : "NUEVO"}
+                            </span>
+                          </span>
+                        </div>
+                      )
+                    })}
+                    {mapped.length > 8 && <div style={{ padding: "7px 12px", fontSize: 11, color: "#4b5563", borderTop: "1px solid rgba(255,255,255,0.04)" }}>...y {mapped.length - 8} más</div>}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
       )}
 
