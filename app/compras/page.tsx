@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import * as XLSX from "xlsx";
 
 interface Proveedor { id: number; nombre: string; }
 interface Producto { id: number; nombre: string; stock: number; }
@@ -249,6 +250,24 @@ export default function ComprasPage() {
     const texto = [c.proveedores?.nombre, c.numero_remito].join(" ").toLowerCase();
     return texto.includes(busqueda.toLowerCase()) && (filtroEstado === "todos" || c.estado === filtroEstado);
   });
+
+  function exportarCompras() {
+    const datos = filtradas.map(c => ({
+      "Fecha": c.fecha?.slice(0, 10) || "",
+      "Proveedor": c.proveedores?.nombre || "",
+      "N° Remito": c.numero_remito || "",
+      "Estado": ESTADO_LABEL[c.estado]?.label || c.estado,
+      "Total": c.total,
+      "Pagado": c.total_pagado,
+      "Saldo": c.total - c.total_pagado,
+      "Método pago": c.metodo_pago || "",
+    }))
+    const ws = XLSX.utils.json_to_sheet(datos)
+    ws["!cols"] = [{ wch: 12 }, { wch: 24 }, { wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Compras")
+    XLSX.writeFile(wb, "compras_" + new Date().toISOString().slice(0, 10) + ".xlsx")
+  }
   const totalDeuda = compras.filter(c => c.estado !== "pagado").reduce((s, c) => s + (c.total - c.total_pagado), 0);
   const productosFiltradosDropdown = productos.filter(p =>
     !items.find(i => i.producto_id === p.id) &&
@@ -265,11 +284,18 @@ export default function ComprasPage() {
           <span style={{ fontWeight: 700, color: "#374151" }}>{compras.length}</span> compra{compras.length !== 1 ? "s" : ""}
           {totalDeuda > 0 && <span style={{ marginLeft: 8, color: "#dc2626", fontWeight: 600 }}>· Deuda: {fmt(totalDeuda)}</span>}
         </p>
-        <button className="compras-header-btn" onClick={abrirNueva} style={{
-          background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white",
-          border: "none", borderRadius: 10, padding: "10px 18px",
-          fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 8px rgba(59,130,246,0.3)"
-        }}>+ Nueva compra</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={exportarCompras} disabled={filtradas.length === 0} style={{
+            background: "#16a34a", color: "white", border: "none", borderRadius: 10,
+            padding: "10px 14px", fontSize: 13, fontWeight: 700, cursor: filtradas.length === 0 ? "not-allowed" : "pointer",
+            opacity: filtradas.length === 0 ? 0.5 : 1
+          }}>📊 Excel</button>
+          <button className="compras-header-btn" onClick={abrirNueva} style={{
+            background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white",
+            border: "none", borderRadius: 10, padding: "10px 18px",
+            fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 8px rgba(59,130,246,0.3)"
+          }}>+ Nueva compra</button>
+        </div>
       </div>
 
       {/* Filtros */}
