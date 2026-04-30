@@ -104,6 +104,8 @@ export default function Ventas() {
   const [ventas, setVentas] = useState<any[]>([])
   const [loadingHistorial, setLoadingHistorial] = useState(false)
   const [busquedaHistorial, setBusquedaHistorial] = useState("")
+  const [fechaDesde, setFechaDesde] = useState("")
+  const [fechaHasta, setFechaHasta] = useState("")
   const [filtroEstado, setFiltroEstado] = useState("todos")
   const [ventaDetalle, setVentaDetalle] = useState<any>(null)
   const [detalleItems, setDetalleItems] = useState<any[]>([])
@@ -119,6 +121,7 @@ export default function Ventas() {
 
   useEffect(() => { cargar() }, [])
   useEffect(() => { if (tab === "historial") cargarHistorial() }, [tab])
+  useEffect(() => { if (tab === "historial") cargarHistorial() }, [fechaDesde, fechaHasta])
 
   // Borrador automático en localStorage
   useEffect(() => {
@@ -163,9 +166,17 @@ export default function Ventas() {
 
   async function cargarHistorial() {
     setLoadingHistorial(true)
-    const { data } = await supabase.from("ventas").select("*, clientes(nombre, apellido)").order("id", { ascending: false }).limit(200)
+    let query = supabase.from("ventas").select("*, clientes(nombre, apellido)").order("id", { ascending: false })
+    if (fechaDesde) query = query.gte("fecha", fechaDesde)
+    if (fechaHasta) query = query.lte("fecha", fechaHasta + "T23:59:59")
+    if (!fechaDesde && !fechaHasta) query = query.limit(200)
+    const { data } = await query
     if (!data || data.some((v: any) => v.clientes === undefined)) {
-      const { data: ventasSolas } = await supabase.from("ventas").select("*").order("id", { ascending: false }).limit(200)
+      let q2 = supabase.from("ventas").select("*").order("id", { ascending: false })
+      if (fechaDesde) q2 = q2.gte("fecha", fechaDesde)
+      if (fechaHasta) q2 = q2.lte("fecha", fechaHasta + "T23:59:59")
+      if (!fechaDesde && !fechaHasta) q2 = q2.limit(200)
+      const { data: ventasSolas } = await q2
       const clienteIds = [...new Set(ventasSolas?.map((v: any) => v.cliente_id) || [])]
       const { data: clientesData } = await supabase.from("clientes").select("id, nombre, apellido").in("id", clienteIds)
       const clientesMap: Record<number, any> = {}
@@ -657,6 +668,10 @@ export default function Ventas() {
       {tab === "historial" && (
         <div>
           <div className="ventas-historial-filtros" style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+            <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)}
+              style={{ padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, outline: "none", color: "#111827" }} />
+            <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)}
+              style={{ padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, outline: "none", color: "#111827" }} />
             <input type="text" placeholder="Buscar cliente o N° presupuesto..." value={busquedaHistorial}
               onChange={e => setBusquedaHistorial(e.target.value)}
               style={{ flex: 1, minWidth: 200, padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, outline: "none" }} />

@@ -104,6 +104,7 @@ export default function ComprasPage() {
   });
   const [items, setItems] = useState<ItemForm[]>([]);
   const [guardando, setGuardando] = useState(false);
+  const [actualizarCostos, setActualizarCostos] = useState(true);
   const [errorForm, setErrorForm] = useState<string | null>(null);
 
   const [compraVer, setCompraVer] = useState<Compra | null>(null);
@@ -191,6 +192,20 @@ export default function ComprasPage() {
     });
     setGuardando(false);
     if (error) { setErrorForm("Error: " + error.message); return; }
+    if (actualizarCostos) {
+      await Promise.all(items.map(async (item) => {
+        const nuevoCosto = parseFloat(item.precio_unitario) || 0
+        if (nuevoCosto <= 0) return
+        const prod = productos.find((p: Producto) => p.id === item.producto_id)
+        if (!prod) return
+        const margenActual = await supabase.from("productos").select("margen").eq("id", item.producto_id).single()
+        const margen = margenActual.data?.margen ?? 30
+        await supabase.from("productos").update({
+          costo: nuevoCosto,
+          precio_venta: Math.round(nuevoCosto * (1 + margen / 100) * 100) / 100
+        }).eq("id", item.producto_id)
+      }))
+    }
     setModalNueva(false); cargarTodo();
   }
 
@@ -571,6 +586,18 @@ export default function ComprasPage() {
               </div>
             </div>
 
+            <div style={{ padding: "0 28px 18px" }}>
+              <div onClick={() => setActualizarCostos(!actualizarCostos)}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, cursor: "pointer", background: actualizarCostos ? "rgba(34,197,94,0.08)" : "rgba(255,255,255,0.04)", border: actualizarCostos ? "1px solid rgba(34,197,94,0.25)" : "1px solid rgba(255,255,255,0.08)", marginBottom: 12 }}>
+                <div style={{ width: 18, height: 18, borderRadius: 4, flexShrink: 0, background: actualizarCostos ? "#16a34a" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {actualizarCostos && <span style={{ color: "white", fontSize: 11, fontWeight: 700 }}>✓</span>}
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: actualizarCostos ? "#4ade80" : "#6b7280" }}>Actualizar costos en productos</div>
+                  <div style={{ fontSize: 11, color: "#4b5563" }}>Actualiza el costo de cada producto al precio de esta compra</div>
+                </div>
+              </div>
+            </div>
             <div className="compras-modal-footer" style={{ padding: "18px 28px", borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               {items.length > 0 && <span style={{ color: "#9ca3af", fontSize: 13 }}>Total: <b style={{ color: "white" }}>{fmt(totalForm)}</b></span>}
               <div className="compras-modal-footer-btns" style={{ display: "flex", gap: 10, marginLeft: "auto" }}>

@@ -89,12 +89,19 @@ const ventasMesAnterior = ventas?.filter(v => {
     const crecimiento = totalAnterior ? ((totalMes - totalAnterior) / totalAnterior) * 100 : 0
     const ticketPromedio = ventasMes.length ? totalMes / ventasMes.length : 0
 
+    const ventasMesIds = ventasMes.map(v => v.id)
     let ganancia = 0
-    if (detalleVentas && productos) {
-      detalleVentas.forEach(d => {
-        const prod = productos.find(p => p.id === d.producto_id)
-        if (prod) ganancia += (prod.precio_venta - prod.costo) * d.cantidad
-      })
+    if (ventasMesIds.length > 0 && productos) {
+      const { data: detallesMes } = await supabase
+        .from("detalle_ventas")
+        .select("producto_id, cantidad, precio")
+        .in("venta_id", ventasMesIds)
+      if (detallesMes) {
+        detallesMes.forEach(d => {
+          const prod = productos.find((p: any) => p.id === d.producto_id)
+          if (prod) ganancia += (d.precio - prod.costo) * d.cantidad
+        })
+      }
     }
 
     const margen = totalMes ? (ganancia / totalMes) * 100 : 0
@@ -106,7 +113,6 @@ const ventasMesAnterior = ventas?.filter(v => {
 
     setKpis({ totalHoy, totalMes, ganancia, margen, crecimiento, ticketPromedio, cantidadVentas: ventasMes.length, cantidadHoy: ventasHoy.length, capitalStock })
     setAlertas({ stockBajo, sinVentas, sinRotacion })
-setVentasHoyLista(ventasHoy)
     setVentasHoyLista(ventasHoy)
     setVentasMesLista(ventasMes)
 
