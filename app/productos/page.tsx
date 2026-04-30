@@ -22,7 +22,7 @@ function formatearPrecio(num: number) {
 }
 
 function estadoLote(dias: number) {
-  if (dias < 0) return { label: "Vencido", color: "#f87171", bg: "rgba(239,68,68,0.15)" }
+  if (dias < 0)   return { label: "Vencido", color: "#f87171", bg: "rgba(239,68,68,0.15)" }
   if (dias <= 30) return { label: "Crítico", color: "#f87171", bg: "rgba(239,68,68,0.15)" }
   if (dias <= 60) return { label: "Próximo", color: "#fbbf24", bg: "rgba(251,191,36,0.15)" }
   return { label: "OK", color: "#4ade80", bg: "rgba(74,222,128,0.15)" }
@@ -34,30 +34,51 @@ const inputStyle: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.1)",
   borderRadius: "10px", color: "white", fontSize: "14px", outline: "none",
 }
-
 const labelStyle: React.CSSProperties = {
   display: "block", fontSize: "11px", fontWeight: "600",
   color: "#9ca3af", letterSpacing: "0.5px", marginBottom: "6px", textTransform: "uppercase",
 }
-
 const btnPrimario: React.CSSProperties = {
   background: "linear-gradient(135deg, #2563eb, #3b82f6)",
   color: "white", border: "none", borderRadius: 8,
   padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer",
   boxShadow: "0 2px 8px rgba(59,130,246,0.3)"
 }
-
 const btnSecundario: React.CSSProperties = {
   background: "#f1f5f9", color: "#374151",
   border: "1px solid #e2e8f0", borderRadius: 8,
   padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer"
 }
 
-const btnDanger: React.CSSProperties = {
-  background: "#fef2f2", color: "#dc2626",
-  border: "1px solid #fecaca", borderRadius: 8,
-  padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer"
-}
+const responsiveStyles = `
+  @media (max-width: 768px) {
+    .productos-topbar { flex-wrap: wrap !important; }
+    .productos-topbar input { min-width: 0 !important; width: 100% !important; }
+    .productos-topbar span { order: 3 !important; width: 100% !important; }
+
+    .productos-add-panel { padding: 16px !important; }
+    .productos-add-grid {
+      grid-template-columns: 1fr 1fr !important;
+    }
+    .productos-add-grid > *:first-child {
+      grid-column: 1 / -1 !important;
+    }
+    .productos-add-grid > *:last-child {
+      grid-column: 1 / -1 !important;
+    }
+
+    .producto-item-main { flex-wrap: wrap !important; }
+    .producto-item-foto { display: none !important; }
+    .producto-item-acciones { flex-wrap: wrap !important; margin-top: 8px !important; width: 100% !important; }
+    .producto-item-acciones button { flex: 1 !important; min-width: 60px !important; }
+
+    .producto-edit-grid { grid-template-columns: 1fr 1fr !important; }
+    .producto-edit-grid > *:first-child { grid-column: 1 / -1 !important; }
+
+    .import-panel-row { flex-wrap: wrap !important; }
+    .import-panel-row > * { width: 100% !important; box-sizing: border-box !important; }
+  }
+`
 
 export default function Productos() {
   const [productos, setProductos] = useState<any[]>([])
@@ -82,7 +103,6 @@ export default function Productos() {
   const [mostrarImport, setMostrarImport] = useState(false)
   const [mostrarAgregar, setMostrarAgregar] = useState(false)
 
-  // Lotes
   const [lotesMap, setLotesMap] = useState<Record<number, any[]>>({})
   const [lotesAbiertos, setLotesAbiertos] = useState<Set<number>>(new Set())
   const [modalLote, setModalLote] = useState<{ productoId: number, productoNombre: string } | null>(null)
@@ -91,8 +111,7 @@ export default function Productos() {
   const [confirmEliminarLote, setConfirmEliminarLote] = useState<any | null>(null)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
-    setToast({ mensaje, tipo })
-    setTimeout(() => setToast(null), 3000)
+    setToast({ mensaje, tipo }); setTimeout(() => setToast(null), 3000)
   }
 
   async function cargar() {
@@ -106,8 +125,7 @@ export default function Productos() {
       if (data.length < tamano) break
       desde += tamano
     }
-    setProductos(todos)
-    setCargando(false)
+    setProductos(todos); setCargando(false)
     if (todos.length > 0) await cargarLotes(todos.map((p: any) => p.id))
   }
 
@@ -137,8 +155,7 @@ export default function Productos() {
     await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 })
     mostrarToast("✅ Producto agregado", "ok")
     setNombre(""); setCosto(""); setMargen(""); setStock("")
-    setMostrarAgregar(false)
-    cargar()
+    setMostrarAgregar(false); cargar()
   }
 
   async function guardarEdicion() {
@@ -150,8 +167,7 @@ export default function Productos() {
     if (error) return mostrarToast("❌ " + error.message, "error")
     await supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id })
     mostrarToast("✅ Producto actualizado", "ok")
-    setEditando(null)
-    cargar()
+    setEditando(null); cargar()
   }
 
   async function confirmarEliminarFn() {
@@ -160,8 +176,7 @@ export default function Productos() {
     if (error) { mostrarToast("❌ " + error.message, "error"); setConfirmEliminar(null); return }
     await supabase.rpc("registrar_auditoria", { accion: "eliminar", tabla: "productos", registro_id: confirmEliminar.id })
     mostrarToast("🗑️ Producto eliminado", "ok")
-    setConfirmEliminar(null)
-    cargar()
+    setConfirmEliminar(null); cargar()
   }
 
   function parsePrecio(valor: any) {
@@ -176,7 +191,6 @@ export default function Productos() {
   async function procesarArchivoUniversal() {
     if (!archivo) { mostrarToast("⚠️ Seleccioná un archivo", "error"); return }
     let prods: any[] = []
-
     if (archivo.name.endsWith(".xlsx") || archivo.name.endsWith(".xls")) {
       const data = await archivo.arrayBuffer()
       const workbook = XLSX.read(data)
@@ -184,8 +198,7 @@ export default function Productos() {
       const json: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" })
       if (json.length === 0) { mostrarToast("❌ El archivo está vacío", "error"); return }
       const columnas = Object.keys(json[0])
-      let columnaPrecio = ""
-      let mejorPuntaje = 0
+      let columnaPrecio = ""; let mejorPuntaje = 0
       for (const col of columnas) {
         const puntaje = json.slice(0, 20).filter(fila => !isNaN(parsePrecio(fila[col]))).length
         if (puntaje > mejorPuntaje) { mejorPuntaje = puntaje; columnaPrecio = col }
@@ -208,7 +221,7 @@ export default function Productos() {
       const lineas = texto.split("\n")
       const sep = lineas[0].includes(";") ? ";" : ","
       const cols = lineas[0].split(sep).map(c => c.trim())
-      let idxPrecio = -1, mejorPuntaje = 0
+      let idxPrecio = -1; let mejorPuntaje = 0
       for (let i = 0; i < cols.length; i++) {
         const puntaje = lineas.slice(1, 20).filter(l => !isNaN(parsePrecio(l.split(sep)[i]))).length
         if (puntaje > mejorPuntaje) { mejorPuntaje = puntaje; idxPrecio = i }
@@ -224,7 +237,6 @@ export default function Productos() {
         prods.push({ nombre: nombreFinal, costo: precio })
       }
     }
-
     if (prods.length === 0) { mostrarToast("❌ No se detectaron productos.", "error"); return }
     setPreview(prods.slice(0, 20))
     mostrarToast(`📊 ${prods.length} productos detectados`, "ok")
@@ -248,20 +260,17 @@ export default function Productos() {
       setProgreso(Math.round((procesados / productosFinal.length) * 100))
     }
     setImportando(false); setPreview([]); setArchivo(null)
-    mostrarToast(`✅ ${procesados} productos importados`, "ok")
-    cargar()
+    mostrarToast(`✅ ${procesados} productos importados`, "ok"); cargar()
   }
 
   function abrirSelectorFoto(productoId: number) {
-    productoFotoRef.current = productoId
-    inputFotoRef.current?.click()
+    productoFotoRef.current = productoId; inputFotoRef.current?.click()
   }
 
   async function subirFoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file || !productoFotoRef.current) return
-    const productoId = productoFotoRef.current
-    e.target.value = ""
+    const productoId = productoFotoRef.current; e.target.value = ""
     const ext = file.name.split(".").pop()
     const path = `${productoId}.${ext}`
     setSubiendoFoto(productoId)
@@ -286,8 +295,7 @@ export default function Productos() {
     setGuardandoLote(false)
     if (errorStock) return mostrarToast("❌ Error actualizando stock", "error")
     mostrarToast("✅ Lote agregado", "ok")
-    setModalLote(null); setFormLote({ cantidad: "", fecha_vencimiento: "" })
-    cargar()
+    setModalLote(null); setFormLote({ cantidad: "", fecha_vencimiento: "" }); cargar()
   }
 
   async function eliminarLote() {
@@ -299,8 +307,7 @@ export default function Productos() {
     const { error } = await supabase.from("lotes").delete().eq("id", confirmEliminarLote.id)
     if (error) return mostrarToast("❌ " + error.message, "error")
     mostrarToast("🗑️ Lote eliminado", "ok")
-    setConfirmEliminarLote(null)
-    cargar()
+    setConfirmEliminarLote(null); cargar()
   }
 
   function toggleLotes(id: number) {
@@ -318,11 +325,12 @@ export default function Productos() {
 
   return (
     <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+      <style>{responsiveStyles}</style>
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
       <input ref={inputFotoRef} type="file" accept=".jpg,.jpeg,.webp,.png" style={{ display: "none" }} onChange={subirFoto} />
 
       {/* Barra de acciones superior */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+      <div className="productos-topbar" style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
         <input placeholder="🔍 Buscar producto..." value={busqueda}
           onChange={e => { setBusqueda(e.target.value); setPagina(1) }}
           style={{ flex: 1, minWidth: 200, padding: "10px 14px", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
@@ -338,31 +346,29 @@ export default function Productos() {
         </button>
       </div>
 
-      {/* Panel agregar — colapsable */}
+      {/* Panel agregar */}
       {mostrarAgregar && (
-        <div style={{ background: "#0f172a", borderRadius: 14, padding: "20px 24px", marginBottom: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
+        <div className="productos-add-panel" style={{ background: "#0f172a", borderRadius: 14, padding: "20px 24px", marginBottom: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
           <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 }}>Nuevo producto</p>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
-            {[
-              { placeholder: "Nombre del producto", value: nombre, onChange: setNombre, type: "text" },
-              { placeholder: "Costo", value: costo, onChange: setCosto, type: "number" },
-              { placeholder: "% Margen", value: margen, onChange: setMargen, type: "number" },
-              { placeholder: "Stock", value: stock, onChange: setStock, type: "number" },
-            ].map(f => (
-              <input key={f.placeholder} type={f.type} placeholder={f.placeholder} value={f.value}
-                onChange={e => f.onChange(e.target.value)}
-                style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
-            ))}
+          <div className="productos-add-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+            <input placeholder="Nombre del producto" value={nombre} onChange={e => setNombre(e.target.value)} type="text"
+              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+            <input placeholder="Costo" value={costo} onChange={e => setCosto(e.target.value)} type="number"
+              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+            <input placeholder="% Margen" value={margen} onChange={e => setMargen(e.target.value)} type="number"
+              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+            <input placeholder="Stock" value={stock} onChange={e => setStock(e.target.value)} type="number"
+              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <button onClick={agregar} style={btnPrimario}>Guardar</button>
           </div>
         </div>
       )}
 
-      {/* Panel importar — colapsable */}
+      {/* Panel importar */}
       {mostrarImport && (
         <div style={{ background: "white", borderRadius: 14, padding: "16px 20px", marginBottom: 16, border: "1px solid #e2e8f0" }}>
           <p style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.5 }}>Importar lista de precios</p>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="import-panel-row" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             <input type="number" placeholder="% Margen" value={margenImportacion}
               onChange={e => setMargenImportacion(e.target.value)}
               style={{ width: 110, padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, outline: "none" }} />
@@ -389,7 +395,7 @@ export default function Productos() {
         </div>
       )}
 
-      {/* Lista de productos — formato compacto */}
+      {/* Lista de productos */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {productosVisibles.map(p => {
           const lotes = lotesMap[p.id] || []
@@ -412,23 +418,20 @@ export default function Productos() {
           }
 
           return (
-            <div key={p.id} style={{
-              background: "white", borderRadius: 10,
-              border: "1px solid #e2e8f0",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
-            }}>
+            <div key={p.id} style={{ background: "white", borderRadius: 10, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+
               {/* MODO EDICIÓN */}
               {editando?.id === p.id ? (
                 <div style={{ background: "#0f172a", borderRadius: 10, padding: 18, border: "1px solid rgba(255,255,255,0.08)" }}>
                   <p style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>
                     Editando: <span style={{ color: "white" }}>{p.nombre}</span>
                   </p>
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12 }}>
+                  <div className="producto-edit-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12 }}>
                     {[
-                      { label: "Nombre", key: "nombre", type: "text" },
-                      { label: "Costo", key: "costo", type: "number" },
+                      { label: "Nombre",   key: "nombre", type: "text" },
+                      { label: "Costo",    key: "costo",  type: "number" },
                       { label: "% Margen", key: "margen", type: "number" },
-                      { label: "Stock", key: "stock", type: "number" },
+                      { label: "Stock",    key: "stock",  type: "number" },
                     ].map(f => (
                       <div key={f.key}>
                         <label style={labelStyle}>{f.label}</label>
@@ -438,7 +441,7 @@ export default function Productos() {
                       </div>
                     ))}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 10 }}>
                     <span style={{ color: "#93c5fd", fontSize: 13 }}>
                       💵 Precio estimado: <b style={{ color: "white" }}>{formatearPrecio(precioEstimado)}</b>
                     </span>
@@ -450,12 +453,12 @@ export default function Productos() {
                 </div>
 
               ) : (
-                /* MODO VISTA — compacto */
+                /* MODO VISTA */
                 <div style={{ padding: "10px 14px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div className="producto-item-main" style={{ display: "flex", alignItems: "center", gap: 10 }}>
 
                     {/* Foto miniatura */}
-                    <div onClick={() => abrirSelectorFoto(p.id)} title="Cambiar foto"
+                    <div className="producto-item-foto" onClick={() => abrirSelectorFoto(p.id)} title="Cambiar foto"
                       style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 8, overflow: "hidden", border: "1px solid #e2e8f0", cursor: "pointer", background: "#f9fafb", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       {subiendoFoto === p.id ? (
                         <span style={{ fontSize: 9, color: "#9ca3af" }}>...</span>
@@ -477,27 +480,25 @@ export default function Productos() {
                         ) : null}
                         {badgeLote}
                       </div>
-                      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
-                        Costo: <b style={{ color: "#374151" }}>{formatearPrecio(p.costo)}</b>
-                        <span style={{ margin: "0 6px", color: "#d1d5db" }}>·</span>
-                        Margen: <b style={{ color: "#374151" }}>{p.margen}%</b>
-                        <span style={{ margin: "0 6px", color: "#d1d5db" }}>·</span>
-                        Venta: <b style={{ color: "#374151" }}>{formatearPrecio(p.precio_venta)}</b>
-                        <span style={{ margin: "0 6px", color: "#d1d5db" }}>·</span>
-                        Stock: <b style={{ color: p.stock === 0 ? "#dc2626" : p.stock <= 5 ? "#92400e" : "#374151" }}>{p.stock}</b>
+                      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2, flexWrap: "wrap", display: "flex", gap: 4 }}>
+                        <span>Costo: <b style={{ color: "#374151" }}>{formatearPrecio(p.costo)}</b></span>
+                        <span style={{ color: "#d1d5db" }}>·</span>
+                        <span>Margen: <b style={{ color: "#374151" }}>{p.margen}%</b></span>
+                        <span style={{ color: "#d1d5db" }}>·</span>
+                        <span>Venta: <b style={{ color: "#374151" }}>{formatearPrecio(p.precio_venta)}</b></span>
+                        <span style={{ color: "#d1d5db" }}>·</span>
+                        <span>Stock: <b style={{ color: p.stock === 0 ? "#dc2626" : p.stock <= 5 ? "#92400e" : "#374151" }}>{p.stock}</b></span>
                       </div>
                     </div>
 
                     {/* Acciones */}
-                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <div className="producto-item-acciones" style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                       <button onClick={() => toggleLotes(p.id)} style={{
                         background: lotes.length > 0 ? "#eff6ff" : "#f9fafb",
                         color: lotes.length > 0 ? "#2563eb" : "#9ca3af",
                         border: `1px solid ${lotes.length > 0 ? "#bfdbfe" : "#e5e7eb"}`,
                         borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600
-                      }}>
-                        📅 {lotes.length}
-                      </button>
+                      }}>📅 {lotes.length}</button>
                       <button onClick={() => { setModalLote({ productoId: p.id, productoNombre: p.nombre }); setFormLote({ cantidad: "", fecha_vencimiento: "" }) }} style={{
                         background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0",
                         borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600
@@ -513,36 +514,38 @@ export default function Productos() {
                       {lotes.length === 0 ? (
                         <p style={{ fontSize: 12, color: "#9ca3af" }}>Sin lotes registrados.</p>
                       ) : (
-                        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
-                          <thead>
-                            <tr style={{ color: "#6b7280" }}>
-                              <th style={{ textAlign: "left", paddingBottom: 4, fontWeight: 600 }}>Vencimiento</th>
-                              <th style={{ textAlign: "left", paddingBottom: 4, fontWeight: 600 }}>Días</th>
-                              <th style={{ textAlign: "left", paddingBottom: 4, fontWeight: 600 }}>Estado</th>
-                              <th style={{ textAlign: "left", paddingBottom: 4, fontWeight: 600 }}>Cantidad</th>
-                              <th></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {lotes.map((l: any) => {
-                              const dias = Math.floor((new Date(l.fecha_vencimiento).getTime() - Date.now()) / 86400000)
-                              const est = estadoLote(dias)
-                              return (
-                                <tr key={l.id} style={{ borderTop: "1px solid #f8fafc" }}>
-                                  <td style={{ padding: "4px 0", color: "#374151" }}>{l.fecha_vencimiento}</td>
-                                  <td style={{ padding: "4px 8px", color: est.color, fontWeight: 700 }}>{dias < 0 ? "Vencido" : `${dias}d`}</td>
-                                  <td style={{ padding: "4px 8px" }}>
-                                    <span style={{ background: est.bg, color: est.color, padding: "1px 7px", borderRadius: 5, fontWeight: 700, fontSize: 11 }}>{est.label}</span>
-                                  </td>
-                                  <td style={{ padding: "4px 8px", color: "#374151" }}>{l.cantidad} u.</td>
-                                  <td style={{ textAlign: "right" }}>
-                                    <button onClick={() => setConfirmEliminarLote(l)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 13 }}>🗑️</button>
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", minWidth: 300 }}>
+                            <thead>
+                              <tr style={{ color: "#6b7280" }}>
+                                <th style={{ textAlign: "left", paddingBottom: 4, fontWeight: 600 }}>Vencimiento</th>
+                                <th style={{ textAlign: "left", paddingBottom: 4, fontWeight: 600 }}>Días</th>
+                                <th style={{ textAlign: "left", paddingBottom: 4, fontWeight: 600 }}>Estado</th>
+                                <th style={{ textAlign: "left", paddingBottom: 4, fontWeight: 600 }}>Cantidad</th>
+                                <th></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {lotes.map((l: any) => {
+                                const dias = Math.floor((new Date(l.fecha_vencimiento).getTime() - Date.now()) / 86400000)
+                                const est = estadoLote(dias)
+                                return (
+                                  <tr key={l.id} style={{ borderTop: "1px solid #f8fafc" }}>
+                                    <td style={{ padding: "4px 0", color: "#374151" }}>{l.fecha_vencimiento}</td>
+                                    <td style={{ padding: "4px 8px", color: est.color, fontWeight: 700 }}>{dias < 0 ? "Vencido" : `${dias}d`}</td>
+                                    <td style={{ padding: "4px 8px" }}>
+                                      <span style={{ background: est.bg, color: est.color, padding: "1px 7px", borderRadius: 5, fontWeight: 700, fontSize: 11 }}>{est.label}</span>
+                                    </td>
+                                    <td style={{ padding: "4px 8px", color: "#374151" }}>{l.cantidad} u.</td>
+                                    <td style={{ textAlign: "right" }}>
+                                      <button onClick={() => setConfirmEliminarLote(l)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 13 }}>🗑️</button>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
                       )}
                     </div>
                   )}

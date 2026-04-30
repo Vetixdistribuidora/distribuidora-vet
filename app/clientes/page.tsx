@@ -38,6 +38,24 @@ const inputLightStyle: React.CSSProperties = {
   boxSizing: "border-box", background: "white"
 }
 
+const responsiveStyles = `
+  @media (max-width: 768px) {
+    .clientes-header { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
+    .clientes-header-btn { width: 100% !important; text-align: center !important; }
+    .clientes-card { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
+    .clientes-card-acciones { width: 100% !important; justify-content: flex-end !important; display: flex !important; gap: 8px !important; }
+    .clientes-modal-grid { grid-template-columns: 1fr !important; }
+    .historial-kpis { grid-template-columns: repeat(2, 1fr) !important; }
+    .historial-kpis > div { border-right: none !important; border-bottom: 1px solid rgba(255,255,255,0.08) !important; }
+    .historial-modal-inner { padding: 16px 18px !important; }
+    .historial-header { padding: 18px 18px !important; }
+    .historial-tabs { padding: 0 16px !important; }
+    .venta-pendiente-row { flex-direction: column !important; align-items: flex-start !important; gap: 6px !important; }
+    .pago-row { flex-wrap: wrap !important; gap: 6px !important; }
+    .pago-row button { flex-shrink: 0 !important; }
+  }
+`
+
 export default function Clientes() {
   const [clientes, setClientes] = useState<any[]>([])
   const [cargando, setCargando] = useState(true)
@@ -50,7 +68,6 @@ export default function Clientes() {
   const [confirmEliminar, setConfirmEliminar] = useState<any>(null)
   const [deudasPorCliente, setDeudasPorCliente] = useState<Record<number, number>>({})
 
-  // Historial
   const [modalHistorial, setModalHistorial] = useState<any>(null)
   const [ventas, setVentas] = useState<any[]>([])
   const [tabActiva, setTabActiva] = useState<"historial" | "cuentaCorriente">("historial")
@@ -60,7 +77,6 @@ export default function Clientes() {
   const [productoTop, setProductoTop] = useState("")
   const [deudaTotal, setDeudaTotal] = useState(0)
 
-  // Pago
   const [modalPago, setModalPago] = useState(false)
   const [ventaParaPagar, setVentaParaPagar] = useState<any>(null)
   const [montoPago, setMontoPago] = useState("")
@@ -68,8 +84,7 @@ export default function Clientes() {
   const [guardandoPago, setGuardandoPago] = useState(false)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
-    setToast({ mensaje, tipo })
-    setTimeout(() => setToast(null), 3000)
+    setToast({ mensaje, tipo }); setTimeout(() => setToast(null), 3000)
   }
 
   async function cargar() {
@@ -110,8 +125,7 @@ export default function Clientes() {
     if (error) { mostrarToast("Error: " + error.message, "error"); return }
     mostrarToast("✅ Cliente agregado", "ok")
     setFormNuevo({ nombre: "", apellido: "", cuit: "", telefono: "", localidad: "", porcentaje: "" })
-    setModalNuevo(false)
-    cargar()
+    setModalNuevo(false); cargar()
   }
 
   async function guardarEdicion() {
@@ -125,21 +139,18 @@ export default function Clientes() {
     setGuardando(false)
     if (error) { mostrarToast("Error: " + error.message, "error"); return }
     mostrarToast("✅ Cliente actualizado", "ok")
-    setModalEditar(null)
-    cargar()
+    setModalEditar(null); cargar()
   }
 
   async function eliminar(id: number) {
     const { error } = await supabase.from("clientes").delete().eq("id", id)
     if (error) { mostrarToast("Error: " + error.message, "error"); return }
     mostrarToast("🗑️ Cliente eliminado", "ok")
-    setConfirmEliminar(null)
-    cargar()
+    setConfirmEliminar(null); cargar()
   }
 
   async function abrirHistorial(cliente: any) {
-    setModalHistorial(cliente)
-    setTabActiva("historial")
+    setModalHistorial(cliente); setTabActiva("historial")
     await cargarVentasCliente(cliente.id)
   }
 
@@ -155,8 +166,7 @@ export default function Clientes() {
     }))
     setVentas(conDetalle)
     const total = conDetalle.reduce((s, v) => s + Number(v.total), 0)
-    setTotalGastado(total)
-    setCantidadCompras(conDetalle.length)
+    setTotalGastado(total); setCantidadCompras(conDetalle.length)
     setPromedioCompra(conDetalle.length ? total / conDetalle.length : 0)
     setDeudaTotal(conDetalle.filter(v => v.estado === "cuenta_corriente").reduce((s, v) => s + v.saldo, 0))
     const contador: any = {}
@@ -169,10 +179,7 @@ export default function Clientes() {
   }
 
   function abrirPago(venta: any) {
-    setVentaParaPagar(venta)
-    setMontoPago(String(venta.saldo))
-    setNotaPago("")
-    setModalPago(true)
+    setVentaParaPagar(venta); setMontoPago(String(venta.saldo)); setNotaPago(""); setModalPago(true)
   }
 
   async function registrarPago() {
@@ -189,8 +196,7 @@ export default function Clientes() {
     }
     mostrarToast("✅ Pago registrado", "ok")
     setModalPago(false); setVentaParaPagar(null); setGuardandoPago(false)
-    await cargarVentasCliente(modalHistorial.id)
-    await cargar()
+    await cargarVentasCliente(modalHistorial.id); await cargar()
   }
 
   function imprimirRecibo(pago: any, venta: any) {
@@ -235,21 +241,21 @@ export default function Clientes() {
 
   return (
     <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+      <style>{responsiveStyles}</style>
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+      <div className="clientes-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
           <span style={{ fontWeight: 700, color: "#374151" }}>{clientes.length}</span> clientes
           {Object.keys(deudasPorCliente).length > 0 && (
             <span style={{ marginLeft: 8, color: "#dc2626", fontWeight: 600 }}>· {Object.keys(deudasPorCliente).length} con deuda</span>
           )}
         </p>
-        <button onClick={() => setModalNuevo(true)} style={{
+        <button className="clientes-header-btn" onClick={() => setModalNuevo(true)} style={{
           background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white",
           border: "none", borderRadius: 10, padding: "10px 18px",
-          fontSize: 13, fontWeight: 700, cursor: "pointer",
-          boxShadow: "0 2px 8px rgba(59,130,246,0.3)"
+          fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 8px rgba(59,130,246,0.3)"
         }}>+ Nuevo cliente</button>
       </div>
 
@@ -267,13 +273,12 @@ export default function Clientes() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {clientesFiltrados.map(c => (
-            <div key={c.id} style={{
+            <div key={c.id} className="clientes-card" style={{
               background: "white", borderRadius: 14, padding: "16px 20px",
               border: deudasPorCliente[c.id] ? "1px solid #fecaca" : "1px solid #e2e8f0",
               boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
               display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap"
             }}>
-              {/* Avatar + info */}
               <div style={{ display: "flex", alignItems: "center", gap: 14, flex: 1, minWidth: 0 }}>
                 <div style={{
                   width: 44, height: 44, borderRadius: "50%", flexShrink: 0,
@@ -289,10 +294,9 @@ export default function Clientes() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3 }}>
                     <span style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>{c.nombre} {c.apellido}</span>
                     {deudasPorCliente[c.id] && (
-                      <span style={{
-                        background: "#fef2f2", color: "#dc2626", fontSize: 11,
-                        fontWeight: 700, padding: "2px 8px", borderRadius: 20, border: "1px solid #fecaca"
-                      }}>Debe {fmt(deudasPorCliente[c.id])}</span>
+                      <span style={{ background: "#fef2f2", color: "#dc2626", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, border: "1px solid #fecaca" }}>
+                        Debe {fmt(deudasPorCliente[c.id])}
+                      </span>
                     )}
                   </div>
                   <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, color: "#6b7280" }}>
@@ -303,9 +307,7 @@ export default function Clientes() {
                   </div>
                 </div>
               </div>
-
-              {/* Botones */}
-              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <div className="clientes-card-acciones" style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                 <button onClick={() => abrirHistorial(c)} style={{
                   background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white",
                   border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer"
@@ -331,14 +333,14 @@ export default function Clientes() {
           <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 480, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
             onClick={e => e.stopPropagation()}>
             <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "0 0 24px" }}>Nuevo cliente</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div className="clientes-modal-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               {[
-                { label: "Nombre *", key: "nombre", type: "text" },
-                { label: "Apellido *", key: "apellido", type: "text" },
-                { label: "CUIT", key: "cuit", type: "text" },
-                { label: "Teléfono", key: "telefono", type: "text" },
-                { label: "Localidad", key: "localidad", type: "text" },
-                { label: "% Margen", key: "porcentaje", type: "number" },
+                { label: "Nombre *",  key: "nombre",     type: "text" },
+                { label: "Apellido *",key: "apellido",   type: "text" },
+                { label: "CUIT",      key: "cuit",       type: "text" },
+                { label: "Teléfono",  key: "telefono",   type: "text" },
+                { label: "Localidad", key: "localidad",  type: "text" },
+                { label: "% Margen",  key: "porcentaje", type: "number" },
               ].map(f => (
                 <div key={f.key}>
                   <label style={labelStyle}>{f.label}</label>
@@ -365,14 +367,14 @@ export default function Clientes() {
           <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 480, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
             onClick={e => e.stopPropagation()}>
             <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "0 0 24px" }}>Editar cliente</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div className="clientes-modal-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               {[
-                { label: "Nombre *", key: "nombre", type: "text" },
-                { label: "Apellido *", key: "apellido", type: "text" },
-                { label: "CUIT", key: "cuit", type: "text" },
-                { label: "Teléfono", key: "telefono", type: "text" },
-                { label: "Localidad", key: "localidad", type: "text" },
-                { label: "% Margen", key: "porcentaje", type: "number" },
+                { label: "Nombre *",  key: "nombre",     type: "text" },
+                { label: "Apellido *",key: "apellido",   type: "text" },
+                { label: "CUIT",      key: "cuit",       type: "text" },
+                { label: "Teléfono",  key: "telefono",   type: "text" },
+                { label: "Localidad", key: "localidad",  type: "text" },
+                { label: "% Margen",  key: "porcentaje", type: "number" },
               ].map(f => (
                 <div key={f.key}>
                   <label style={labelStyle}>{f.label}</label>
@@ -397,32 +399,31 @@ export default function Clientes() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
           <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, width: "100%", maxWidth: 660, maxHeight: "88vh", overflow: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
 
-            {/* Header modal */}
-            <div style={{ padding: "24px 28px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
+            <div className="historial-header" style={{ padding: "24px 28px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 20, fontWeight: 800, color: "white" }}>{modalHistorial.nombre} {modalHistorial.apellido}</div>
-                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-                    {modalHistorial.cuit && <span>CUIT: {modalHistorial.cuit} · </span>}
+                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {modalHistorial.cuit && <span>CUIT: {modalHistorial.cuit}</span>}
                     {modalHistorial.telefono && <span>📞 {modalHistorial.telefono}</span>}
-                    {modalHistorial.localidad && <span> · 📍 {modalHistorial.localidad}</span>}
+                    {modalHistorial.localidad && <span>📍 {modalHistorial.localidad}</span>}
                   </div>
                 </div>
                 <button onClick={() => { setModalHistorial(null); setVentas([]) }}
-                  style={{ background: "rgba(255,255,255,0.08)", border: "none", color: "white", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16 }}>✕</button>
+                  style={{ background: "rgba(255,255,255,0.08)", border: "none", color: "white", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16, flexShrink: 0 }}>✕</button>
               </div>
             </div>
 
             {/* KPIs */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="historial-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
               {[
                 { label: "Total comprado", valor: fmt(totalGastado) },
-                { label: "Compras", valor: cantidadCompras },
-                { label: "Promedio", valor: fmt(promedioCompra) },
-                { label: "Producto top", valor: productoTop },
+                { label: "Compras",        valor: cantidadCompras },
+                { label: "Promedio",       valor: fmt(promedioCompra) },
+                { label: "Producto top",   valor: productoTop },
               ].map((k, i) => (
                 <div key={i} style={{ padding: "14px 16px", textAlign: "center", borderRight: i < 3 ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "white" }}>{k.valor}</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "white", wordBreak: "break-word" }}>{k.valor}</div>
                   <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{k.label}</div>
                 </div>
               ))}
@@ -435,29 +436,29 @@ export default function Clientes() {
             )}
 
             {/* Tabs */}
-            <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.08)", padding: "0 24px" }}>
+            <div className="historial-tabs" style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.08)", padding: "0 24px" }}>
               {[
-                { key: "historial", label: "Todas las ventas" },
+                { key: "historial",       label: "Todas las ventas" },
                 { key: "cuentaCorriente", label: `Cuenta corriente${ventasPendientes.length > 0 ? ` (${ventasPendientes.length})` : ""}` },
               ].map((t: any) => (
                 <button key={t.key} onClick={() => setTabActiva(t.key)} style={{
-                  padding: "14px 18px", border: "none", background: "none", cursor: "pointer",
+                  padding: "14px 16px", border: "none", background: "none", cursor: "pointer",
                   fontSize: 13, fontWeight: 600,
                   color: tabActiva === t.key ? "#3b82f6" : "#6b7280",
                   borderBottom: tabActiva === t.key ? "2px solid #3b82f6" : "2px solid transparent",
-                  marginBottom: -1
+                  marginBottom: -1, whiteSpace: "nowrap"
                 }}>{t.label}</button>
               ))}
             </div>
 
-            <div style={{ padding: "20px 24px" }}>
+            <div className="historial-modal-inner" style={{ padding: "20px 24px" }}>
               {/* Tab historial */}
               {tabActiva === "historial" && (
                 <div>
                   {ventas.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "#6b7280" }}>Sin ventas registradas</div>}
                   {ventas.map(v => (
                     <div key={v.id} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 14, marginBottom: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <b style={{ fontSize: 14, color: "white" }}>#{v.nro_factura || v.id}</b>
                           <span style={{
@@ -492,7 +493,7 @@ export default function Clientes() {
                     const progreso = v.total > 0 ? (v.totalPagado / v.total) * 100 : 0
                     return (
                       <div key={v.id} style={{ background: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.2)", borderRadius: 12, padding: 16, marginBottom: 12 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                        <div className="venta-pendiente-row" style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
                           <b style={{ color: "white", fontSize: 14 }}>#{v.nro_factura || v.id}</b>
                           <div style={{ textAlign: "right" }}>
                             <div style={{ fontSize: 11, color: "#6b7280" }}>Total: {fmt(v.total)}</div>
@@ -515,31 +516,31 @@ export default function Clientes() {
                           <div style={{ marginTop: 10, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "8px 12px" }}>
                             <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#9ca3af" }}>Pagos registrados:</div>
                             {v.pagos.map((p: any, i: number) => (
-                              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: i < v.pagos.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
-                                <span style={{ color: "#d1d5db" }}>{fechaCorta(p.fecha)} — <b style={{ color: "#4ade80" }}>{fmt(p.monto)}</b>{p.nota ? <span style={{ color: "#6b7280" }}> ({p.nota})</span> : ""}</span>
-                                <button onClick={() => imprimirRecibo(p, v)} style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Recibo</button>
+                              <div key={i} className="pago-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: i < v.pagos.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+                                <span style={{ color: "#d1d5db", flex: 1, minWidth: 0 }}>{fechaCorta(p.fecha)} — <b style={{ color: "#4ade80" }}>{fmt(p.monto)}</b>{p.nota ? <span style={{ color: "#6b7280" }}> ({p.nota})</span> : ""}</span>
+                                <button onClick={() => imprimirRecibo(p, v)} style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600, flexShrink: 0, marginLeft: 8 }}>Recibo</button>
                               </div>
                             ))}
                           </div>
                         )}
                         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                           <button onClick={() => abrirPago(v)} style={{ flex: 1, padding: "9px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 8, color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ Registrar pago</button>
-                          <button onClick={() => reimprimirFactura(v)} style={{ padding: "9px 14px", background: "rgba(59,130,246,0.15)", border: "none", borderRadius: 8, color: "#3b82f6", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>🖨️ Reimprimir</button>
+                          <button onClick={() => reimprimirFactura(v)} style={{ padding: "9px 14px", background: "rgba(59,130,246,0.15)", border: "none", borderRadius: 8, color: "#3b82f6", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>🖨️</button>
                         </div>
                       </div>
                     )
                   })}
                   {ventasCobradas.filter(v => v.pagos?.length > 0).map(v => (
                     <div key={v.id} style={{ background: "rgba(74,222,128,0.04)", border: "1px solid rgba(74,222,128,0.12)", borderRadius: 10, padding: 12, marginBottom: 8, opacity: 0.85 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
                         <b style={{ color: "white", fontSize: 13 }}>#{v.nro_factura || v.id}</b>
                         <span style={{ background: "rgba(74,222,128,0.15)", color: "#4ade80", fontSize: 11, padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>Saldada</span>
                       </div>
                       <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>Total: {fmt(Number(v.total))}</div>
                       {v.pagos.map((p: any, i: number) => (
-                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "3px 0" }}>
-                          <span style={{ color: "#9ca3af" }}>{fechaCorta(p.fecha)} — <b style={{ color: "#4ade80" }}>{fmt(p.monto)}</b>{p.nota ? <span> ({p.nota})</span> : ""}</span>
-                          <button onClick={() => imprimirRecibo(p, v)} style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>Recibo</button>
+                        <div key={i} className="pago-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "3px 0", flexWrap: "wrap", gap: 4 }}>
+                          <span style={{ color: "#9ca3af", flex: 1, minWidth: 0 }}>{fechaCorta(p.fecha)} — <b style={{ color: "#4ade80" }}>{fmt(p.monto)}</b>{p.nota ? <span> ({p.nota})</span> : ""}</span>
+                          <button onClick={() => imprimirRecibo(p, v)} style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, flexShrink: 0 }}>Recibo</button>
                         </div>
                       ))}
                     </div>
