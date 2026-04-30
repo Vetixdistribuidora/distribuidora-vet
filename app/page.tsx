@@ -165,10 +165,10 @@ setVentasHoyLista(ventasHoy)
   ]
 
   return (
-    <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif", background: "#f1f5f9", minHeight: "100vh", padding: 24 }}>
+    <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
 
       {/* KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(220px, 100%), 1fr))", gap: 16, marginBottom: 24 }}>
         {kpiCards.map(k => (
           <div key={k.titulo}
             onClick={k.onClick}
@@ -236,7 +236,7 @@ setVentasHoyLista(ventasHoy)
       </div>
 
       {/* Gráfico + Vencimientos */}
-      <div style={{ display: "grid", gridTemplateColumns: lotesPorVencer.length > 0 ? "1fr 1fr" : "1fr", gap: 16, marginBottom: 24 }}>
+      <div className="grid-grafico" style={{ display: "grid", gridTemplateColumns: lotesPorVencer.length > 0 ? "1fr 1fr" : "1fr", gap: 16, marginBottom: 24 }}>
         <div style={{ background: "white", borderRadius: 16, padding: 24, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
           <h3 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: "#374151" }}>📈 Ventas últimos 7 días</h3>
           <ResponsiveContainer width="100%" height={220}>

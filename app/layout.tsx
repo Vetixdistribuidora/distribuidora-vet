@@ -59,6 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/proveedores")) return "Proveedores"
     if (pathname.startsWith("/compras")) return "Compras"
     if (pathname.startsWith("/cuentas")) return "Cuenta Corriente"
+    if (pathname.startsWith("/deudores")) return "Deudores"
     return ""
   }
 
@@ -70,6 +71,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/proveedores")) return "🚚"
     if (pathname.startsWith("/compras")) return "🧾"
     if (pathname.startsWith("/cuentas")) return "📄"
+    if (pathname.startsWith("/deudores")) return "⚠️"
     return ""
   }
 
@@ -164,6 +166,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </svg>
             Cuenta Corriente
           </Link>
+          <Link href="/deudores" style={getItemStyle("/deudores")} onClick={() => setSidebarAbierto(false)}>
+            <svg style={iconStyle("#f87171", pathname.startsWith("/deudores"))} fill="none" strokeWidth="2" viewBox="0 0 24 24">
+              <circle cx="12" cy="7" r="4" />
+              <path d="M5.5 21a6.5 6.5 0 0 1 13 0" />
+              <line x1="17" y1="3" x2="21" y2="7" />
+              <line x1="21" y1="3" x2="17" y2="7" />
+            </svg>
+            Deudores
+          </Link>
         </nav>
       </div>
 
@@ -196,6 +207,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <style>{`
           @media (max-width: 768px) {
             .desktop-sidebar { display: none !important; }
@@ -220,6 +232,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="mobile-overlay" style={{
           display: "none",
           position: "fixed", inset: 0, zIndex: 100,
+          pointerEvents: sidebarAbierto ? "auto" : "none",
         }}>
           {/* Backdrop */}
           {sidebarAbierto && (

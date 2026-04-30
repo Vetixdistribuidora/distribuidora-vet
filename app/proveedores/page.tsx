@@ -18,6 +18,17 @@ interface Proveedor {
 
 const EMPTY_FORM = { nombre: "", cuit: "", telefono: "", email: "", direccion: "", notas: "" };
 
+const responsiveStyles = `
+  @media (max-width: 768px) {
+    .prov-header { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
+    .prov-header-btn { width: 100% !important; text-align: center !important; }
+    .prov-card { flex-direction: column !important; align-items: flex-start !important; }
+    .prov-card-acciones { width: 100% !important; justify-content: flex-end !important; display: flex !important; gap: 8px !important; margin-top: 10px !important; }
+    .prov-modal-grid { grid-template-columns: 1fr !important; }
+    .prov-modal-inner { padding: 24px 18px !important; }
+  }
+`
+
 function fmt(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
 }
@@ -113,16 +124,17 @@ export default function ProveedoresPage() {
 
   return (
     <div style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+      <style>{responsiveStyles}</style>
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+      <div className="prov-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
           <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
             <span style={{ fontWeight: 700, color: "#374151" }}>{proveedores.length}</span> proveedor{proveedores.length !== 1 ? "es" : ""}
             {totalDeuda > 0 && <span style={{ marginLeft: 10, color: "#dc2626", fontWeight: 600 }}>· Deuda total: {fmt(totalDeuda)}</span>}
           </p>
         </div>
-        <button onClick={abrirCrear} style={{
+        <button onClick={abrirCrear} className="prov-header-btn" style={{
           background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white",
           border: "none", borderRadius: 10, padding: "10px 18px",
           fontSize: 13, fontWeight: 700, cursor: "pointer",
@@ -147,7 +159,7 @@ export default function ProveedoresPage() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {filtrados.map(p => (
-            <div key={p.id} style={{
+            <div key={p.id} className="prov-card" style={{
               background: "white", borderRadius: 14, padding: "16px 20px",
               border: p.saldo_pendiente > 0 ? "1px solid #fecaca" : "1px solid #e2e8f0",
               boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
@@ -176,7 +188,7 @@ export default function ProveedoresPage() {
               </div>
 
               {/* Saldo + botones */}
-              <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
+              <div className="prov-card-acciones" style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
                 {p.saldo_pendiente > 0 ? (
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 2 }}>Deuda pendiente</div>
@@ -210,7 +222,7 @@ export default function ProveedoresPage() {
       {modalAbierto && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
           onClick={cerrarModal}>
-          <div style={{
+          <div className="prov-modal-inner" style={{
             background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)",
             borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 480,
             boxShadow: "0 24px 64px rgba(0,0,0,0.6)"
@@ -229,7 +241,7 @@ export default function ProveedoresPage() {
                 <input type="text" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })}
                   placeholder="Ej: Laboratorio Holliday Scott" style={inputStyle} />
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div className="prov-modal-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <div>
                   <label style={labelStyle}>CUIT</label>
                   <input type="text" value={form.cuit} onChange={e => setForm({ ...form, cuit: e.target.value })}
