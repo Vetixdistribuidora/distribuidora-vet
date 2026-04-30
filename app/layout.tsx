@@ -80,9 +80,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const inicialAvatar = usuario?.email?.charAt(0).toUpperCase() ?? "?"
   const emailCorto = usuario?.email ?? ""
 
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {})
+    }
+  }, [])
+
   if (isLoginPage) {
     return (
       <html lang="es">
+        <head>
+          <meta name="theme-color" content="#1e40af" />
+          <link rel="manifest" href="/manifest.webmanifest" />
+        </head>
         <body>
           {children}
         </body>
@@ -216,6 +226,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#1e40af" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="VETIX" />
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
         <style>{`
           @media (max-width: 768px) {
             .desktop-sidebar { display: none !important; }
