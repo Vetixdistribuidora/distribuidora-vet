@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { supabase } from "../../lib/supabase"
 
 function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
@@ -79,6 +79,12 @@ export default function Ventas() {
   const [esCuentaCorriente, setEsCuentaCorriente] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [busquedaProducto, setBusquedaProducto] = useState("")
+  const [productoIndice, setProductoIndice] = useState(-1)
+  const [busquedaCliente, setBusquedaCliente] = useState("")
+  const [clienteDropdown, setClienteDropdown] = useState(false)
+  const [clienteIndice, setClienteIndice] = useState(-1)
+  const inputProductoRef = useRef<HTMLInputElement>(null)
+  const inputCantidadRef = useRef<HTMLInputElement>(null)
   const [toast, setToast] = useState<any>(null)
 
   const [ventas, setVentas] = useState<any[]>([])
@@ -98,6 +104,28 @@ export default function Ventas() {
 
   useEffect(() => { cargar() }, [])
   useEffect(() => { if (tab === "historial") cargarHistorial() }, [tab])
+
+  // Borrador automático en localStorage
+  useEffect(() => {
+    if (carrito.length === 0 && !clienteId) return
+    localStorage.setItem("vetix_borrador", JSON.stringify({ carrito, clienteId, clienteSeleccionado, iva, esCuentaCorriente, busquedaCliente }))
+  }, [carrito, clienteId, iva, esCuentaCorriente])
+
+  useEffect(() => {
+    const guardado = localStorage.getItem("vetix_borrador")
+    if (!guardado) return
+    try {
+      const b = JSON.parse(guardado)
+      if (b.carrito?.length > 0) {
+        setCarrito(b.carrito)
+        setClienteId(b.clienteId || "")
+        setClienteSeleccionado(b.clienteSeleccionado || null)
+        setBusquedaCliente(b.busquedaCliente || "")
+        setIva(b.iva || "21")
+        setEsCuentaCorriente(b.esCuentaCorriente || false)
+      }
+    } catch {}
+  }, [])
 
   async function cargar() {
     const { data: c } = await supabase.from("clientes").select("*").order("nombre")
@@ -188,8 +216,17 @@ export default function Ventas() {
     setReimprimiendo(false)
   }
 
-  function seleccionarCliente(id: string) {
-    setClienteId(id); setClienteSeleccionado(clientes.find(c => String(c.id) === id) || null)
+  function seleccionarCliente(c: any) {
+    setClienteId(String(c.id))
+    setClienteSeleccionado(c)
+    setBusquedaCliente(c.nombre + " " + c.apellido)
+    setClienteDropdown(false)
+    setClienteIndice(-1)
+  }
+
+  function limpiarCliente() {
+    setClienteId(""); setClienteSeleccionado(null)
+    setBusquedaCliente(""); setClienteDropdown(false); setClienteIndice(-1)
   }
 
   function agregarAlCarrito() {
@@ -265,7 +302,8 @@ export default function Ventas() {
     }
     await supabase.from("facturas_impresion").insert([{ nro_factura: nroFactura, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura, clienteSeleccionado, carrito: [...carrito], subtotal, ivaNum, total, esCuentaCorriente } }])
     mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : "✅ Venta confirmada", "ok")
-    setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setEsCuentaCorriente(false)
+    setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false)
+    localStorage.removeItem("vetix_borrador")
     setGuardando(false); cargar()
   }
 
@@ -304,6 +342,13 @@ export default function Ventas() {
       </div>
 
       {/* ══ TAB NUEVA VENTA ══ */}
+      {tab === "nueva" && carrito.length > 0 && clienteSeleccionado && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13 }}>
+          <span style={{ color: "#92400e" }}>📋 Borrador restaurado — {carrito.length} producto{carrito.length !== 1 ? "s" : ""} para <b>{clienteSeleccionado.nombre} {clienteSeleccionado.apellido}</b></span>
+          <button onClick={() => { setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); localStorage.removeItem("vetix_borrador") }}
+            style={{ background: "none", border: "none", color: "#b45309", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>Descartar ×</button>
+        </div>
+      )}
       {tab === "nueva" && (
         <div className="ventas-grid" style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20, alignItems: "start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -312,13 +357,57 @@ export default function Ventas() {
             <div style={{ background: "white", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>Datos de la venta</p>
               <div className="ventas-datos-grid" style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 12 }}>
-                <div>
+                {/* Buscador de clientes */}
+                <div style={{ position: "relative" }}>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>Cliente *</label>
-                  <select value={clienteId} onChange={e => seleccionarCliente(e.target.value)}
-                    style={{ width: "100%", padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, color: "#111827", outline: "none", background: "white" }}>
-                    <option value="">Seleccioná un cliente</option>
-                    {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre} {c.apellido}</option>)}
-                  </select>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type="text"
+                      placeholder="Buscar cliente..."
+                      value={busquedaCliente}
+                      onChange={e => {
+                        setBusquedaCliente(e.target.value)
+                        setClienteDropdown(true)
+                        setClienteIndice(-1)
+                        if (!e.target.value) limpiarCliente()
+                      }}
+                      onFocus={() => setClienteDropdown(true)}
+                      onBlur={() => setTimeout(() => setClienteDropdown(false), 150)}
+                      onKeyDown={e => {
+                        const filtrados = clientes.filter(c => (c.nombre + " " + c.apellido).toLowerCase().includes(busquedaCliente.toLowerCase())).slice(0, 8)
+                        if (e.key === "ArrowDown") { e.preventDefault(); setClienteIndice(i => Math.min(i + 1, filtrados.length - 1)) }
+                        else if (e.key === "ArrowUp") { e.preventDefault(); setClienteIndice(i => Math.max(i - 1, 0)) }
+                        else if (e.key === "Enter" && clienteIndice >= 0) { e.preventDefault(); seleccionarCliente(filtrados[clienteIndice]) }
+                        else if (e.key === "Escape") { setClienteDropdown(false) }
+                      }}
+                      style={{ width: "100%", padding: "10px 36px 10px 14px", border: clienteSeleccionado ? "1px solid #3b82f6" : "1px solid #d1d5db", borderRadius: 10, fontSize: 14, color: "#111827", outline: "none", boxSizing: "border-box", background: clienteSeleccionado ? "#f0f9ff" : "white" }}
+                    />
+                    {clienteSeleccionado && (
+                      <button onClick={limpiarCliente} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
+                    )}
+                  </div>
+                  {clienteDropdown && busquedaCliente && !clienteSeleccionado && (() => {
+                    const filtrados = clientes.filter(c => (c.nombre + " " + c.apellido).toLowerCase().includes(busquedaCliente.toLowerCase())).slice(0, 8)
+                    if (!filtrados.length) return null
+                    return (
+                      <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 20, overflow: "hidden" }}>
+                        {filtrados.map((c, idx) => (
+                          <div key={c.id} onMouseDown={() => seleccionarCliente(c)}
+                            style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc", background: idx === clienteIndice ? "#eff6ff" : "white", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ fontWeight: 600, color: "#111827" }}>{c.nombre} {c.apellido}</span>
+                            <span style={{ fontSize: 11, color: "#9ca3af" }}>{c.localidad || ""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
+                  {clienteSeleccionado && (
+                    <div style={{ marginTop: 6, padding: "6px 10px", background: "#f0f9ff", borderRadius: 8, border: "1px solid #bae6fd", fontSize: 12, color: "#0369a1", display: "flex", gap: 12, flexWrap: "wrap" }}>
+                      {clienteSeleccionado.localidad && <span>📍 {clienteSeleccionado.localidad}</span>}
+                      {clienteSeleccionado.telefono && <span>📞 {clienteSeleccionado.telefono}</span>}
+                      {clienteSeleccionado.porcentaje > 0 && <span style={{ background: "#dbeafe", color: "#1d4ed8", padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>+{clienteSeleccionado.porcentaje}%</span>}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>N° Presupuesto</label>
@@ -326,44 +415,57 @@ export default function Ventas() {
                     style={{ width: "100%", padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, color: "#111827", outline: "none", boxSizing: "border-box" }} />
                 </div>
               </div>
-              {clienteSeleccionado && (
-                <div style={{ marginTop: 10, padding: "8px 12px", background: "#f0f9ff", borderRadius: 8, border: "1px solid #bae6fd", fontSize: 12, color: "#0369a1" }}>
-                  📍 {clienteSeleccionado.localidad || "—"} · 📞 {clienteSeleccionado.telefono || "—"}
-                  {clienteSeleccionado.porcentaje > 0 && <span style={{ marginLeft: 8, background: "#dbeafe", color: "#1d4ed8", padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>+{clienteSeleccionado.porcentaje}%</span>}
-                </div>
-              )}
             </div>
 
             {/* Buscador productos */}
             <div style={{ background: "white", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>Agregar producto</p>
               <div className="ventas-agregar-grid" style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: 10, alignItems: "end" }}>
-                <div>
+                <div style={{ position: "relative" }}>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>Buscar producto</label>
-                  <input type="text" placeholder="Escribí para buscar..." value={busquedaProducto}
-                    onChange={e => { setBusquedaProducto(e.target.value); setProductoId("") }}
-                    style={{ width: "100%", padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+                  <input
+                    ref={inputProductoRef}
+                    type="text"
+                    placeholder="Escribí para buscar..."
+                    value={busquedaProducto}
+                    onChange={e => { setBusquedaProducto(e.target.value); setProductoId(""); setProductoIndice(-1) }}
+                    onKeyDown={e => {
+                      if (e.key === "ArrowDown") { e.preventDefault(); setProductoIndice(i => Math.min(i + 1, productosFiltrados.length - 1)) }
+                      else if (e.key === "ArrowUp") { e.preventDefault(); setProductoIndice(i => Math.max(i - 1, 0)) }
+                      else if (e.key === "Enter") {
+                        e.preventDefault()
+                        if (productoIndice >= 0 && productosFiltrados[productoIndice]) {
+                          const p = productosFiltrados[productoIndice]
+                          setProductoId(String(p.id)); setBusquedaProducto(p.nombre); setProductoIndice(-1)
+                          setTimeout(() => inputCantidadRef.current?.focus(), 50)
+                        } else if (productoId) {
+                          agregarAlCarrito()
+                        }
+                      }
+                      else if (e.key === "Escape") { setBusquedaProducto(""); setProductoId(""); setProductoIndice(-1) }
+                    }}
+                    style={{ width: "100%", padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box" }}
+                  />
                   {busquedaProducto && productosFiltrados.length > 0 && !productoId && (
-                    <div style={{ position: "relative" }}>
-                      <div style={{ position: "absolute", top: 4, left: 0, right: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 10, maxHeight: 220, overflowY: "auto" }}>
-                        {productosFiltrados.map(p => (
-                          <div key={p.id} onClick={() => { setProductoId(String(p.id)); setBusquedaProducto(p.nombre) }}
-                            style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}
-                            onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = "#f0f9ff"}
-                            onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "white"}>
-                            <span style={{ color: "#111827", fontWeight: 500 }}>{p.nombre}</span>
-                            <span style={{ color: "#6b7280", fontSize: 12, marginLeft: 8, flexShrink: 0 }}>
-                              {p.stock === 0 ? <span style={{ color: "#ef4444" }}>Sin stock</span> : `Stock: ${p.stock}`} · ${p.precio_venta?.toLocaleString("es-AR")}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                    <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 20, maxHeight: 240, overflowY: "auto" }}>
+                      {productosFiltrados.map((p, idx) => (
+                        <div key={p.id}
+                          onMouseDown={() => { setProductoId(String(p.id)); setBusquedaProducto(p.nombre); setProductoIndice(-1); setTimeout(() => inputCantidadRef.current?.focus(), 50) }}
+                          style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", background: idx === productoIndice ? "#eff6ff" : "white" }}>
+                          <span style={{ color: "#111827", fontWeight: 500 }}>{p.nombre}</span>
+                          <span style={{ color: p.stock === 0 ? "#ef4444" : "#6b7280", fontSize: 12, marginLeft: 8, flexShrink: 0 }}>
+                            {p.stock === 0 ? "Sin stock" : `Stock: ${p.stock}`} · ${p.precio_venta?.toLocaleString("es-AR")}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>Cantidad</label>
-                  <input type="number" min="1" value={cantidad} onChange={e => setCantidad(e.target.value)}
+                  <input
+                    ref={inputCantidadRef}
+                    type="number" min="1" value={cantidad} onChange={e => setCantidad(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && agregarAlCarrito()}
                     style={{ width: "100%", padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box", textAlign: "center" }} />
                 </div>
