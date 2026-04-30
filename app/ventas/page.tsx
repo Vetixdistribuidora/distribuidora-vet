@@ -90,6 +90,7 @@ export default function Ventas() {
   const [loadingDetalle, setLoadingDetalle] = useState(false)
   const [confirmAnular, setConfirmAnular] = useState<any>(null)
   const [anulando, setAnulando] = useState(false)
+  const [reimprimiendo, setReimprimiendo] = useState(false)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo }); setTimeout(() => setToast(null), 3000)
@@ -152,6 +153,39 @@ export default function Ventas() {
     if (ventaDetalle?.id === confirmAnular.id) setVentaDetalle({ ...ventaDetalle, estado: "anulada" })
     mostrarToast("🗑️ Venta anulada y stock restaurado", "ok")
     cargarHistorial()
+  }
+
+  async function reimprimir(venta: any, itemsCargados?: any[]) {
+    setReimprimiendo(true)
+    const { data: guardada } = await supabase
+      .from("facturas_impresion").select("datos").eq("venta_id", venta.id).maybeSingle()
+    if (guardada?.datos) {
+      generarHTMLEImprimir(guardada.datos)
+    } else {
+      // Reconstruir desde datos de la venta
+      const items = itemsCargados?.length
+        ? itemsCargados
+        : (await supabase.from("detalle_ventas").select("*, productos(nombre)").eq("venta_id", venta.id)).data || []
+      const { data: clienteData } = await supabase
+        .from("clientes").select("*").eq("id", venta.cliente_id).maybeSingle()
+      const carritoReconstruido = items.map((d: any) => ({
+        producto_id: d.producto_id, nombre: d.productos?.nombre || "",
+        cantidad: d.cantidad, precio: d.precio, bonificacion: 0
+      }))
+      const subtotalCalc = carritoReconstruido.reduce((acc: number, it: any) => acc + it.cantidad * it.precio, 0)
+      const totalCalc = Number(venta.total)
+      const ivaCalc = subtotalCalc > 0 ? Math.round((totalCalc / subtotalCalc - 1) * 100) : 21
+      generarHTMLEImprimir({
+        nroFactura: venta.nro_factura,
+        clienteSeleccionado: clienteData || venta.clientes || {},
+        carrito: carritoReconstruido,
+        subtotal: subtotalCalc,
+        ivaNum: ivaCalc >= 0 ? ivaCalc : 0,
+        total: totalCalc,
+        esCuentaCorriente: venta.estado === "cuenta_corriente",
+      })
+    }
+    setReimprimiendo(false)
   }
 
   function seleccionarCliente(id: string) {
@@ -517,11 +551,12 @@ export default function Ventas() {
                       </div>
                       <div style={{ fontSize: 12, color: "#6b7280" }}>📅 {v.fecha?.slice(0, 10)} · N° {v.nro_factura}</div>
                     </div>
-                    <div className="acciones" style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                    <div className="acciones" style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                       <span style={{ fontSize: 16, fontWeight: 800, color: "#111827" }}>{fmt(Number(v.total))}</span>
-                      <button onClick={() => verDetalle(v)} style={{ padding: "6px 14px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#374151" }}>Ver detalle</button>
+                      <button onClick={() => verDetalle(v)} style={{ padding: "6px 12px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#374151" }}>Ver</button>
+                      <button onClick={() => reimprimir(v)} disabled={reimprimiendo} style={{ padding: "6px 12px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#2563eb" }}>🖨️</button>
                       {v.estado !== "anulada" && (
-                        <button onClick={() => setConfirmAnular(v)} style={{ padding: "6px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#dc2626" }}>Anular</button>
+                        <button onClick={() => setConfirmAnular(v)} style={{ padding: "6px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#dc2626" }}>Anular</button>
                       )}
                     </div>
                   </div>
@@ -560,11 +595,17 @@ export default function Ventas() {
               <span style={{ color: "#9ca3af", fontSize: 13 }}>Total</span>
               <span style={{ color: "white", fontSize: 18, fontWeight: 800 }}>{fmt(Number(ventaDetalle.total))}</span>
             </div>
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                onClick={() => reimprimir(ventaDetalle, detalleItems.length ? detalleItems : undefined)}
+                disabled={reimprimiendo || loadingDetalle}
+                style={{ flex: 1, minWidth: 120, padding: "10px", background: "linear-gradient(135deg, #1e40af, #3b82f6)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: reimprimiendo || loadingDetalle ? 0.6 : 1 }}>
+                {reimprimiendo ? "Generando..." : "🖨️ Reimprimir"}
+              </button>
               {ventaDetalle.estado !== "anulada" && (
-                <button onClick={() => { setConfirmAnular(ventaDetalle); setVentaDetalle(null) }} style={{ flex: 1, padding: "10px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Anular venta</button>
+                <button onClick={() => { setConfirmAnular(ventaDetalle); setVentaDetalle(null) }} style={{ flex: 1, minWidth: 120, padding: "10px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Anular venta</button>
               )}
-              <button onClick={() => setVentaDetalle(null)} style={{ flex: 1, padding: "10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer" }}>Cerrar</button>
+              <button onClick={() => setVentaDetalle(null)} style={{ flex: 1, minWidth: 120, padding: "10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer" }}>Cerrar</button>
             </div>
           </div>
         </div>
