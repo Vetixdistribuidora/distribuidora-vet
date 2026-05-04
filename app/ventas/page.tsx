@@ -356,10 +356,12 @@ export default function Ventas() {
     generarHTMLEImprimir({ nroFactura, clienteSeleccionado, carrito: [...carrito], subtotal, ivaNum, total, esCuentaCorriente, metodoCobro }, tipo)
   }
 
+  const terminoBusqueda = busquedaProducto.toLowerCase()
   const productosFiltrados = productos.filter(p =>
     !carrito.find(i => i.producto_id === p.id) &&
-    p.nombre.toLowerCase().includes(busquedaProducto.toLowerCase())
-  ).slice(0, 50)
+    (p.nombre.toLowerCase().includes(terminoBusqueda) ||
+     (p.laboratorio && p.laboratorio.toLowerCase().includes(terminoBusqueda)))
+  ).slice(0, 80)
 
   const ventasFiltradas = ventas.filter(v => {
     const texto = [v.clientes?.nombre, v.clientes?.apellido, v.nro_factura].join(" ").toLowerCase()

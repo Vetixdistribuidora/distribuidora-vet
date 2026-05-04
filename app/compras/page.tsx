@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabase";
 import * as XLSX from "xlsx";
 
 interface Proveedor { id: number; nombre: string; }
-interface Producto { id: number; nombre: string; stock: number; }
+interface Producto { id: number; nombre: string; stock: number; laboratorio?: string; }
 interface ItemForm {
   producto_id: number; nombre: string;
   cantidad: string; precio_unitario: string; fecha_vencimiento: string;
@@ -126,7 +126,7 @@ export default function ComprasPage() {
     const [{ data: c }, { data: p }, { data: pr }] = await Promise.all([
       supabase.from("compras").select("*, proveedores(nombre)").order("fecha", { ascending: false }),
       supabase.from("proveedores").select("id, nombre").order("nombre"),
-      supabase.from("productos").select("id, nombre, stock").order("nombre"),
+      supabase.from("productos").select("id, nombre, stock, laboratorio").order("nombre"),
     ]);
     if (c) setCompras(c);
     if (p) setProveedores(p);
@@ -285,10 +285,12 @@ export default function ComprasPage() {
     XLSX.writeFile(wb, "compras_" + new Date().toISOString().slice(0, 10) + ".xlsx")
   }
   const totalDeuda = compras.filter(c => c.estado !== "pagado").reduce((s, c) => s + (c.total - c.total_pagado), 0);
+  const terminoBusquedaProducto = busquedaProducto.toLowerCase();
   const productosFiltradosDropdown = productos.filter(p =>
     !items.find(i => i.producto_id === p.id) &&
-    p.nombre.toLowerCase().includes(busquedaProducto.toLowerCase())
-  ).slice(0, 40);
+    (p.nombre.toLowerCase().includes(terminoBusquedaProducto) ||
+     (p.laboratorio && p.laboratorio.toLowerCase().includes(terminoBusquedaProducto)))
+  ).slice(0, 80);
 
   return (
     <div>
@@ -436,15 +438,20 @@ export default function ComprasPage() {
                       else if (e.key === "Escape") { setProductoDropdown(false); setProductoIndiceCompras(-1) }
                     }}
                     style={inputDarkStyle} />
-                  {productoDropdown && busquedaProducto && productosFiltradosDropdown.length > 0 && (
+                  {productoDropdown && busquedaProducto && (
                     <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, zIndex: 10, maxHeight: 220, overflowY: "auto", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
-                      {productosFiltradosDropdown.map((p, idx) => (
+                      {productosFiltradosDropdown.length === 0 ? (
+                        <div style={{ padding: "12px 14px", fontSize: 13, color: "#6b7280", textAlign: "center" }}>Sin resultados</div>
+                      ) : productosFiltradosDropdown.map((p, idx) => (
                         <div key={p.id} onMouseDown={() => agregarItem(p)}
                           style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.06)", color: "white", background: idx === productoIndiceCompras ? "rgba(59,130,246,0.25)" : "transparent" }}
                           onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = idx === productoIndiceCompras ? "rgba(59,130,246,0.25)" : "rgba(59,130,246,0.15)"}
                           onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = idx === productoIndiceCompras ? "rgba(59,130,246,0.25)" : "transparent"}>
-                          <span style={{ fontWeight: 500 }}>{p.nombre}</span>
-                          <span style={{ fontSize: 11, color: "#6b7280" }}>Stock: {p.stock}</span>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            <span style={{ fontWeight: 500 }}>{p.nombre}</span>
+                            {p.laboratorio && <span style={{ fontSize: 11, color: "#86efac" }}>{p.laboratorio}</span>}
+                          </div>
+                          <span style={{ fontSize: 11, color: "#6b7280", flexShrink: 0, marginLeft: 8 }}>Stock: {p.stock}</span>
                         </div>
                       ))}
                     </div>
