@@ -123,14 +123,23 @@ export default function ComprasPage() {
 
   async function cargarTodo() {
     setLoading(true);
-    const [{ data: c }, { data: p }, { data: pr }] = await Promise.all([
+    const [{ data: c }, { data: p }] = await Promise.all([
       supabase.from("compras").select("*, proveedores(nombre)").order("fecha", { ascending: false }),
       supabase.from("proveedores").select("id, nombre").order("nombre"),
-      supabase.from("productos").select("id, nombre, stock, laboratorio").order("nombre"),
     ]);
     if (c) setCompras(c);
     if (p) setProveedores(p);
-    if (pr) setProductos(pr);
+
+    let todosProductos: Producto[] = [];
+    let desde = 0;
+    while (true) {
+      const { data: pr } = await supabase.from("productos").select("id, nombre, stock, laboratorio").order("nombre").range(desde, desde + 999);
+      if (!pr || pr.length === 0) break;
+      todosProductos = [...todosProductos, ...pr];
+      if (pr.length < 1000) break;
+      desde += 1000;
+    }
+    setProductos(todosProductos);
     setLoading(false);
   }
 
