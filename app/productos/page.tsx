@@ -100,7 +100,9 @@ export default function Productos() {
   const [columnas, setColumnas] = useState<string[]>([])
   const [colNombre, setColNombre] = useState("")
   const [colCosto, setColCosto] = useState("")
+  const [colLaboratorio, setColLaboratorio] = useState("")
   const [rawRows, setRawRows] = useState<any[]>([])
+  const [laboratorio, setLaboratorio] = useState("")
   const [confirmEliminar, setConfirmEliminar] = useState<any | null>(null)
   const [subiendoFoto, setSubiendoFoto] = useState<number | null>(null)
   const inputFotoRef = useRef<HTMLInputElement>(null)
@@ -159,6 +161,7 @@ export default function Productos() {
   function exportarStock() {
     const data = productos.map(p => ({
       "Nombre": p.nombre,
+      "Laboratorio": p.laboratorio || "",
       "Costo ($)": p.costo,
       "Margen (%)": p.margen,
       "Precio Venta ($)": p.precio_venta,
@@ -166,7 +169,7 @@ export default function Productos() {
       "Capital ($)": Math.round(p.costo * p.stock * 100) / 100,
     }))
     const ws = XLSX.utils.json_to_sheet(data)
-    ws["!cols"] = [{ wch: 40 }, { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 14 }]
+    ws["!cols"] = [{ wch: 40 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 14 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Stock")
     XLSX.writeFile(wb, `stock_${new Date().toISOString().slice(0, 10)}.xlsx`)
@@ -220,11 +223,11 @@ export default function Productos() {
     const costoNum = Number(costo)
     const margenNum = Number(margen)
     const precioVenta = costoNum + (costoNum * margenNum / 100)
-    const { data, error } = await supabase.from("productos").insert([{ nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(stock), categoria: categoria.trim() }]).select()
+    const { data, error } = await supabase.from("productos").insert([{ nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(stock), categoria: categoria.trim(), laboratorio: laboratorio.trim() }]).select()
     if (error) return mostrarToast("❌ " + error.message, "error")
     await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 })
     mostrarToast("✅ Producto agregado", "ok")
-    setNombre(""); setCosto(""); setMargen(""); setStock(""); setCategoria("")
+    setNombre(""); setCosto(""); setMargen(""); setStock(""); setCategoria(""); setLaboratorio("")
     setMostrarAgregar(false); cargar()
   }
 
@@ -233,7 +236,7 @@ export default function Productos() {
     const costoNum = Number(editando.costo)
     const margenNum = Number(editando.margen)
     const precioVenta = costoNum + (costoNum * margenNum / 100)
-    const { error } = await supabase.from("productos").update({ nombre: editando.nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(editando.stock), categoria: editando.categoria || "" }).eq("id", editando.id)
+    const { error } = await supabase.from("productos").update({ nombre: editando.nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(editando.stock), categoria: editando.categoria || "", laboratorio: editando.laboratorio || "" }).eq("id", editando.id)
     if (error) return mostrarToast("❌ " + error.message, "error")
     await supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id })
     mostrarToast("✅ Producto actualizado", "ok")
@@ -255,16 +258,17 @@ export default function Productos() {
     if (str.includes(",") && str.includes(".")) str = str.replace(/\./g, "").replace(",", ".")
     else if (str.includes(",") && !str.includes(".")) str = str.replace(",", ".")
     const num = Number(str)
-    return isNaN(num) || num <= 0 ? NaN : num
+    return isNaN(num) || num < 0 ? NaN : num
   }
 
   function descargarPlantilla() {
     const ws = XLSX.utils.aoa_to_sheet([
-      ["Nombre del producto", "Costo"],
-      ["Ivermectina 1% x 50ml", "1500"],
-      ["Amoxicilina 250mg x 10", "850"],
+      ["Nombre del producto", "Laboratorio", "Costo"],
+      ["Ivermectina 1% x 50ml", "Laboratorio Richmond", "1500"],
+      ["Amoxicilina 250mg x 10", "Laboratorio Bagó", "850"],
+      ["Enrofloxacina 50mg x 20", "Laboratorio Holliday", "2300"],
     ])
-    ws["!cols"] = [{ wch: 45 }, { wch: 14 }]
+    ws["!cols"] = [{ wch: 40 }, { wch: 22 }, { wch: 14 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Productos")
     XLSX.writeFile(wb, "plantilla_productos.xlsx")
@@ -272,7 +276,7 @@ export default function Productos() {
 
   async function leerArchivo(file: File) {
     setArchivo(file)
-    setColumnas([]); setColNombre(""); setColCosto(""); setRawRows([]); setPreview([])
+    setColumnas([]); setColNombre(""); setColCosto(""); setColLaboratorio(""); setRawRows([]); setPreview([])
     try {
       const data = await file.arrayBuffer()
       let rows: any[] = []
@@ -299,9 +303,11 @@ export default function Productos() {
       setRawRows(rows)
       const probNombre = cols.find(c => /nombre|descrip|product|articul/i.test(c)) || cols[0]
       const probCosto = cols.find(c => /precio|costo|price|valor|importe/i.test(c)) || (cols.length > 1 ? cols[cols.length - 1] : cols[0])
+      const probLab = cols.find(c => /laborator|lab\b|fabricante|marca|proveedor|drogueria|drog/i.test(c)) || ""
       setColNombre(probNombre)
       setColCosto(probCosto)
-      mostrarToast(`✅ ${rows.length} filas detectadas, ${cols.length} columnas`, "ok")
+      setColLaboratorio(probLab)
+      mostrarToast(`✅ ${rows.length} filas · ${cols.length} columnas detectadas`, "ok")
     } catch {
       mostrarToast("❌ Error leyendo el archivo", "error")
     }
@@ -310,8 +316,24 @@ export default function Productos() {
   function previsualizarMapeo() {
     if (!colNombre || !colCosto) return []
     return rawRows
-      .map(r => ({ nombre: String(r[colNombre] || "").trim(), costo: parsePrecio(r[colCosto]) }))
+      .map(r => ({
+        nombre: String(r[colNombre] || "").trim(),
+        costo: parsePrecio(r[colCosto]),
+        laboratorio: colLaboratorio ? String(r[colLaboratorio] || "").trim() : "",
+      }))
       .filter(r => r.nombre && !isNaN(r.costo))
+  }
+
+  function contarDescartados() {
+    if (!colNombre || !colCosto) return { sinNombre: 0, sinCosto: 0 }
+    let sinNombre = 0, sinCosto = 0
+    for (const r of rawRows) {
+      const nombre = String(r[colNombre] || "").trim()
+      const costo = parsePrecio(r[colCosto])
+      if (!nombre) sinNombre++
+      else if (isNaN(costo)) sinCosto++
+    }
+    return { sinNombre, sinCosto }
   }
 
   async function importarConMapeo() {
@@ -322,10 +344,12 @@ export default function Productos() {
     setImportando(true); setProgreso(0)
     const margenDefault = Number(margenImportacion)
     const nombresExistentes = new Map(productos.map((p: any) => [p.nombre.toLowerCase().trim(), p]))
-    const registros = mapeo.map(({ nombre, costo }) => {
+    const registros = mapeo.map(({ nombre, costo, laboratorio }) => {
       const existente = nombresExistentes.get(nombre.toLowerCase().trim())
       const margen = existente ? existente.margen : margenDefault
-      return { nombre, costo: Math.round(costo * 100) / 100, margen, precio_venta: Math.round(costo * (1 + margen / 100) * 100) / 100 }
+      const rec: any = { nombre, costo: Math.round(costo * 100) / 100, margen, precio_venta: Math.round(costo * (1 + margen / 100) * 100) / 100 }
+      if (laboratorio) rec.laboratorio = laboratorio
+      return rec
     })
     const CHUNK = 100; let procesados = 0
     for (let i = 0; i < registros.length; i += CHUNK) {
@@ -334,7 +358,7 @@ export default function Productos() {
       procesados += Math.min(CHUNK, registros.length - i)
       setProgreso(Math.round((procesados / registros.length) * 100))
     }
-    setImportando(false); setPreview([]); setRawRows([]); setColumnas([]); setColNombre(""); setColCosto(""); setArchivo(null)
+    setImportando(false); setPreview([]); setRawRows([]); setColumnas([]); setColNombre(""); setColCosto(""); setColLaboratorio(""); setArchivo(null)
     mostrarToast(`✅ ${procesados} productos importados/actualizados`, "ok"); cargar()
   }
 
@@ -396,7 +420,8 @@ export default function Productos() {
   if (cargando) return <p style={{ padding: 30, color: "#9ca3af" }}>⏳ Cargando productos...</p>
 
   const productosFiltrados = productos.filter(p =>
-    p.nombre.toLowerCase().includes(busqueda.toLowerCase()) &&
+    (p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+     (p.laboratorio && p.laboratorio.toLowerCase().includes(busqueda.toLowerCase()))) &&
     (!filtroCategoria || p.categoria === filtroCategoria)
   )
   const productosVisibles = productosFiltrados.slice(0, pagina * 50)
@@ -448,8 +473,10 @@ export default function Productos() {
       {mostrarAgregar && (
         <div className="productos-add-panel" style={{ background: "#0f172a", borderRadius: 14, padding: "20px 24px", marginBottom: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
           <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 }}>Nuevo producto</p>
-          <div className="productos-add-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+          <div className="productos-add-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
             <input placeholder="Nombre del producto" value={nombre} onChange={e => setNombre(e.target.value)} type="text"
+              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+            <input placeholder="Laboratorio" value={laboratorio} onChange={e => setLaboratorio(e.target.value)} type="text"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Costo" value={costo} onChange={e => setCosto(e.target.value)} type="number"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
@@ -485,31 +512,74 @@ export default function Productos() {
               style={{ display: "block", fontSize: 13, color: "#9ca3af", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 12px", width: "100%", boxSizing: "border-box", cursor: "pointer" }} />
           </div>
 
+          {/* Vista previa de datos crudos */}
+          {rawRows.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ ...labelStyle, marginBottom: 8 }}>Vista previa del archivo ({rawRows.length} filas · {columnas.length} columnas detectadas)</p>
+              <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: columnas.length * 120 }}>
+                  <thead>
+                    <tr style={{ background: "rgba(255,255,255,0.06)" }}>
+                      {columnas.map(c => (
+                        <th key={c} style={{ padding: "7px 12px", textAlign: "left", color: "#9ca3af", fontWeight: 700, whiteSpace: "nowrap", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                          {c}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rawRows.slice(0, 3).map((row, i) => (
+                      <tr key={i} style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+                        {columnas.map(c => (
+                          <td key={c} style={{ padding: "6px 12px", color: "#d1d5db", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {String(row[c] ?? "")}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {rawRows.length > 3 && <p style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>...y {rawRows.length - 3} filas más</p>}
+            </div>
+          )}
+
           {/* Column selectors */}
           {columnas.length > 0 && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
-              <div>
-                <label style={labelStyle}>Columna de nombre *</label>
-                <select value={colNombre} onChange={e => { setColNombre(e.target.value); setPreview([]) }}
-                  style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", cursor: "pointer" }}>
-                  <option value="" style={{ background: "#1e293b", color: "white" }}>— elegir —</option>
-                  {columnas.map(c => <option key={c} value={c} style={{ background: "#1e293b", color: "white" }}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Columna de costo *</label>
-                <select value={colCosto} onChange={e => { setColCosto(e.target.value); setPreview([]) }}
-                  style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", cursor: "pointer" }}>
-                  <option value="" style={{ background: "#1e293b", color: "white" }}>— elegir —</option>
-                  {columnas.map(c => <option key={c} value={c} style={{ background: "#1e293b", color: "white" }}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Margen para nuevos (%)</label>
-                <input type="number" placeholder="ej: 35" value={margenImportacion}
-                  onChange={e => setMargenImportacion(e.target.value)}
-                  style={{ width: "100%", padding: "9px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
-                <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>Productos existentes conservan su margen</div>
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ ...labelStyle, marginBottom: 8 }}>Mapeo de columnas</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <div>
+                  <label style={labelStyle}>Columna de laboratorio</label>
+                  <select value={colLaboratorio} onChange={e => { setColLaboratorio(e.target.value); setPreview([]) }}
+                    style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", cursor: "pointer" }}>
+                    <option value="" style={{ background: "#1e293b", color: "white" }}>— ninguna —</option>
+                    {columnas.map(c => <option key={c} value={c} style={{ background: "#1e293b", color: "white" }}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Columna de nombre *</label>
+                  <select value={colNombre} onChange={e => { setColNombre(e.target.value); setPreview([]) }}
+                    style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", cursor: "pointer" }}>
+                    <option value="" style={{ background: "#1e293b", color: "white" }}>— elegir —</option>
+                    {columnas.map(c => <option key={c} value={c} style={{ background: "#1e293b", color: "white" }}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Columna de costo *</label>
+                  <select value={colCosto} onChange={e => { setColCosto(e.target.value); setPreview([]) }}
+                    style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", cursor: "pointer" }}>
+                    <option value="" style={{ background: "#1e293b", color: "white" }}>— elegir —</option>
+                    {columnas.map(c => <option key={c} value={c} style={{ background: "#1e293b", color: "white" }}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Margen para nuevos (%)</label>
+                  <input type="number" placeholder="ej: 35" value={margenImportacion}
+                    onChange={e => setMargenImportacion(e.target.value)}
+                    style={{ width: "100%", padding: "9px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                  <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>Existentes conservan su margen</div>
+                </div>
               </div>
             </div>
           )}
@@ -517,15 +587,23 @@ export default function Productos() {
           {/* Preview and action */}
           {colNombre && colCosto && (() => {
             const mapped = previsualizarMapeo()
+            const { sinNombre, sinCosto } = contarDescartados()
+            const descartados = sinNombre + sinCosto
             const existentesCount = mapped.filter(r => productos.some((p: any) => p.nombre.toLowerCase().trim() === r.nombre.toLowerCase().trim())).length
             const nuevosCount = mapped.length - existentesCount
             return (
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 12, color: "#6b7280" }}>
-                    <b style={{ color: "#4ade80" }}>{mapped.length}</b> productos válidos ·{" "}
+                    <b style={{ color: "#4ade80" }}>{mapped.length}</b> válidos ·{" "}
                     <b style={{ color: "#60a5fa" }}>{existentesCount}</b> actualizaciones ·{" "}
                     <b style={{ color: "#fbbf24" }}>{nuevosCount}</b> nuevos
+                    {descartados > 0 && (
+                      <span title={`${sinNombre} sin nombre · ${sinCosto} sin precio válido`}>
+                        {" "}· <b style={{ color: "#f87171" }}>{descartados} ignoradas</b>
+                        <span style={{ color: "#6b7280" }}> (sin nombre: {sinNombre}, sin precio: {sinCosto})</span>
+                      </span>
+                    )}
                   </span>
                   <button onClick={importarConMapeo} disabled={importando || mapped.length === 0 || !margenImportacion}
                     style={{ marginLeft: "auto", background: mapped.length > 0 && margenImportacion ? "linear-gradient(135deg, #16a34a, #22c55e)" : "rgba(255,255,255,0.05)", border: "none", borderRadius: 8, color: "white", padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: mapped.length > 0 && margenImportacion ? "pointer" : "not-allowed", opacity: importando ? 0.6 : 1 }}>
@@ -539,16 +617,18 @@ export default function Productos() {
                 )}
                 {mapped.length > 0 && (
                   <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", overflow: "hidden" }}>
-                    <div style={{ padding: "7px 12px", background: "rgba(255,255,255,0.04)", display: "flex", gap: 20 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", flex: 1 }}>NOMBRE</span>
+                    <div style={{ padding: "7px 12px", background: "rgba(255,255,255,0.04)", display: "flex", gap: 12 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", flex: 2 }}>NOMBRE</span>
+                      {colLaboratorio && <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", flex: 1 }}>LABORATORIO</span>}
                       <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", width: 90, textAlign: "right" }}>COSTO</span>
                       <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", width: 50, textAlign: "center" }}>EST.</span>
                     </div>
                     {mapped.slice(0, 8).map((r, i) => {
                       const esExistente = productos.some((p: any) => p.nombre.toLowerCase().trim() === r.nombre.toLowerCase().trim())
                       return (
-                        <div key={i} style={{ display: "flex", gap: 20, padding: "7px 12px", borderTop: "1px solid rgba(255,255,255,0.04)", alignItems: "center" }}>
-                          <span style={{ fontSize: 12, color: "#d1d5db", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.nombre}</span>
+                        <div key={i} style={{ display: "flex", gap: 12, padding: "7px 12px", borderTop: "1px solid rgba(255,255,255,0.04)", alignItems: "center" }}>
+                          <span style={{ fontSize: 12, color: "#d1d5db", flex: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.nombre}</span>
+                          {colLaboratorio && <span style={{ fontSize: 11, color: "#9ca3af", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.laboratorio || <span style={{ color: "#374151" }}>—</span>}</span>}
                           <span style={{ fontSize: 12, color: "#4ade80", width: 90, textAlign: "right", fontWeight: 600 }}>${r.costo.toLocaleString("es-AR")}</span>
                           <span style={{ width: 50, textAlign: "center" }}>
                             <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: esExistente ? "rgba(59,130,246,0.15)" : "rgba(251,191,36,0.15)", color: esExistente ? "#60a5fa" : "#fbbf24" }}>
@@ -613,11 +693,19 @@ export default function Productos() {
                       </div>
                     ))}
                   </div>
-                  <div style={{ marginTop: 12 }}>
-                    <label style={labelStyle}>Categoría</label>
-                    <input type="text" placeholder="Ej: Antiparasitarios" value={editando?.categoria ?? ""}
-                      onChange={e => setEditando({ ...editando, categoria: e.target.value })}
-                      style={inputStyle} />
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                    <div>
+                      <label style={labelStyle}>Laboratorio</label>
+                      <input type="text" placeholder="Ej: Laboratorio Richmond" value={editando?.laboratorio ?? ""}
+                        onChange={e => setEditando({ ...editando, laboratorio: e.target.value })}
+                        style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Categoría</label>
+                      <input type="text" placeholder="Ej: Antiparasitarios" value={editando?.categoria ?? ""}
+                        onChange={e => setEditando({ ...editando, categoria: e.target.value })}
+                        style={inputStyle} />
+                    </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 10 }}>
                     <span style={{ color: "#93c5fd", fontSize: 13 }}>
@@ -651,6 +739,11 @@ export default function Productos() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                         <span style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>{p.nombre}</span>
+                        {p.laboratorio && (
+                          <span style={{ background: "#f0fdf4", color: "#15803d", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, border: "1px solid #bbf7d0" }}>
+                            🧪 {p.laboratorio}
+                          </span>
+                        )}
                         {p.categoria && (
                           <span style={{ background: "#eff6ff", color: "#3b82f6", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, border: "1px solid #bfdbfe" }}>
                             {p.categoria}
