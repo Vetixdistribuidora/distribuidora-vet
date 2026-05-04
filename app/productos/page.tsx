@@ -419,12 +419,15 @@ export default function Productos() {
 
   if (cargando) return <p style={{ padding: 30, color: "#9ca3af" }}>⏳ Cargando productos...</p>
 
-  const terminoBusquedaProductos = busqueda.trim().toLowerCase()
-  const productosFiltrados = productos.filter(p =>
-    (p.nombre.toLowerCase().includes(terminoBusquedaProductos) ||
-     (p.laboratorio && p.laboratorio.toLowerCase().includes(terminoBusquedaProductos))) &&
-    (!filtroCategoria || p.categoria === filtroCategoria)
-  )
+  const palabrasBusquedaProductos = busqueda.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const productosFiltrados = productos.filter(p => {
+    const coincidePalabras = palabrasBusquedaProductos.length === 0 || (() => {
+      const nombre = p.nombre.toLowerCase()
+      const lab = (p.laboratorio || "").toLowerCase()
+      return palabrasBusquedaProductos.every(w => nombre.includes(w) || lab.includes(w))
+    })()
+    return coincidePalabras && (!filtroCategoria || p.categoria === filtroCategoria)
+  })
   const productosVisibles = productosFiltrados.slice(0, pagina * 50)
 
   return (

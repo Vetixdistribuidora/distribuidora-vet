@@ -356,12 +356,14 @@ export default function Ventas() {
     generarHTMLEImprimir({ nroFactura, clienteSeleccionado, carrito: [...carrito], subtotal, ivaNum, total, esCuentaCorriente, metodoCobro }, tipo)
   }
 
-  const terminoBusqueda = busquedaProducto.trim().toLowerCase()
-  const productosFiltrados = productos.filter(p =>
-    !carrito.find(i => i.producto_id === p.id) &&
-    (p.nombre.toLowerCase().includes(terminoBusqueda) ||
-     (p.laboratorio && p.laboratorio.toLowerCase().includes(terminoBusqueda)))
-  )
+  const palabrasBusqueda = busquedaProducto.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const productosFiltrados = productos.filter(p => {
+    if (!palabrasBusqueda.length) return false
+    const nombre = p.nombre.toLowerCase()
+    const lab = (p.laboratorio || "").toLowerCase()
+    return palabrasBusqueda.every(w => nombre.includes(w) || lab.includes(w)) &&
+      !carrito.find(i => i.producto_id === p.id)
+  })
 
   const ventasFiltradas = ventas.filter(v => {
     const texto = [v.clientes?.nombre, v.clientes?.apellido, v.nro_factura].join(" ").toLowerCase()
