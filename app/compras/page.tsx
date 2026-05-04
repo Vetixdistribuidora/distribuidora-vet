@@ -118,6 +118,9 @@ export default function ComprasPage() {
   const [cancelando, setCancelando] = useState(false);
   const [confirmEliminarCompra, setConfirmEliminarCompra] = useState<Compra | null>(null);
   const [eliminandoCompra, setEliminandoCompra] = useState(false);
+  const [mostrarFormNuevoProd, setMostrarFormNuevoProd] = useState(false);
+  const [formNuevoProd, setFormNuevoProd] = useState({ nombre: "", laboratorio: "", costo: "", margen: "30" });
+  const [guardandoNuevoProd, setGuardandoNuevoProd] = useState(false);
 
   useEffect(() => { cargarTodo(); }, []);
 
@@ -150,7 +153,7 @@ export default function ComprasPage() {
       notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
       incluye_flete: false, tipo_flete: "pesos", valor_flete: "",
     });
-    setItems([]); setBusquedaProducto(""); setErrorForm(null); setModalNueva(true);
+    setItems([]); setBusquedaProducto(""); setErrorForm(null); setMostrarFormNuevoProd(false); setModalNueva(true);
   }
 
   function agregarItem(prod: Producto) {
@@ -160,6 +163,30 @@ export default function ComprasPage() {
   }
 
   function quitarItem(idx: number) { setItems(items.filter((_, i) => i !== idx)); }
+
+  async function crearYAgregarProducto() {
+    if (!formNuevoProd.nombre.trim()) return;
+    setGuardandoNuevoProd(true);
+    const costo = parseFloat(formNuevoProd.costo) || 0;
+    const margen = parseFloat(formNuevoProd.margen) || 30;
+    const precio_venta = Math.round(costo * (1 + margen / 100) * 100) / 100;
+    const { data, error } = await supabase.from("productos").insert({
+      nombre: formNuevoProd.nombre.trim().toUpperCase(),
+      laboratorio: formNuevoProd.laboratorio.trim(),
+      costo,
+      margen,
+      precio_venta,
+      stock: 0,
+    }).select("id, nombre, stock, laboratorio").single();
+    if (!error && data) {
+      const nuevo = data as Producto;
+      setProductos(prev => [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      agregarItem(nuevo);
+      setMostrarFormNuevoProd(false);
+      setFormNuevoProd({ nombre: "", laboratorio: "", costo: "", margen: "30" });
+    }
+    setGuardandoNuevoProd(false);
+  }
 
   const pctIvaForm = parseFloat(form.porcentaje_iva) || 0;
   const valFleteForm = parseFloat(form.valor_flete) || 0;
@@ -294,7 +321,7 @@ export default function ComprasPage() {
     XLSX.writeFile(wb, "compras_" + new Date().toISOString().slice(0, 10) + ".xlsx")
   }
   const totalDeuda = compras.filter(c => c.estado !== "pagado").reduce((s, c) => s + (c.total - c.total_pagado), 0);
-  const terminoBusquedaProducto = busquedaProducto.toLowerCase();
+  const terminoBusquedaProducto = busquedaProducto.trim().toLowerCase();
   const productosFiltradosDropdown = productos.filter(p =>
     !items.find(i => i.producto_id === p.id) &&
     (p.nombre.toLowerCase().includes(terminoBusquedaProducto) ||
@@ -448,9 +475,9 @@ export default function ComprasPage() {
                     }}
                     style={inputDarkStyle} />
                   {productoDropdown && busquedaProducto && (
-                    <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, zIndex: 10, maxHeight: 220, overflowY: "auto", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+                    <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, zIndex: 10, maxHeight: 260, overflowY: "auto", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
                       {productosFiltradosDropdown.length === 0 ? (
-                        <div style={{ padding: "12px 14px", fontSize: 13, color: "#6b7280", textAlign: "center" }}>Sin resultados</div>
+                        <div style={{ padding: "10px 14px", fontSize: 13, color: "#6b7280", textAlign: "center" }}>Sin resultados</div>
                       ) : productosFiltradosDropdown.map((p, idx) => (
                         <div key={p.id} onMouseDown={() => agregarItem(p)}
                           style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.06)", color: "white", background: idx === productoIndiceCompras ? "rgba(59,130,246,0.25)" : "transparent" }}
@@ -463,9 +490,44 @@ export default function ComprasPage() {
                           <span style={{ fontSize: 11, color: "#6b7280", flexShrink: 0, marginLeft: 8 }}>Stock: {p.stock}</span>
                         </div>
                       ))}
+                      <div onMouseDown={() => { setMostrarFormNuevoProd(true); setFormNuevoProd(f => ({ ...f, nombre: busquedaProducto.trim().toUpperCase() })); setProductoDropdown(false); }}
+                        style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#60a5fa", borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontWeight: 700, fontSize: 16 }}>+</span> Crear nuevo producto
+                      </div>
                     </div>
                   )}
                 </div>
+
+                {mostrarFormNuevoProd && (
+                  <div style={{ background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: 12, padding: "16px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <span style={{ color: "#60a5fa", fontWeight: 700, fontSize: 13 }}>+ Nuevo producto</span>
+                      <button onClick={() => setMostrarFormNuevoProd(false)} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <label style={labelStyle}>Nombre *</label>
+                        <input type="text" value={formNuevoProd.nombre} onChange={e => setFormNuevoProd(f => ({ ...f, nombre: e.target.value.toUpperCase() }))} placeholder="NOMBRE DEL PRODUCTO" style={inputDarkStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Laboratorio</label>
+                        <input type="text" value={formNuevoProd.laboratorio} onChange={e => setFormNuevoProd(f => ({ ...f, laboratorio: e.target.value }))} placeholder="Laboratorio" style={inputDarkStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Costo</label>
+                        <input type="number" min="0" step="0.01" value={formNuevoProd.costo} onChange={e => setFormNuevoProd(f => ({ ...f, costo: e.target.value }))} placeholder="0.00" style={inputDarkStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Margen %</label>
+                        <input type="number" min="0" value={formNuevoProd.margen} onChange={e => setFormNuevoProd(f => ({ ...f, margen: e.target.value }))} placeholder="30" style={inputDarkStyle} />
+                      </div>
+                    </div>
+                    <button onClick={crearYAgregarProducto} disabled={!formNuevoProd.nombre.trim() || guardandoNuevoProd}
+                      style={{ background: "#2563eb", color: "white", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: !formNuevoProd.nombre.trim() || guardandoNuevoProd ? "not-allowed" : "pointer", opacity: !formNuevoProd.nombre.trim() || guardandoNuevoProd ? 0.6 : 1 }}>
+                      {guardandoNuevoProd ? "Guardando..." : "Crear y agregar a la compra"}
+                    </button>
+                  </div>
+                )}
 
                 {items.length > 0 && (
                   <div style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, overflow: "hidden" }}>

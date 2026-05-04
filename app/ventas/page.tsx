@@ -356,7 +356,7 @@ export default function Ventas() {
     generarHTMLEImprimir({ nroFactura, clienteSeleccionado, carrito: [...carrito], subtotal, ivaNum, total, esCuentaCorriente, metodoCobro }, tipo)
   }
 
-  const terminoBusqueda = busquedaProducto.toLowerCase()
+  const terminoBusqueda = busquedaProducto.trim().toLowerCase()
   const productosFiltrados = productos.filter(p =>
     !carrito.find(i => i.producto_id === p.id) &&
     (p.nombre.toLowerCase().includes(terminoBusqueda) ||
@@ -420,7 +420,7 @@ export default function Ventas() {
                       onFocus={() => setClienteDropdown(true)}
                       onBlur={() => setTimeout(() => setClienteDropdown(false), 150)}
                       onKeyDown={e => {
-                        const filtrados = clientes.filter(c => (c.nombre + " " + c.apellido).toLowerCase().includes(busquedaCliente.toLowerCase())).slice(0, 8)
+                        const filtrados = clientes.filter(c => (c.nombre + " " + c.apellido).toLowerCase().includes(busquedaCliente.trim().toLowerCase())).slice(0, 8)
                         if (e.key === "ArrowDown") { e.preventDefault(); setClienteIndice(i => Math.min(i + 1, filtrados.length - 1)) }
                         else if (e.key === "ArrowUp") { e.preventDefault(); setClienteIndice(i => Math.max(i - 1, 0)) }
                         else if (e.key === "Enter" && clienteIndice >= 0) { e.preventDefault(); seleccionarCliente(filtrados[clienteIndice]) }
@@ -433,7 +433,7 @@ export default function Ventas() {
                     )}
                   </div>
                   {clienteDropdown && busquedaCliente && !clienteSeleccionado && (() => {
-                    const filtrados = clientes.filter(c => (c.nombre + " " + c.apellido).toLowerCase().includes(busquedaCliente.toLowerCase())).slice(0, 8)
+                    const filtrados = clientes.filter(c => (c.nombre + " " + c.apellido).toLowerCase().includes(busquedaCliente.trim().toLowerCase())).slice(0, 8)
                     if (!filtrados.length) return null
                     return (
                       <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 20, overflow: "hidden" }}>
