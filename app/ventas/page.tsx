@@ -356,12 +356,12 @@ export default function Ventas() {
     generarHTMLEImprimir({ nroFactura, clienteSeleccionado, carrito: [...carrito], subtotal, ivaNum, total, esCuentaCorriente, metodoCobro }, tipo)
   }
 
-  const palabrasBusqueda = busquedaProducto.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const terminoBusqVentas = busquedaProducto.trim().replace(/\s+/g, " ").toLowerCase()
+  const palabrasBusqVentas = terminoBusqVentas.split(" ").filter(Boolean)
   const productosFiltrados = productos.filter(p => {
-    if (!palabrasBusqueda.length) return false
-    const nombre = p.nombre.toLowerCase()
-    const lab = (p.laboratorio || "").toLowerCase()
-    return palabrasBusqueda.every(w => nombre.includes(w) || lab.includes(w)) &&
+    if (!palabrasBusqVentas.length) return false
+    const campo = p.nombre.toLowerCase() + " " + (p.laboratorio || "").toLowerCase()
+    return (campo.includes(terminoBusqVentas) || palabrasBusqVentas.every(w => campo.includes(w))) &&
       !carrito.find(i => i.producto_id === p.id)
   })
 

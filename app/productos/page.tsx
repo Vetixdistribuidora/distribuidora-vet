@@ -419,14 +419,14 @@ export default function Productos() {
 
   if (cargando) return <p style={{ padding: 30, color: "#9ca3af" }}>⏳ Cargando productos...</p>
 
-  const palabrasBusquedaProductos = busqueda.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const terminoBusqProdPage = busqueda.trim().replace(/\s+/g, " ").toLowerCase()
+  const palabrasBusqProdPage = terminoBusqProdPage.split(" ").filter(Boolean)
   const productosFiltrados = productos.filter(p => {
-    const coincidePalabras = palabrasBusquedaProductos.length === 0 || (() => {
-      const nombre = p.nombre.toLowerCase()
-      const lab = (p.laboratorio || "").toLowerCase()
-      return palabrasBusquedaProductos.every(w => nombre.includes(w) || lab.includes(w))
-    })()
-    return coincidePalabras && (!filtroCategoria || p.categoria === filtroCategoria)
+    if (palabrasBusqProdPage.length > 0) {
+      const campo = p.nombre.toLowerCase() + " " + (p.laboratorio || "").toLowerCase()
+      if (!campo.includes(terminoBusqProdPage) && !palabrasBusqProdPage.every(w => campo.includes(w))) return false
+    }
+    return !filtroCategoria || p.categoria === filtroCategoria
   })
   const productosVisibles = productosFiltrados.slice(0, pagina * 50)
 

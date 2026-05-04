@@ -321,12 +321,12 @@ export default function ComprasPage() {
     XLSX.writeFile(wb, "compras_" + new Date().toISOString().slice(0, 10) + ".xlsx")
   }
   const totalDeuda = compras.filter(c => c.estado !== "pagado").reduce((s, c) => s + (c.total - c.total_pagado), 0);
-  const palabrasBusquedaProducto = busquedaProducto.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const terminoBusqProd = busquedaProducto.trim().replace(/\s+/g, " ").toLowerCase();
+  const palabrasBusqProd = terminoBusqProd.split(" ").filter(Boolean);
   const productosFiltradosDropdown = productos.filter(p => {
-    if (!palabrasBusquedaProducto.length) return false;
-    const nombre = p.nombre.toLowerCase();
-    const lab = (p.laboratorio || "").toLowerCase();
-    return palabrasBusquedaProducto.every(w => nombre.includes(w) || lab.includes(w)) &&
+    if (!palabrasBusqProd.length) return false;
+    const campo = p.nombre.toLowerCase() + " " + (p.laboratorio || "").toLowerCase();
+    return (campo.includes(terminoBusqProd) || palabrasBusqProd.every(w => campo.includes(w))) &&
       !items.find(i => i.producto_id === p.id);
   });
 
