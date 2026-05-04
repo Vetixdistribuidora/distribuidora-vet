@@ -290,7 +290,7 @@ export default function ComprasPage() {
     !items.find(i => i.producto_id === p.id) &&
     (p.nombre.toLowerCase().includes(terminoBusquedaProducto) ||
      (p.laboratorio && p.laboratorio.toLowerCase().includes(terminoBusquedaProducto)))
-  ).slice(0, 80);
+  );
 
   return (
     <div>

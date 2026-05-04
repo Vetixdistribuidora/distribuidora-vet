@@ -361,7 +361,7 @@ export default function Ventas() {
     !carrito.find(i => i.producto_id === p.id) &&
     (p.nombre.toLowerCase().includes(terminoBusqueda) ||
      (p.laboratorio && p.laboratorio.toLowerCase().includes(terminoBusqueda)))
-  ).slice(0, 80)
+  )
 
   const ventasFiltradas = ventas.filter(v => {
     const texto = [v.clientes?.nombre, v.clientes?.apellido, v.nro_factura].join(" ").toLowerCase()
