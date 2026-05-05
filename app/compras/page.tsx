@@ -228,44 +228,59 @@ export default function ComprasPage() {
     });
     setGuardando(false);
     if (error) { setErrorForm("Error: " + error.message); return; }
-    // Actualizar stock, costo y precio de venta de cada producto
-    const calculados = calcularItemsConExtras()
-    await Promise.all(items.map(async (item, idx) => {
-      const precioUnit = parseFloat(item.precio_unitario) || 0
-      const cantidad = parseFloat(item.cantidad) || 1
-      const calc = calculados[idx]
-
-      // Stock: siempre se incrementa con la cantidad comprada
-      const { data: prodActual } = await supabase.from("productos").select("stock, margen").eq("id", item.producto_id).single()
-      const stockActual = prodActual?.stock ?? 0
-      const margen = prodActual?.margen ?? 30
-
-      const updates: Record<string, number> = {
-        stock: stockActual + cantidad,
-      }
-
-      if (actualizarCostos && precioUnit > 0) {
-        // costo = precio de factura sin IVA ni flete (el IVA es un pase al cliente)
-        // precio_venta = (costo + flete proporcional por unidad) × (1 + margen%)
+    // El RPC registrar_compra ya actualiza el stock — solo actualizamos costo/precio_venta
+    if (actualizarCostos) {
+      const calculados = calcularItemsConExtras()
+      await Promise.all(items.map(async (item, idx) => {
+        const precioUnit = parseFloat(item.precio_unitario) || 0
+        if (precioUnit <= 0) return
+        const cantidad = parseFloat(item.cantidad) || 1
+        const calc = calculados[idx]
+        const { data: prodActual } = await supabase.from("productos").select("margen").eq("id", item.producto_id).single()
+        const margen = prodActual?.margen ?? 30
+        // costo = precio de factura sin IVA (pase al cliente)
+        // precio_venta = (costo + flete por unidad) × (1 + margen%)
         const fleteUnitario = calc.fleteItem / cantidad
-        updates.costo = Math.round(precioUnit * 100) / 100
-        updates.precio_venta = Math.round((precioUnit + fleteUnitario) * (1 + margen / 100) * 100) / 100
-      }
-
-      await supabase.from("productos").update(updates).eq("id", item.producto_id)
-    }))
+        await supabase.from("productos").update({
+          costo: Math.round(precioUnit * 100) / 100,
+          precio_venta: Math.round((precioUnit + fleteUnitario) * (1 + margen / 100) * 100) / 100
+        }).eq("id", item.producto_id)
+      }))
+    }
     setModalNueva(false); cargarTodo();
   }
 
   async function eliminarCompra() {
     if (!confirmEliminarCompra) return;
     setEliminandoCompra(true);
+
+    // 1. Recuperar detalle antes de borrar para revertir el stock
+    const { data: detalleCompra } = await supabase
+      .from("compras_detalle")
+      .select("producto_id, cantidad")
+      .eq("compra_id", confirmEliminarCompra.id);
+
+    // 2. Borrar registros asociados
     await supabase.from("compras_pagos").delete().eq("compra_id", confirmEliminarCompra.id);
     await supabase.from("compras_detalle").delete().eq("compra_id", confirmEliminarCompra.id);
     await supabase.from("lotes").update({ cantidad: 0 }).eq("compra_id", confirmEliminarCompra.id);
     const { error } = await supabase.from("compras").delete().eq("id", confirmEliminarCompra.id);
+
+    if (error) { setEliminandoCompra(false); alert("Error al eliminar: " + error.message); return; }
+
+    // 3. Revertir stock: restar la cantidad que había entrado con esta compra
+    if (detalleCompra && detalleCompra.length > 0) {
+      await Promise.all(detalleCompra.map(async (d) => {
+        const { data: prod } = await supabase.from("productos").select("stock").eq("id", d.producto_id).single();
+        if (prod) {
+          await supabase.from("productos").update({
+            stock: Math.max(0, prod.stock - d.cantidad)
+          }).eq("id", d.producto_id);
+        }
+      }));
+    }
+
     setEliminandoCompra(false);
-    if (error) { alert("Error al eliminar: " + error.message); return; }
     setConfirmEliminarCompra(null);
     if (compraVer?.id === confirmEliminarCompra.id) setCompraVer(null);
     cargarTodo();
