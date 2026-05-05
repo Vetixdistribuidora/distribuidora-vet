@@ -20,13 +20,13 @@ function estadoLote(dias: number) {
   return { label: "OK", color: "#4ade80", bg: "rgba(74,222,128,0.12)" }
 }
 
-type ModalTipo = "stockBajo" | "sinVentas" | "sinRotacion" | "lotes" | "ventasHoy" | "ventasMes" | "detalleVenta" | null
+type ModalTipo = "stockBajo" | "sinStock" | "sinVentas" | "sinRotacion" | "lotes" | "ventasHoy" | "ventasMes" | "detalleVenta" | null
 
 export default function Dashboard() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [kpis, setKpis] = useState<any>({})
-  const [alertas, setAlertas] = useState<any>({ stockBajo: [], sinVentas: [], sinRotacion: [] })
+  const [alertas, setAlertas] = useState<any>({ sinStock: [], stockBajo: [], sinVentas: [], sinRotacion: [] })
   const [ventasGrafico, setVentasGrafico] = useState<any[]>([])
   const [ventasMensual, setVentasMensual] = useState<any[]>([])
   const [periodoGrafico, setPeriodoGrafico] = useState<"7dias" | "6meses">("7dias")
@@ -52,9 +52,31 @@ export default function Dashboard() {
     const inicioMes = new Date(); inicioMes.setDate(1)
     const mesAnterior = new Date(); mesAnterior.setMonth(mesAnterior.getMonth() - 1); mesAnterior.setDate(1)
 
-    const { data: ventas } = await supabase.from("ventas").select("*, clientes(nombre, apellido)")
-    const { data: productos } = await supabase.from("productos").select("*")
-    const { data: detalleVentas } = await supabase.from("detalle_ventas").select("producto_id, cantidad")
+    // Cargar todas las ventas con paginación
+    let todasVentas: any[] = []
+    let desdeV = 0
+    while (true) {
+      const { data } = await supabase.from("ventas").select("*, clientes(nombre, apellido)").range(desdeV, desdeV + 999)
+      if (!data || data.length === 0) break
+      todasVentas = todasVentas.concat(data)
+      if (data.length < 1000) break
+      desdeV += 1000
+    }
+    const ventas = todasVentas
+
+    // Cargar todos los productos con paginación
+    let todosProductos: any[] = []
+    let desdeP = 0
+    while (true) {
+      const { data } = await supabase.from("productos").select("*").range(desdeP, desdeP + 999)
+      if (!data || data.length === 0) break
+      todosProductos = todosProductos.concat(data)
+      if (data.length < 1000) break
+      desdeP += 1000
+    }
+    const productos = todosProductos
+
+    const { data: detalleVentas } = await supabase.from("detalle_ventas").select("producto_id, cantidad, venta_id")
 
     const hoyDate = new Date()
 const inicioMesDate = new Date()
@@ -105,14 +127,25 @@ const ventasMesAnterior = ventas?.filter(v => {
     }
 
     const margen = totalMes ? (ganancia / totalMes) * 100 : 0
-    const capitalStock = productos?.reduce((acc, p) => acc + p.costo * p.stock, 0) || 0
-    const stockBajo = productos?.filter(p => p.stock <= 5) || []
+    const capitalStock = productos?.reduce((acc, p) => acc + (p.costo || 0) * (p.stock || 0), 0) || 0
+
+    // Sin stock: stock = 0 o null
+    const sinStock = productos?.filter(p => p.stock == null || p.stock === 0) || []
+    // Stock bajo: entre 1 y 5 unidades (excluye los sin stock)
+    const stockBajo = productos?.filter(p => p.stock != null && p.stock > 0 && p.stock <= 5) || []
+
+    // Sin ventas: nunca vendidos
     const vendidosIds = new Set(detalleVentas?.map(d => d.producto_id))
     const sinVentas = productos?.filter(p => !vendidosIds.has(p.id)) || []
-    const sinRotacion = productos?.filter(p => !detalleVentas?.some(d => d.producto_id === p.id)) || []
+
+    // Sin rotación: con stock pero sin ventas en los últimos 30 días
+    const hace30 = new Date(); hace30.setDate(hace30.getDate() - 30)
+    const ventasIds30d = new Set(ventas?.filter(v => new Date(v.fecha) >= hace30).map(v => v.id))
+    const vendidos30dIds = new Set(detalleVentas?.filter(d => ventasIds30d.has(d.venta_id)).map(d => d.producto_id))
+    const sinRotacion = productos?.filter(p => (p.stock != null && p.stock > 0) && !vendidos30dIds.has(p.id)) || []
 
     setKpis({ totalHoy, totalMes, ganancia, margen, crecimiento, ticketPromedio, cantidadVentas: ventasMes.length, cantidadHoy: ventasHoy.length, capitalStock })
-    setAlertas({ stockBajo, sinVentas, sinRotacion })
+    setAlertas({ sinStock, stockBajo, sinVentas, sinRotacion })
     setVentasHoyLista(ventasHoy)
     setVentasMesLista(ventasMes)
 
@@ -178,9 +211,10 @@ const ventasMesAnterior = ventas?.filter(v => {
   ]
 
   const alertaCards = [
-    { titulo: "Stock bajo", valor: alertas.stockBajo.length, icon: "⚠️", tipo: "stockBajo" as ModalTipo, sub: "≤ 5 unidades" },
+    { titulo: "Sin stock", valor: alertas.sinStock.length, icon: "📭", tipo: "sinStock" as ModalTipo, sub: "0 unidades" },
+    { titulo: "Stock bajo", valor: alertas.stockBajo.length, icon: "⚠️", tipo: "stockBajo" as ModalTipo, sub: "1 a 5 unidades" },
     { titulo: "Sin ventas", valor: alertas.sinVentas.length, icon: "🚫", tipo: "sinVentas" as ModalTipo, sub: "Nunca vendidos" },
-    { titulo: "Sin rotación", valor: alertas.sinRotacion.length, icon: "🔄", tipo: "sinRotacion" as ModalTipo, sub: "Sin movimiento" },
+    { titulo: "Sin rotación", valor: alertas.sinRotacion.length, icon: "🔄", tipo: "sinRotacion" as ModalTipo, sub: "Sin ventas 30 días" },
     { titulo: "Vencen en 90d", valor: lotesPorVencer.length, icon: "📅", tipo: "lotes" as ModalTipo, sub: "Lotes próximos" },
   ]
 
@@ -260,7 +294,7 @@ const ventasMesAnterior = ventas?.filter(v => {
         <div style={{ background: "white", borderRadius: 16, padding: 24, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#374151" }}>
-              {periodoGrafico === "7dias" ? "📈 Ventas últimas 6 semanas" : "📈 Ventas últimos 6 meses"}
+              {periodoGrafico === "7dias" ? "📈 Ventas últimos 7 días" : "📈 Ventas últimos 6 meses"}
             </h3>
             <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid #e2e8f0" }}>
               <button
@@ -322,11 +356,29 @@ const ventasMesAnterior = ventas?.filter(v => {
           <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 520, maxHeight: "80vh", overflow: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
             onClick={e => e.stopPropagation()}>
 
+            {/* Sin stock */}
+            {modal === "sinStock" && (
+              <>
+                <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, marginBottom: 4 }}>📭 Productos sin stock</h2>
+                <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>Sin unidades disponibles</p>
+                {alertas.sinStock.length === 0 ? (
+                  <p style={{ color: "#4ade80", fontSize: 14 }}>✓ Todos los productos tienen stock</p>
+                ) : alertas.sinStock.map((p: any) => (
+                  <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8, marginBottom: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span style={{ color: "white", fontSize: 13, fontWeight: 500 }}>{p.nombre}</span>
+                    <span style={{ background: "rgba(107,114,128,0.2)", color: "#9ca3af", fontSize: 12, fontWeight: 700, padding: "2px 10px", borderRadius: 6 }}>
+                      Sin stock
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
+
             {/* Stock bajo */}
             {modal === "stockBajo" && (
               <>
                 <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, marginBottom: 4 }}>⚠️ Productos con stock bajo</h2>
-                <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>Stock igual o menor a 5 unidades</p>
+                <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>Entre 1 y 5 unidades disponibles</p>
                 {alertas.stockBajo.length === 0 ? (
                   <p style={{ color: "#4ade80", fontSize: 14 }}>✓ No hay productos con stock bajo</p>
                 ) : alertas.stockBajo.map((p: any) => (
@@ -360,7 +412,7 @@ const ventasMesAnterior = ventas?.filter(v => {
             {modal === "sinRotacion" && (
               <>
                 <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, marginBottom: 4 }}>🔄 Productos sin rotación</h2>
-                <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>Sin movimiento de ventas registrado</p>
+                <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>Con stock pero sin ventas en los últimos 30 días</p>
                 {alertas.sinRotacion.length === 0 ? (
                   <p style={{ color: "#4ade80", fontSize: 14 }}>✓ Todos los productos rotan</p>
                 ) : alertas.sinRotacion.map((p: any) => (
