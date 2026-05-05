@@ -228,25 +228,32 @@ export default function ComprasPage() {
     });
     setGuardando(false);
     if (error) { setErrorForm("Error: " + error.message); return; }
-    if (actualizarCostos) {
-      const calculados = calcularItemsConExtras()
-      await Promise.all(items.map(async (item, idx) => {
-        const precioUnit = parseFloat(item.precio_unitario) || 0
-        if (precioUnit <= 0) return
-        const cantidad = parseFloat(item.cantidad) || 1
-        const calc = calculados[idx]
-        // costo = precio de factura sin extras (lo que paga al proveedor)
-        // precio_venta = (precio + flete+IVA proporcionales por unidad) * (1 + margen)
-        const extrasUnitarios = (calc.ivaItem + calc.fleteItem) / cantidad
-        const baseParaPrecioVenta = precioUnit + extrasUnitarios
-        const margenActual = await supabase.from("productos").select("margen").eq("id", item.producto_id).single()
-        const margen = margenActual.data?.margen ?? 30
-        await supabase.from("productos").update({
-          costo: Math.round(precioUnit * 100) / 100,
-          precio_venta: Math.round(baseParaPrecioVenta * (1 + margen / 100) * 100) / 100
-        }).eq("id", item.producto_id)
-      }))
-    }
+    // Actualizar stock, costo y precio de venta de cada producto
+    const calculados = calcularItemsConExtras()
+    await Promise.all(items.map(async (item, idx) => {
+      const precioUnit = parseFloat(item.precio_unitario) || 0
+      const cantidad = parseFloat(item.cantidad) || 1
+      const calc = calculados[idx]
+
+      // Stock: siempre se incrementa con la cantidad comprada
+      const { data: prodActual } = await supabase.from("productos").select("stock, margen").eq("id", item.producto_id).single()
+      const stockActual = prodActual?.stock ?? 0
+      const margen = prodActual?.margen ?? 30
+
+      const updates: Record<string, number> = {
+        stock: stockActual + cantidad,
+      }
+
+      if (actualizarCostos && precioUnit > 0) {
+        // costo = precio de factura sin IVA ni flete (el IVA es un pase al cliente)
+        // precio_venta = (costo + flete proporcional por unidad) × (1 + margen%)
+        const fleteUnitario = calc.fleteItem / cantidad
+        updates.costo = Math.round(precioUnit * 100) / 100
+        updates.precio_venta = Math.round((precioUnit + fleteUnitario) * (1 + margen / 100) * 100) / 100
+      }
+
+      await supabase.from("productos").update(updates).eq("id", item.producto_id)
+    }))
     setModalNueva(false); cargarTodo();
   }
 
