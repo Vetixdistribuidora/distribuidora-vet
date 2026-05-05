@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts"
 
 function fmt(num: number) {
   return "$" + Math.round(num).toLocaleString("es-AR")
@@ -20,7 +20,7 @@ function estadoLote(dias: number) {
   return { label: "OK", color: "#4ade80", bg: "rgba(74,222,128,0.12)" }
 }
 
-type ModalTipo = "stockBajo" | "sinStock" | "sinVentas" | "sinRotacion" | "lotes" | "ventasHoy" | "ventasMes" | "detalleVenta" | null
+type ModalTipo = "stockBajo" | "sinStock" | "sinVentas" | "sinRotacion" | "lotes" | "ventasHoy" | "ventasMes" | "detalleVenta" | "cuentasCC" | null
 
 export default function Dashboard() {
   const router = useRouter()
@@ -33,6 +33,8 @@ export default function Dashboard() {
   const [lotesPorVencer, setLotesPorVencer] = useState<any[]>([])
   const [ventasHoyLista, setVentasHoyLista] = useState<any[]>([])
   const [ventasMesLista, setVentasMesLista] = useState<any[]>([])
+  const [ccPendientes, setCcPendientes] = useState<any[]>([])
+  const [topProductosMes, setTopProductosMes] = useState<any[]>([])
   const [modal, setModal] = useState<ModalTipo>(null)
   const [ventaDetalle, setVentaDetalle] = useState<any>(null)
   const [detalleItems, setDetalleItems] = useState<any[]>([])
@@ -48,11 +50,14 @@ export default function Dashboard() {
   }
 
   async function cargarDatos() {
-    const hoy = new Date().toISOString().slice(0, 10)
-    const inicioMes = new Date(); inicioMes.setDate(1)
-    const mesAnterior = new Date(); mesAnterior.setMonth(mesAnterior.getMonth() - 1); mesAnterior.setDate(1)
+    const hoyDate = new Date()
+    const inicioMesDate = new Date()
+    inicioMesDate.setDate(1)
+    inicioMesDate.setHours(0, 0, 0, 0)
+    const inicioMesAnteriorDate = new Date(inicioMesDate)
+    inicioMesAnteriorDate.setMonth(inicioMesAnteriorDate.getMonth() - 1)
 
-    // Cargar todas las ventas con paginación
+    // ── Cargar todas las ventas (paginado) ──
     let todasVentas: any[] = []
     let desdeV = 0
     while (true) {
@@ -64,7 +69,7 @@ export default function Dashboard() {
     }
     const ventas = todasVentas
 
-    // Cargar todos los productos con paginación
+    // ── Cargar todos los productos (paginado) ──
     let todosProductos: any[] = []
     let desdeP = 0
     while (true) {
@@ -76,79 +81,90 @@ export default function Dashboard() {
     }
     const productos = todosProductos
 
+    // ── Cargar todas las compras (paginado) ──
+    let todasCompras: any[] = []
+    let desdeC = 0
+    while (true) {
+      const { data } = await supabase.from("compras").select("total, fecha").range(desdeC, desdeC + 999)
+      if (!data || data.length === 0) break
+      todasCompras = todasCompras.concat(data)
+      if (data.length < 1000) break
+      desdeC += 1000
+    }
+
     const { data: detalleVentas } = await supabase.from("detalle_ventas").select("producto_id, cantidad, venta_id")
 
-    const hoyDate = new Date()
-const inicioMesDate = new Date()
-inicioMesDate.setDate(1)
-inicioMesDate.setHours(0, 0, 0, 0)
+    // ── Filtros de período ──
+    const ventasHoy = ventas.filter(v => {
+      const f = new Date(v.fecha)
+      return f.getDate() === hoyDate.getDate() && f.getMonth() === hoyDate.getMonth() && f.getFullYear() === hoyDate.getFullYear()
+    })
+    const ventasMes = ventas.filter(v => new Date(v.fecha) >= inicioMesDate)
+    const ventasMesAnterior = ventas.filter(v => {
+      const f = new Date(v.fecha)
+      return f >= inicioMesAnteriorDate && f < inicioMesDate
+    })
 
-const inicioMesAnteriorDate = new Date(inicioMesDate)
-inicioMesAnteriorDate.setMonth(inicioMesAnteriorDate.getMonth() - 1)
-
-const ventasHoy = ventas?.filter(v => {
-  const fecha = new Date(v.fecha)
-  return (
-    fecha.getDate() === hoyDate.getDate() &&
-    fecha.getMonth() === hoyDate.getMonth() &&
-    fecha.getFullYear() === hoyDate.getFullYear()
-  )
-}) || []
-
-const ventasMes = ventas?.filter(v => {
-  const fecha = new Date(v.fecha)
-  return fecha >= inicioMesDate
-}) || []
-
-const ventasMesAnterior = ventas?.filter(v => {
-  const fecha = new Date(v.fecha)
-  return fecha >= inicioMesAnteriorDate && fecha < inicioMesDate
-}) || []
-
+    // ── KPIs de ventas ──
     const totalHoy = ventasHoy.reduce((acc, v) => acc + Number(v.total), 0)
     const totalMes = ventasMes.reduce((acc, v) => acc + Number(v.total), 0)
     const totalAnterior = ventasMesAnterior.reduce((acc, v) => acc + Number(v.total), 0)
     const crecimiento = totalAnterior ? ((totalMes - totalAnterior) / totalAnterior) * 100 : 0
     const ticketPromedio = ventasMes.length ? totalMes / ventasMes.length : 0
 
-    const ventasMesIds = ventasMes.map(v => v.id)
+    // ── Compras del mes ──
+    const comprasMes = todasCompras.filter(c => new Date(c.fecha) >= inicioMesDate)
+    const totalComprasMes = comprasMes.reduce((acc, c) => acc + Number(c.total), 0)
+
+    // ── Cuentas corrientes pendientes ──
+    const ccLista = ventas.filter(v => v.estado === "cuenta_corriente")
+    const totalCC = ccLista.reduce((acc, v) => acc + Number(v.total), 0)
+    setCcPendientes(ccLista)
+
+    // ── Ganancia del mes + Top productos ──
     let ganancia = 0
-    if (ventasMesIds.length > 0 && productos) {
+    let topProductos: any[] = []
+    const ventasMesIds = ventasMes.map(v => v.id)
+    if (ventasMesIds.length > 0) {
       const { data: detallesMes } = await supabase
         .from("detalle_ventas")
         .select("producto_id, cantidad, precio")
         .in("venta_id", ventasMesIds)
       if (detallesMes) {
+        const conteo: Record<number, { nombre: string; cantidad: number; total: number }> = {}
         detallesMes.forEach(d => {
           const prod = productos.find((p: any) => p.id === d.producto_id)
           if (prod) ganancia += (d.precio - prod.costo) * d.cantidad
+          if (!conteo[d.producto_id]) conteo[d.producto_id] = { nombre: prod?.nombre || "Producto #" + d.producto_id, cantidad: 0, total: 0 }
+          conteo[d.producto_id].cantidad += d.cantidad
+          conteo[d.producto_id].total += d.precio * d.cantidad
         })
+        topProductos = Object.values(conteo).sort((a, b) => b.cantidad - a.cantidad).slice(0, 5)
       }
     }
+    setTopProductosMes(topProductos)
 
     const margen = totalMes ? (ganancia / totalMes) * 100 : 0
-    const capitalStock = productos?.reduce((acc, p) => acc + (p.costo || 0) * (p.stock || 0), 0) || 0
+    const capitalStock = productos.reduce((acc, p) => acc + (p.costo || 0) * (p.stock || 0), 0)
 
-    // Sin stock: stock = 0 o null
-    const sinStock = productos?.filter(p => p.stock == null || p.stock === 0) || []
-    // Stock bajo: entre 1 y 5 unidades (excluye los sin stock)
-    const stockBajo = productos?.filter(p => p.stock != null && p.stock > 0 && p.stock <= 5) || []
+    // ── Alertas de stock ──
+    const sinStock = productos.filter(p => p.stock == null || p.stock === 0)
+    const stockBajo = productos.filter(p => p.stock != null && p.stock > 0 && p.stock <= 5)
 
-    // Sin ventas: nunca vendidos
+    // ── Sin ventas / Sin rotación ──
     const vendidosIds = new Set(detalleVentas?.map(d => d.producto_id))
-    const sinVentas = productos?.filter(p => !vendidosIds.has(p.id)) || []
-
-    // Sin rotación: con stock pero sin ventas en los últimos 30 días
+    const sinVentas = productos.filter(p => !vendidosIds.has(p.id))
     const hace30 = new Date(); hace30.setDate(hace30.getDate() - 30)
-    const ventasIds30d = new Set(ventas?.filter(v => new Date(v.fecha) >= hace30).map(v => v.id))
+    const ventasIds30d = new Set(ventas.filter(v => new Date(v.fecha) >= hace30).map(v => v.id))
     const vendidos30dIds = new Set(detalleVentas?.filter(d => ventasIds30d.has(d.venta_id)).map(d => d.producto_id))
-    const sinRotacion = productos?.filter(p => (p.stock != null && p.stock > 0) && !vendidos30dIds.has(p.id)) || []
+    const sinRotacion = productos.filter(p => (p.stock != null && p.stock > 0) && !vendidos30dIds.has(p.id))
 
-    setKpis({ totalHoy, totalMes, ganancia, margen, crecimiento, ticketPromedio, cantidadVentas: ventasMes.length, cantidadHoy: ventasHoy.length, capitalStock })
+    setKpis({ totalHoy, totalMes, ganancia, margen, crecimiento, ticketPromedio, cantidadVentas: ventasMes.length, cantidadHoy: ventasHoy.length, capitalStock, totalComprasMes, totalCC, cantidadCC: ccLista.length })
     setAlertas({ sinStock, stockBajo, sinVentas, sinRotacion })
     setVentasHoyLista(ventasHoy)
     setVentasMesLista(ventasMes)
 
+    // ── Lotes por vencer ──
     const en90 = new Date(); en90.setDate(en90.getDate() + 90)
     const { data: lotes } = await supabase
       .from("lotes_con_stock")
@@ -157,26 +173,28 @@ const ventasMesAnterior = ventas?.filter(v => {
       .order("fecha_vencimiento", { ascending: true })
     setLotesPorVencer(lotes || [])
 
+    // ── Gráfico 7 días (solo ventas) ──
     const ultimos7 = [...Array(7)].map((_, i) => {
-  const fecha = new Date(); fecha.setDate(fecha.getDate() - i)
-  const f = fecha.toISOString().slice(0, 10)
-  const total = ventas?.filter(v => {
-    const fv = new Date(v.fecha)
-    return fv.toISOString().slice(0, 10) === f
-  }).reduce((acc, v) => acc + Number(v.total), 0) || 0
-  return { fecha: f.slice(5), total }
-}).reverse()
+      const fecha = new Date(); fecha.setDate(fecha.getDate() - i)
+      const f = fecha.toISOString().slice(0, 10)
+      const total = ventas.filter(v => new Date(v.fecha).toISOString().slice(0, 10) === f)
+        .reduce((acc, v) => acc + Number(v.total), 0)
+      return { fecha: f.slice(5), total }
+    }).reverse()
     setVentasGrafico(ultimos7)
 
+    // ── Gráfico 6 meses (ventas + compras) ──
     const ultimos6Meses = [...Array(6)].map((_, i) => {
       const fecha = new Date()
       fecha.setDate(1)
       fecha.setMonth(fecha.getMonth() - i)
-      const mes = fecha.toISOString().slice(0, 7) // "2025-04"
+      const mes = fecha.toISOString().slice(0, 7)
       const label = fecha.toLocaleDateString("es-AR", { month: "short", year: "2-digit" })
-      const total = ventas?.filter(v => new Date(v.fecha).toISOString().slice(0, 7) === mes)
-        .reduce((acc, v) => acc + Number(v.total), 0) || 0
-      return { fecha: label, total }
+      const ventasTotal = ventas.filter(v => new Date(v.fecha).toISOString().slice(0, 7) === mes)
+        .reduce((acc, v) => acc + Number(v.total), 0)
+      const comprasTotal = todasCompras.filter(c => new Date(c.fecha).toISOString().slice(0, 7) === mes)
+        .reduce((acc, c) => acc + Number(c.total), 0)
+      return { fecha: label, ventas: ventasTotal, compras: comprasTotal }
     }).reverse()
     setVentasMensual(ultimos6Meses)
   }
@@ -204,10 +222,11 @@ const ventasMesAnterior = ventas?.filter(v => {
   const kpiCards = [
     { titulo: "Ventas hoy", valor: fmt(kpis.totalHoy), sub: `${kpis.cantidadHoy} venta${kpis.cantidadHoy !== 1 ? "s" : ""}`, icon: "☀️", color: "#3b82f6", onClick: () => setModal("ventasHoy") },
     { titulo: "Ventas del mes", valor: fmt(kpis.totalMes), sub: `${kpis.cantidadVentas} ventas`, icon: "📅", color: "#6366f1", onClick: () => setModal("ventasMes") },
+    { titulo: "Compras del mes", valor: fmt(kpis.totalComprasMes), sub: "Total gastado en compras", icon: "🛒", color: "#f59e0b", onClick: undefined },
     { titulo: "Ganancia", valor: fmt(kpis.ganancia), sub: `Margen ${kpis.margen?.toFixed(1)}%`, icon: "💰", color: "#22c55e", onClick: undefined },
-    { titulo: "Ticket promedio", valor: fmt(kpis.ticketPromedio), sub: "Este mes", icon: "🧾", color: "#f59e0b", onClick: undefined },
     { titulo: "Crecimiento", valor: (kpis.crecimiento >= 0 ? "+" : "") + kpis.crecimiento?.toFixed(1) + "%", sub: "vs mes anterior", icon: "📈", color: kpis.crecimiento >= 0 ? "#22c55e" : "#ef4444", onClick: undefined },
-    { titulo: "Capital en stock", valor: fmt(kpis.capitalStock), sub: "Valor de inventario", icon: "📦", color: "#a78bfa", onClick: undefined },
+    { titulo: "Capital en stock", valor: fmt(kpis.capitalStock), sub: "Costo × stock", icon: "📦", color: "#a78bfa", onClick: undefined },
+    { titulo: "Cuentas corrientes", valor: fmt(kpis.totalCC), sub: `${kpis.cantidadCC} venta${kpis.cantidadCC !== 1 ? "s" : ""} pendiente${kpis.cantidadCC !== 1 ? "s" : ""}`, icon: "🕐", color: "#ef4444", onClick: () => setModal("cuentasCC") },
   ]
 
   const alertaCards = [
@@ -273,10 +292,7 @@ const ventasMesAnterior = ventas?.filter(v => {
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                   <span style={{ fontSize: 20 }}>{a.icon}</span>
-                  <span style={{
-                    fontSize: 22, fontWeight: 800,
-                    color: hayProblema ? "#f87171" : "#22c55e"
-                  }}>{a.valor}</span>
+                  <span style={{ fontSize: 22, fontWeight: 800, color: hayProblema ? "#f87171" : "#22c55e" }}>{a.valor}</span>
                 </div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: hayProblema ? "white" : "#374151" }}>{a.titulo}</div>
                 <div style={{ fontSize: 11, color: hayProblema ? "#6b7280" : "#94a3b8", marginTop: 2 }}>{a.sub}</div>
@@ -289,12 +305,56 @@ const ventasMesAnterior = ventas?.filter(v => {
         </div>
       </div>
 
+      {/* Top productos del mes */}
+      {topProductosMes.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: "#64748b", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>🏆 Más vendidos este mes</h2>
+          <div style={{ background: "white", borderRadius: 16, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", overflow: "hidden" }}>
+            {topProductosMes.map((p, idx) => (
+              <div key={p.nombre} style={{
+                display: "flex", alignItems: "center", gap: 14, padding: "12px 20px",
+                borderBottom: idx < topProductosMes.length - 1 ? "1px solid #f1f5f9" : "none"
+              }}>
+                {/* Posición */}
+                <div style={{
+                  width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                  background: idx === 0 ? "#fef3c7" : idx === 1 ? "#f1f5f9" : idx === 2 ? "#fef3c7" : "#f8fafc",
+                  color: idx === 0 ? "#d97706" : idx === 1 ? "#64748b" : idx === 2 ? "#92400e" : "#94a3b8",
+                  fontSize: 12, fontWeight: 800, flexShrink: 0
+                }}>
+                  {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : idx + 1}
+                </div>
+                {/* Nombre */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.nombre}</div>
+                  <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{fmt(p.total)} en ventas</div>
+                </div>
+                {/* Cantidad */}
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#3b82f6" }}>{p.cantidad}</div>
+                  <div style={{ fontSize: 10, color: "#94a3b8" }}>unidades</div>
+                </div>
+                {/* Barra */}
+                <div style={{ width: 80, flexShrink: 0 }}>
+                  <div style={{ height: 6, borderRadius: 3, background: "#f1f5f9", overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%", borderRadius: 3, background: "#3b82f6",
+                      width: `${Math.round((p.cantidad / topProductosMes[0].cantidad) * 100)}%`
+                    }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Gráfico + Vencimientos */}
       <div className="grid-grafico" style={{ display: "grid", gridTemplateColumns: lotesPorVencer.length > 0 ? "1fr 1fr" : "1fr", gap: 16, marginBottom: 24 }}>
         <div style={{ background: "white", borderRadius: 16, padding: 24, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#374151" }}>
-              {periodoGrafico === "7dias" ? "📈 Ventas últimos 7 días" : "📈 Ventas últimos 6 meses"}
+              {periodoGrafico === "7dias" ? "📈 Ventas últimos 7 días" : "📊 Ventas vs Compras — 6 meses"}
             </h3>
             <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid #e2e8f0" }}>
               <button
@@ -310,13 +370,29 @@ const ventasMesAnterior = ventas?.filter(v => {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={periodoGrafico === "7dias" ? ventasGrafico : ventasMensual}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="fecha" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} tickFormatter={v => "$" + (v >= 1000000 ? (v/1000000).toFixed(1)+"M" : v >= 1000 ? (v/1000).toFixed(0)+"k" : v)} />
-              <Tooltip formatter={(v: any) => [fmt(v), "Total"]} labelStyle={{ color: "#374151" }} contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} />
-              <Line type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2.5} dot={{ fill: "#3b82f6", r: 4 }} activeDot={{ r: 6 }} />
-            </LineChart>
+            {periodoGrafico === "7dias" ? (
+              <LineChart data={ventasGrafico}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="fecha" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} tickFormatter={v => "$" + (v >= 1000000 ? (v / 1000000).toFixed(1) + "M" : v >= 1000 ? (v / 1000).toFixed(0) + "k" : v)} />
+                <Tooltip formatter={(v: any) => [fmt(v), "Ventas"]} labelStyle={{ color: "#374151" }} contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} />
+                <Line type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2.5} dot={{ fill: "#3b82f6", r: 4 }} activeDot={{ r: 6 }} name="Ventas" />
+              </LineChart>
+            ) : (
+              <LineChart data={ventasMensual}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="fecha" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} tickFormatter={v => "$" + (v >= 1000000 ? (v / 1000000).toFixed(1) + "M" : v >= 1000 ? (v / 1000).toFixed(0) + "k" : v)} />
+                <Tooltip
+                  formatter={(v: any, name: string) => [fmt(v), name === "ventas" ? "Ventas" : "Compras"]}
+                  labelStyle={{ color: "#374151" }}
+                  contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                />
+                <Legend formatter={(value) => value === "ventas" ? "Ventas" : "Compras"} wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Line type="monotone" dataKey="ventas" stroke="#3b82f6" strokeWidth={2.5} dot={{ fill: "#3b82f6", r: 4 }} activeDot={{ r: 6 }} name="ventas" />
+                <Line type="monotone" dataKey="compras" stroke="#f59e0b" strokeWidth={2.5} dot={{ fill: "#f59e0b", r: 4 }} activeDot={{ r: 6 }} name="compras" strokeDasharray="5 3" />
+              </LineChart>
+            )}
           </ResponsiveContainer>
         </div>
 
@@ -355,6 +431,39 @@ const ventasMesAnterior = ventas?.filter(v => {
           onClick={cerrarModal}>
           <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 520, maxHeight: "80vh", overflow: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
             onClick={e => e.stopPropagation()}>
+
+            {/* Cuentas corrientes */}
+            {modal === "cuentasCC" && (
+              <>
+                <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, marginBottom: 4 }}>🕐 Cuentas corrientes pendientes</h2>
+                <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>
+                  {ccPendientes.length} venta{ccPendientes.length !== 1 ? "s" : ""} sin cobrar · Total: <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(kpis.totalCC)}</span>
+                </p>
+                {ccPendientes.length === 0 ? (
+                  <p style={{ color: "#4ade80", fontSize: 14 }}>✓ No hay cuentas corrientes pendientes</p>
+                ) : [...ccPendientes].sort((a, b) => Number(b.total) - Number(a.total)).map((v: any) => (
+                  <div key={v.id}
+                    onClick={() => verDetalleVenta(v)}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8, marginBottom: 6, border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}
+                    onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = "rgba(59,130,246,0.1)"}
+                    onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.04)"}
+                  >
+                    <div>
+                      <div style={{ color: "white", fontSize: 13, fontWeight: 600 }}>
+                        {v.clientes?.nombre} {v.clientes?.apellido}
+                      </div>
+                      <div style={{ color: "#6b7280", fontSize: 11, marginTop: 2 }}>
+                        {v.fecha?.slice(0, 10)} · N° {v.nro_factura}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ color: "#f87171", fontWeight: 700, fontSize: 14 }}>{fmtExacto(v.total)}</div>
+                      <div style={{ color: "#3b82f6", fontSize: 10, marginTop: 2 }}>Ver detalle →</div>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
 
             {/* Sin stock */}
             {modal === "sinStock" && (
@@ -402,7 +511,7 @@ const ventasMesAnterior = ventas?.filter(v => {
                 ) : alertas.sinVentas.map((p: any) => (
                   <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8, marginBottom: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
                     <span style={{ color: "white", fontSize: 13, fontWeight: 500 }}>{p.nombre}</span>
-                    <span style={{ color: "#6b7280", fontSize: 12 }}>Stock: {p.stock}</span>
+                    <span style={{ color: "#6b7280", fontSize: 12 }}>Stock: {p.stock ?? 0}</span>
                   </div>
                 ))}
               </>
