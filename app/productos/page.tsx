@@ -344,22 +344,29 @@ export default function Productos() {
     setImportando(true); setProgreso(0)
     const margenDefault = Number(margenImportacion)
     const nombresExistentes = new Map(productos.map((p: any) => [p.nombre.toLowerCase().trim(), p]))
-    const registros = mapeo.map(({ nombre, costo, laboratorio }) => {
+
+    // Separar nuevos (sin stock aún) de existentes (conservan su stock actual)
+    const nuevos: any[] = []
+    const existentes: any[] = []
+    for (const { nombre, costo, laboratorio } of mapeo) {
       const existente = nombresExistentes.get(nombre.toLowerCase().trim())
       const margen = existente ? existente.margen : margenDefault
       const rec: any = { nombre, costo: Math.round(costo * 100) / 100, margen, precio_venta: Math.round(costo * (1 + margen / 100) * 100) / 100 }
       if (laboratorio) rec.laboratorio = laboratorio
-      return rec
-    })
+      if (existente) existentes.push(rec)
+      else nuevos.push({ ...rec, stock: 0 })
+    }
+
     const CHUNK = 100; let procesados = 0
-    for (let i = 0; i < registros.length; i += CHUNK) {
-      const { error } = await supabase.from("productos").upsert(registros.slice(i, i + CHUNK), { onConflict: "nombre" })
+    const todosLotes = [...nuevos, ...existentes]
+    for (let i = 0; i < todosLotes.length; i += CHUNK) {
+      const { error } = await supabase.from("productos").upsert(todosLotes.slice(i, i + CHUNK), { onConflict: "nombre" })
       if (error) { mostrarToast("❌ " + error.message, "error"); setImportando(false); return }
-      procesados += Math.min(CHUNK, registros.length - i)
-      setProgreso(Math.round((procesados / registros.length) * 100))
+      procesados += Math.min(CHUNK, todosLotes.length - i)
+      setProgreso(Math.round((procesados / todosLotes.length) * 100))
     }
     setImportando(false); setPreview([]); setRawRows([]); setColumnas([]); setColNombre(""); setColCosto(""); setColLaboratorio(""); setArchivo(null)
-    mostrarToast(`✅ ${procesados} productos importados/actualizados`, "ok"); cargar()
+    mostrarToast(`✅ ${nuevos.length} nuevos · ${existentes.length} actualizados`, "ok"); cargar()
   }
 
   function abrirSelectorFoto(productoId: number) {
@@ -753,7 +760,7 @@ export default function Productos() {
                             {p.categoria}
                           </span>
                         )}
-                        {p.stock === 0 ? (
+                        {(p.stock == null || p.stock === 0) ? (
                           <span style={{ background: "#fef2f2", color: "#dc2626", fontSize: "10px", fontWeight: "700", padding: "1px 6px", borderRadius: "5px", border: "1px solid #fecaca" }}>🚫 Sin stock</span>
                         ) : p.stock <= 5 ? (
                           <span style={{ background: "#fff3cd", color: "#92400e", fontSize: "10px", fontWeight: "600", padding: "1px 6px", borderRadius: "5px", border: "1px solid #fbbf24" }}>⚠️ Stock bajo</span>
