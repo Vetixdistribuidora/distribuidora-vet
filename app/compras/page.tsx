@@ -235,13 +235,15 @@ export default function ComprasPage() {
         if (precioUnit <= 0) return
         const cantidad = parseFloat(item.cantidad) || 1
         const calc = calculados[idx]
-        // costo real por unidad = precio + proporción de IVA y flete asignada a este ítem
-        const costoUnitario = precioUnit + (calc.ivaItem + calc.fleteItem) / cantidad
+        // costo = precio de factura sin extras (lo que paga al proveedor)
+        // precio_venta = (precio + flete+IVA proporcionales por unidad) * (1 + margen)
+        const extrasUnitarios = (calc.ivaItem + calc.fleteItem) / cantidad
+        const baseParaPrecioVenta = precioUnit + extrasUnitarios
         const margenActual = await supabase.from("productos").select("margen").eq("id", item.producto_id).single()
         const margen = margenActual.data?.margen ?? 30
         await supabase.from("productos").update({
-          costo: Math.round(costoUnitario * 100) / 100,
-          precio_venta: Math.round(costoUnitario * (1 + margen / 100) * 100) / 100
+          costo: Math.round(precioUnit * 100) / 100,
+          precio_venta: Math.round(baseParaPrecioVenta * (1 + margen / 100) * 100) / 100
         }).eq("id", item.producto_id)
       }))
     }
