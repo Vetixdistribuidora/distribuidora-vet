@@ -228,25 +228,30 @@ export default function ComprasPage() {
     });
     setGuardando(false);
     if (error) { setErrorForm("Error: " + error.message); return; }
-    // El RPC registrar_compra ya actualiza el stock — solo actualizamos costo/precio_venta
-    if (actualizarCostos) {
-      const calculados = calcularItemsConExtras()
-      await Promise.all(items.map(async (item, idx) => {
-        const precioUnit = parseFloat(item.precio_unitario) || 0
-        if (precioUnit <= 0) return
-        const cantidad = parseFloat(item.cantidad) || 1
-        const calc = calculados[idx]
-        const { data: prodActual } = await supabase.from("productos").select("margen").eq("id", item.producto_id).single()
-        const margen = prodActual?.margen ?? 30
-        // costo = precio de factura sin IVA (pase al cliente)
+    // Actualizar stock + costo/precio_venta por producto
+    const calculados = calcularItemsConExtras()
+    await Promise.all(items.map(async (item, idx) => {
+      const precioUnit = parseFloat(item.precio_unitario) || 0
+      const cantidad = parseFloat(item.cantidad) || 1
+      const calc = calculados[idx]
+      const { data: prodActual } = await supabase.from("productos").select("stock, margen").eq("id", item.producto_id).single()
+      const stockActual = prodActual?.stock ?? 0
+      const margen = prodActual?.margen ?? 30
+
+      const updates: Record<string, number> = {
+        stock: stockActual + cantidad,
+      }
+
+      if (actualizarCostos && precioUnit > 0) {
+        // costo = precio de factura (sin IVA, que es pase al cliente)
         // precio_venta = (costo + flete por unidad) × (1 + margen%)
         const fleteUnitario = calc.fleteItem / cantidad
-        await supabase.from("productos").update({
-          costo: Math.round(precioUnit * 100) / 100,
-          precio_venta: Math.round((precioUnit + fleteUnitario) * (1 + margen / 100) * 100) / 100
-        }).eq("id", item.producto_id)
-      }))
-    }
+        updates.costo = Math.round(precioUnit * 100) / 100
+        updates.precio_venta = Math.round((precioUnit + fleteUnitario) * (1 + margen / 100) * 100) / 100
+      }
+
+      await supabase.from("productos").update(updates).eq("id", item.producto_id)
+    }))
     setModalNueva(false); cargarTodo();
   }
 
