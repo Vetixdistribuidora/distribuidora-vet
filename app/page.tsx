@@ -384,7 +384,7 @@ export default function Dashboard() {
                 <XAxis dataKey="fecha" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} tickFormatter={v => "$" + (v >= 1000000 ? (v / 1000000).toFixed(1) + "M" : v >= 1000 ? (v / 1000).toFixed(0) + "k" : v)} />
                 <Tooltip
-                  formatter={(v: any, name: string) => [fmt(v), name === "ventas" ? "Ventas" : "Compras"]}
+                  formatter={(v: any, name: any) => [fmt(v), name === "ventas" ? "Ventas" : "Compras"]}
                   labelStyle={{ color: "#374151" }}
                   contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
                 />
