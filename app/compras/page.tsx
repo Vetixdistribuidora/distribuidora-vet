@@ -229,16 +229,19 @@ export default function ComprasPage() {
     setGuardando(false);
     if (error) { setErrorForm("Error: " + error.message); return; }
     if (actualizarCostos) {
-      await Promise.all(items.map(async (item) => {
-        const nuevoCosto = parseFloat(item.precio_unitario) || 0
-        if (nuevoCosto <= 0) return
-        const prod = productos.find((p: Producto) => p.id === item.producto_id)
-        if (!prod) return
+      const calculados = calcularItemsConExtras()
+      await Promise.all(items.map(async (item, idx) => {
+        const precioUnit = parseFloat(item.precio_unitario) || 0
+        if (precioUnit <= 0) return
+        const cantidad = parseFloat(item.cantidad) || 1
+        const calc = calculados[idx]
+        // costo real por unidad = precio + proporción de IVA y flete asignada a este ítem
+        const costoUnitario = precioUnit + (calc.ivaItem + calc.fleteItem) / cantidad
         const margenActual = await supabase.from("productos").select("margen").eq("id", item.producto_id).single()
         const margen = margenActual.data?.margen ?? 30
         await supabase.from("productos").update({
-          costo: nuevoCosto,
-          precio_venta: Math.round(nuevoCosto * (1 + margen / 100) * 100) / 100
+          costo: Math.round(costoUnitario * 100) / 100,
+          precio_venta: Math.round(costoUnitario * (1 + margen / 100) * 100) / 100
         }).eq("id", item.producto_id)
       }))
     }
@@ -532,73 +535,54 @@ export default function ComprasPage() {
                 )}
 
                 {items.length > 0 && (
-                  <div style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, overflow: "hidden" }}>
-                    <div className="compras-tabla-scroll">
-                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+                  <div>
+                    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680 }}>
                         <thead>
                           <tr style={{ background: "rgba(255,255,255,0.04)" }}>
-                            {["Producto", "Cantidad", "P. unitario", "Vencimiento", "Subtotal", "IVA", "Flete", "Total", ""].map((h, i) => (
-                              <th key={i} style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "#6b7280", textAlign: i >= 4 && i <= 7 ? "right" : i === 8 ? "center" : "left", letterSpacing: 0.5, textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                            {["Producto", "Cant.", "P. unitario", "Venc.", "Subtotal", "IVA", "Flete", "Total ítem", ""].map((h, i) => (
+                              <th key={i} style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, color: "#6b7280", textAlign: i >= 4 && i <= 7 ? "right" : i === 8 ? "center" : "left", letterSpacing: 0.5, textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {itemsCalculados.map((it, idx) => (
                             <tr key={it.producto_id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                              <td style={{ padding: "10px 12px", color: "white", fontSize: 13, fontWeight: 500 }}>{it.nombre}</td>
-                              <td style={{ padding: "10px 12px" }}>
+                              <td style={{ padding: "9px 10px", color: "white", fontSize: 13, fontWeight: 500, maxWidth: 180, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={it.nombre}>{it.nombre}</td>
+                              <td style={{ padding: "9px 10px" }}>
                                 <input type="number" min="1" value={it.cantidad}
                                   onChange={e => setItems(items.map((item, i) => i === idx ? { ...item, cantidad: e.target.value } : item))}
-                                  style={{ width: 70, padding: "6px 10px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", textAlign: "center" }} />
+                                  style={{ width: 62, padding: "5px 8px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", textAlign: "center" }} />
                               </td>
-                              <td style={{ padding: "10px 12px" }}>
+                              <td style={{ padding: "9px 10px" }}>
                                 <input type="number" min="0" step="0.01" value={it.precio_unitario}
                                   onChange={e => setItems(items.map((item, i) => i === idx ? { ...item, precio_unitario: e.target.value } : item))}
                                   placeholder="0.00"
-                                  style={{ width: 100, padding: "6px 10px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", textAlign: "center" }} />
+                                  style={{ width: 90, padding: "5px 8px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", textAlign: "center" }} />
                               </td>
-                              <td style={{ padding: "10px 12px" }}>
+                              <td style={{ padding: "9px 10px" }}>
                                 <input type="date" value={it.fecha_vencimiento}
                                   onChange={e => setItems(items.map((item, i) => i === idx ? { ...item, fecha_vencimiento: e.target.value } : item))}
-                                  style={{ padding: "6px 10px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 12, outline: "none", colorScheme: "dark" }} />
+                                  style={{ padding: "5px 8px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 12, outline: "none", colorScheme: "dark" }} />
                               </td>
-                              <td style={{ padding: "10px 12px", textAlign: "right", color: "#d1d5db", fontSize: 12 }}>{fmt(it.subtotalItem)}</td>
-                              <td style={{ padding: "10px 12px", textAlign: "right", color: "#93c5fd", fontSize: 12 }}>{fmt(it.ivaItem)}</td>
-                              <td style={{ padding: "10px 12px", textAlign: "right", color: "#fb923c", fontSize: 12 }}>{fmt(it.fleteItem)}</td>
-                              <td style={{ padding: "10px 12px", textAlign: "right", color: "white", fontSize: 12, fontWeight: 700 }}>{fmt(it.subtotalItem + it.ivaItem + it.fleteItem)}</td>
-                              <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                                <button onClick={() => quitarItem(idx)} style={{ background: "rgba(239,68,68,0.15)", border: "none", color: "#f87171", borderRadius: 6, width: 26, height: 26, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>✕</button>
+                              <td style={{ padding: "9px 10px", textAlign: "right", color: "#d1d5db", fontSize: 12, whiteSpace: "nowrap" }}>{fmt(it.subtotalItem)}</td>
+                              <td style={{ padding: "9px 10px", textAlign: "right", color: "#93c5fd", fontSize: 12, whiteSpace: "nowrap" }}>{fmt(it.ivaItem)}</td>
+                              <td style={{ padding: "9px 10px", textAlign: "right", color: "#fb923c", fontSize: 12, whiteSpace: "nowrap" }}>{fmt(it.fleteItem)}</td>
+                              <td style={{ padding: "9px 10px", textAlign: "right", color: "white", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{fmt(it.subtotalItem + it.ivaItem + it.fleteItem)}</td>
+                              <td style={{ padding: "9px 10px", textAlign: "center" }}>
+                                <button onClick={() => quitarItem(idx)} title="Quitar producto" style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", borderRadius: 6, width: 28, height: 28, cursor: "pointer", fontSize: 14, fontWeight: 700, flexShrink: 0 }}>✕</button>
                               </td>
                             </tr>
                           ))}
                         </tbody>
-                        <tfoot>
-                          <tr style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                            <td colSpan={7} style={{ padding: "8px 12px", textAlign: "right", color: "#6b7280", fontSize: 12 }}>Subtotal:</td>
-                            <td style={{ padding: "8px 12px", textAlign: "right", color: "#d1d5db", fontSize: 12, fontWeight: 600 }}>{fmt(subtotalForm)}</td>
-                            <td></td>
-                          </tr>
-                          {form.incluye_iva && ivaForm > 0 && (
-                            <tr>
-                              <td colSpan={7} style={{ padding: "6px 12px", textAlign: "right", color: "#93c5fd", fontSize: 12 }}>IVA {pctIvaForm}%:</td>
-                              <td style={{ padding: "6px 12px", textAlign: "right", color: "#93c5fd", fontSize: 12, fontWeight: 600 }}>{fmt(ivaForm)}</td>
-                              <td></td>
-                            </tr>
-                          )}
-                          {form.incluye_flete && fleteForm > 0 && (
-                            <tr>
-                              <td colSpan={7} style={{ padding: "6px 12px", textAlign: "right", color: "#fb923c", fontSize: 12 }}>🚚 Flete:</td>
-                              <td style={{ padding: "6px 12px", textAlign: "right", color: "#fb923c", fontSize: 12, fontWeight: 600 }}>{fmt(fleteForm)}</td>
-                              <td></td>
-                            </tr>
-                          )}
-                          <tr style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                            <td colSpan={7} style={{ padding: "10px 12px", textAlign: "right", color: "white", fontSize: 13, fontWeight: 700 }}>Total:</td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", color: "white", fontSize: 15, fontWeight: 800 }}>{fmt(totalForm)}</td>
-                            <td></td>
-                          </tr>
-                        </tfoot>
                       </table>
+                    </div>
+                    {/* Resumen siempre visible */}
+                    <div style={{ marginTop: 8, padding: "10px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 12, color: "#6b7280" }}>Subtotal: <b style={{ color: "#d1d5db" }}>{fmt(subtotalForm)}</b></span>
+                      {form.incluye_iva && ivaForm > 0 && <span style={{ fontSize: 12, color: "#93c5fd" }}>IVA {pctIvaForm}%: <b>{fmt(ivaForm)}</b></span>}
+                      {form.incluye_flete && fleteForm > 0 && <span style={{ fontSize: 12, color: "#fb923c" }}>🚚 Flete: <b>{fmt(fleteForm)}</b></span>}
+                      <span style={{ fontSize: 14, color: "white", fontWeight: 800 }}>Total: {fmt(totalForm)}</span>
                     </div>
                   </div>
                 )}
