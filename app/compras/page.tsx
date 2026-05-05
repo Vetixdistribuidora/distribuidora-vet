@@ -18,7 +18,7 @@ interface Compra {
   proveedores: { nombre: string } | null;
 }
 interface DetalleCompra {
-  id: number; cantidad: number; precio_unitario: number; subtotal: number;
+  id: number; producto_id: number; cantidad: number; precio_unitario: number; subtotal: number;
   monto_iva: number; monto_flete: number; productos: { nombre: string } | null;
 }
 interface PagoCompra {
@@ -116,6 +116,7 @@ export default function ComprasPage() {
   const [formPago, setFormPago] = useState({ monto: "", metodo_pago: "Efectivo", notas: "" });
   const [guardandoPago, setGuardandoPago] = useState(false);
   const [cancelando, setCancelando] = useState(false);
+  const [reaplicando, setReaplicando] = useState(false);
   const [confirmEliminarCompra, setConfirmEliminarCompra] = useState<Compra | null>(null);
   const [eliminandoCompra, setEliminandoCompra] = useState(false);
   const [mostrarFormNuevoProd, setMostrarFormNuevoProd] = useState(false);
@@ -294,7 +295,7 @@ export default function ComprasPage() {
   async function verDetalle(c: Compra) {
     setCompraVer(c); setTabDetalle("detalle"); setLoadingDetalle(true);
     const [{ data: d }, { data: p }] = await Promise.all([
-      supabase.from("compras_detalle").select("*, productos(nombre)").eq("compra_id", c.id),
+      supabase.from("compras_detalle").select("*, productos(nombre)").eq("compra_id", c.id).order("id"),
       supabase.from("compras_pagos").select("*").eq("compra_id", c.id).order("fecha"),
     ]);
     if (d) setDetalle(d); if (p) setPagos(p);
@@ -313,6 +314,28 @@ export default function ComprasPage() {
     if (ca) setCompraVer(ca);
     const { data: p } = await supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha");
     if (p) setPagos(p); cargarTodo();
+  }
+
+  async function reaplicarCompraAProductos() {
+    if (!compraVer || detalle.length === 0) return;
+    setReaplicando(true);
+    const subtotalBase = detalle.reduce((s, d) => s + d.cantidad * d.precio_unitario, 0);
+    await Promise.all(detalle.map(async (d) => {
+      const proporcion = subtotalBase > 0 ? (d.cantidad * d.precio_unitario) / subtotalBase : 0;
+      const fleteItem = compraVer.monto_flete > 0 ? Math.round(compraVer.monto_flete * proporcion * 100) / 100 : 0;
+      const fleteUnitario = fleteItem / d.cantidad;
+      const { data: prodActual } = await supabase.from("productos").select("stock, margen").eq("id", d.producto_id).single();
+      const stockActual = prodActual?.stock ?? 0;
+      const margen = prodActual?.margen ?? 30;
+      await supabase.from("productos").update({
+        stock: stockActual + d.cantidad,
+        costo: Math.round(d.precio_unitario * 100) / 100,
+        precio_venta: Math.round((d.precio_unitario + fleteUnitario) * (1 + margen / 100) * 100) / 100,
+      }).eq("id", d.producto_id);
+    }));
+    setReaplicando(false);
+    cargarTodo();
+    alert(`✅ Stock, costo y precio de venta actualizados para ${detalle.length} producto${detalle.length !== 1 ? "s" : ""}.`);
   }
 
   async function guardarPago() {
@@ -839,6 +862,12 @@ export default function ComprasPage() {
                       {compraVer.notas && (
                         <p style={{ marginTop: 12, fontSize: 12, color: "#9ca3af", background: "rgba(255,255,255,0.04)", padding: "8px 12px", borderRadius: 8 }}>📝 {compraVer.notas}</p>
                       )}
+                      <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 14 }}>
+                        <button onClick={reaplicarCompraAProductos} disabled={reaplicando}
+                          style={{ width: "100%", padding: "11px", background: reaplicando ? "rgba(255,255,255,0.05)" : "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: 10, color: reaplicando ? "#6b7280" : "#60a5fa", fontSize: 13, fontWeight: 700, cursor: reaplicando ? "not-allowed" : "pointer" }}>
+                          {reaplicando ? "Aplicando..." : "🔄 Aplicar a productos (stock · costo · precio de venta)"}
+                        </button>
+                      </div>
                     </div>
                   );
                 })()}
