@@ -303,7 +303,6 @@ export default function Clientes() {
                     {c.cuit && <span>CUIT: {c.cuit}</span>}
                     {c.telefono && <span>📞 {c.telefono}</span>}
                     {c.localidad && <span>📍 {c.localidad}</span>}
-                    <span>Margen: {c.porcentaje || 0}%</span>
                   </div>
                 </div>
               </div>

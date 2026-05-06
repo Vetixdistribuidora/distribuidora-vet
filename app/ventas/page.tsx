@@ -88,7 +88,7 @@ export default function Ventas() {
   const [productoId, setProductoId] = useState("")
   const [cantidad, setCantidad] = useState("1")
   const [carrito, setCarrito] = useState<any[]>([])
-  const [iva, setIva] = useState("21")
+  const [iva, setIva] = useState("")
   const [nroFactura, setNroFactura] = useState("")
   const [esCuentaCorriente, setEsCuentaCorriente] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -139,7 +139,7 @@ export default function Ventas() {
         setClienteId(b.clienteId || "")
         setClienteSeleccionado(b.clienteSeleccionado || null)
         setBusquedaCliente(b.busquedaCliente || "")
-        setIva(b.iva || "21")
+        setIva(b.iva || "")
         setEsCuentaCorriente(b.esCuentaCorriente || false)
       }
     } catch {}
@@ -287,7 +287,7 @@ export default function Ventas() {
     if (enCarrito) {
       setCarrito(carrito.map(i => i.producto_id === producto.id ? { ...i, cantidad: i.cantidad + cant } : i))
     } else {
-      setCarrito([...carrito, { producto_id: producto.id, nombre: producto.nombre, cantidad: cant, precio: precioFinal, bonificacion: 0, stockDisponible: producto.stock }])
+      setCarrito([...carrito, { producto_id: producto.id, nombre: producto.nombre, cantidad: cant, precio: precioFinal, bonificacion: 0, descuento: 0, tipoDescuento: "pesos", stockDisponible: producto.stock }])
     }
     setProductoId(""); setBusquedaProducto(""); setCantidad("1")
   }
@@ -298,11 +298,19 @@ export default function Ventas() {
   function vaciarCarrito() { setCarrito([]) }
   function cambiarBonificacion(i: number, v: number) { const n = [...carrito]; n[i].bonificacion = v; setCarrito([...n]) }
   function cambiarPrecio(i: number, v: number) { const n = [...carrito]; n[i].precio = v; setCarrito([...n]) }
+  function cambiarDescuento(i: number, v: number) { const n = [...carrito]; n[i].descuento = v; setCarrito([...n]) }
+  function cambiarTipoDescuento(i: number, tipo: "pesos" | "porcentaje") { const n = [...carrito]; n[i].tipoDescuento = tipo; n[i].descuento = 0; setCarrito([...n]) }
+  function precioEfectivo(item: any): number {
+    const desc = item.descuento || 0
+    if (!desc) return item.precio
+    if (item.tipoDescuento === "porcentaje") return Math.max(0, item.precio * (1 - desc / 100))
+    return Math.max(0, item.precio - desc)
+  }
 
   const subtotal = carrito.reduce((acc, item) => {
     const bonif = item.bonificacion || 0
     const pagan = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
-    return acc + pagan * item.precio
+    return acc + pagan * precioEfectivo(item)
   }, 0)
   const ivaNum = Number(iva)
   const total = subtotal + subtotal * ivaNum / 100
@@ -321,7 +329,7 @@ export default function Ventas() {
     }).select().single()
     if (errorVenta || !venta) { mostrarToast("Error al guardar venta", "error"); setGuardando(false); return }
     const { error: errorDetalle } = await supabase.from("detalle_ventas").insert(
-      carrito.map(item => ({ venta_id: venta.id, producto_id: item.producto_id, cantidad: item.cantidad, precio: item.precio }))
+      carrito.map(item => ({ venta_id: venta.id, producto_id: item.producto_id, cantidad: item.cantidad, precio: precioEfectivo(item) }))
     )
     if (errorDetalle) { mostrarToast("Error al guardar detalle", "error"); setGuardando(false); return }
     if (esCuentaCorriente) {
@@ -344,7 +352,8 @@ export default function Ventas() {
         }
       }
     }
-    await supabase.from("facturas_impresion").insert([{ nro_factura: nroFactura, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura, clienteSeleccionado, carrito: [...carrito], subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? null : metodoCobro } }])
+    const carritoEfectivo = carrito.map(item => ({ ...item, precio: precioEfectivo(item) }))
+    await supabase.from("facturas_impresion").insert([{ nro_factura: nroFactura, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? null : metodoCobro } }])
     mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : "✅ Venta confirmada", "ok")
     setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false)
     localStorage.removeItem("vetix_borrador")
@@ -353,7 +362,8 @@ export default function Ventas() {
 
   function imprimirTicket(tipo: "presupuesto" | "remito" = "presupuesto") {
     if (!clienteSeleccionado || carrito.length === 0) return
-    generarHTMLEImprimir({ nroFactura, clienteSeleccionado, carrito: [...carrito], subtotal, ivaNum, total, esCuentaCorriente, metodoCobro }, tipo)
+    const carritoEfectivo = carrito.map(item => ({ ...item, precio: precioEfectivo(item) }))
+    generarHTMLEImprimir({ nroFactura, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro }, tipo)
   }
 
   const terminoBusqVentas = busquedaProducto.trim().replace(/\s+/g, " ").toLowerCase()
@@ -453,7 +463,6 @@ export default function Ventas() {
                     <div style={{ marginTop: 6, padding: "6px 10px", background: "#f0f9ff", borderRadius: 8, border: "1px solid #bae6fd", fontSize: 12, color: "#0369a1", display: "flex", gap: 12, flexWrap: "wrap" }}>
                       {clienteSeleccionado.localidad && <span>📍 {clienteSeleccionado.localidad}</span>}
                       {clienteSeleccionado.telefono && <span>📞 {clienteSeleccionado.telefono}</span>}
-                      {clienteSeleccionado.porcentaje > 0 && <span style={{ background: "#dbeafe", color: "#1d4ed8", padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>+{clienteSeleccionado.porcentaje}%</span>}
                     </div>
                   )}
                 </div>
@@ -550,7 +559,9 @@ export default function Ventas() {
                   {carrito.map((item, i) => {
                     const bonif = item.bonificacion || 0
                     const pagan = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
-                    const subtotalItem = pagan * item.precio
+                    const pEfectivo = precioEfectivo(item)
+                    const subtotalItem = pagan * pEfectivo
+                    const tieneDescuento = (item.descuento || 0) > 0
                     return (
                       <div key={i} style={{ borderRadius: 10, border: "1px solid #e2e8f0", overflow: "hidden" }}>
                         {/* Fila principal */}
@@ -561,27 +572,47 @@ export default function Ventas() {
                           </div>
                           <div style={{ textAlign: "right", flexShrink: 0 }}>
                             <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt(subtotalItem)}</div>
-                            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{fmt(item.precio)} c/u</div>
+                            <div style={{ fontSize: 11, color: tieneDescuento ? "#16a34a" : "#94a3b8", marginTop: 1 }}>
+                              {tieneDescuento
+                                ? <span><s style={{ color: "#94a3b8" }}>{fmt(item.precio)}</s> → {fmt(pEfectivo)} c/u</span>
+                                : <span>{fmt(item.precio)} c/u</span>}
+                            </div>
                           </div>
                           <button onClick={() => eliminarItem(i)} style={{ width: 28, height: 28, border: "none", background: "#fef2f2", borderRadius: 7, cursor: "pointer", fontSize: 13, color: "#dc2626", flexShrink: 0 }}>✕</button>
                         </div>
 
                         {/* Fila controles */}
                         <div className="ventas-item-controles" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "#f8fafc", borderTop: "1px solid #f1f5f9", flexWrap: "wrap" }}>
+                          {/* Cantidad */}
                           <div style={{ display: "flex", alignItems: "center", background: "white", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
                             <button onClick={() => restar(i)} style={{ width: 30, height: 30, border: "none", background: "transparent", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151" }}>−</button>
                             <span style={{ fontSize: 13, fontWeight: 700, color: "#111827", minWidth: 28, textAlign: "center", borderLeft: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0", height: 30, lineHeight: "30px" }}>{item.cantidad}</span>
                             <button onClick={() => sumar(i)} style={{ width: 30, height: 30, border: "none", background: "transparent", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151" }}>+</button>
                           </div>
+                          {/* Precio */}
                           <div className="ventas-item-precio" style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 100 }}>
                             <label style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", whiteSpace: "nowrap" }}>Precio u.</label>
                             <input type="number" value={item.precio} onChange={e => cambiarPrecio(i, Number(e.target.value))}
                               style={{ flex: 1, padding: "5px 8px", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box", background: "white", minWidth: 60 }} />
                           </div>
+                          {/* Bonificación */}
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <label style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", whiteSpace: "nowrap" }}>Bonif.</label>
                             <input type="number" min="0" value={bonif} onChange={e => cambiarBonificacion(i, Number(e.target.value))}
-                              style={{ width: 54, padding: "5px 8px", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box", background: "white", textAlign: "center" }} />
+                              style={{ width: 46, padding: "5px 8px", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box", background: "white", textAlign: "center" }} />
+                          </div>
+                          {/* Descuento */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <label style={{ fontSize: 10, fontWeight: 700, color: tieneDescuento ? "#16a34a" : "#94a3b8", textTransform: "uppercase", whiteSpace: "nowrap" }}>Desc.</label>
+                            <div style={{ display: "flex", border: "1px solid #e2e8f0", borderRadius: 7, overflow: "hidden" }}>
+                              <button onClick={() => cambiarTipoDescuento(i, "pesos")}
+                                style={{ padding: "4px 7px", border: "none", background: (item.tipoDescuento || "pesos") !== "porcentaje" ? "#0f172a" : "white", color: (item.tipoDescuento || "pesos") !== "porcentaje" ? "white" : "#6b7280", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>$</button>
+                              <button onClick={() => cambiarTipoDescuento(i, "porcentaje")}
+                                style={{ padding: "4px 7px", border: "none", background: item.tipoDescuento === "porcentaje" ? "#0f172a" : "white", color: item.tipoDescuento === "porcentaje" ? "white" : "#6b7280", fontSize: 10, fontWeight: 700, cursor: "pointer", borderLeft: "1px solid #e2e8f0" }}>%</button>
+                            </div>
+                            <input type="number" min="0" value={item.descuento || ""} placeholder="0"
+                              onChange={e => cambiarDescuento(i, Number(e.target.value))}
+                              style={{ width: 54, padding: "5px 8px", border: tieneDescuento ? "1px solid #86efac" : "1px solid #e2e8f0", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box", background: tieneDescuento ? "#f0fdf4" : "white", textAlign: "center", color: tieneDescuento ? "#16a34a" : "#111827", fontWeight: tieneDescuento ? 700 : 400 }} />
                           </div>
                           <div style={{ fontSize: 10, color: "#cbd5e1", whiteSpace: "nowrap" }}>stock: {item.stockDisponible}</div>
                         </div>
