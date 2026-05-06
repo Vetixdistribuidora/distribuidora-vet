@@ -137,14 +137,17 @@ export default function Productos() {
       let nuevoMargen = p.margen
       if (ajusteAplica === "costos") {
         nuevoCosto = ajusteTipo === "porcentaje" ? p.costo * (1 + valor / 100) : p.costo + valor
+        // Mantener el ratio precio_venta/costo para preservar el flete incluido
+        // Si costo era 100 y precio_venta 127 (incluye IVA+flete), el ratio 1.27 se mantiene
+        const ratio = p.costo > 0 ? p.precio_venta / p.costo : (1 + nuevoMargen / 100)
+        const nuevoPrecio = nuevoCosto * ratio
+        return { id: p.id, costo: Math.round(nuevoCosto * 100) / 100, margen: nuevoMargen, precio_venta: Math.round(nuevoPrecio * 100) / 100 }
       } else {
         // precios: update precio_venta, recalculate margen
         const nuevoPrecio = ajusteTipo === "porcentaje" ? p.precio_venta * (1 + valor / 100) : p.precio_venta + valor
         nuevoMargen = nuevoCosto > 0 ? ((nuevoPrecio / nuevoCosto) - 1) * 100 : p.margen
         return { id: p.id, costo: nuevoCosto, margen: Math.round(nuevoMargen * 100) / 100, precio_venta: Math.round(nuevoPrecio * 100) / 100 }
       }
-      const nuevoPrecio = nuevoCosto + (nuevoCosto * nuevoMargen / 100)
-      return { id: p.id, costo: Math.round(nuevoCosto * 100) / 100, margen: nuevoMargen, precio_venta: Math.round(nuevoPrecio * 100) / 100 }
     })
     const CHUNK = 50
     for (let i = 0; i < updates.length; i += CHUNK) {
@@ -943,7 +946,8 @@ export default function Productos() {
                 let ejCosto = p.costo, ejPrecio = p.precio_venta
                 if (ajusteAplica === "costos") {
                   ejCosto = ajusteTipo === "porcentaje" ? p.costo * (1 + valor / 100) : p.costo + valor
-                  ejPrecio = ejCosto + ejCosto * p.margen / 100
+                  const ratio = p.costo > 0 ? p.precio_venta / p.costo : 1
+                  ejPrecio = ejCosto * ratio
                 } else {
                   ejPrecio = ajusteTipo === "porcentaje" ? p.precio_venta * (1 + valor / 100) : p.precio_venta + valor
                 }

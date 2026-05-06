@@ -230,11 +230,15 @@ export default function ComprasPage() {
     setGuardando(false);
     if (error) { setErrorForm("Error: " + error.message); return; }
     // Actualizar stock + costo/precio_venta por producto
-    const calculados = calcularItemsConExtras()
-    await Promise.all(items.map(async (item, idx) => {
+    // Usamos montoFlete (ya calculado antes del await) para distribuir flete por item
+    const subtotalTotal = items.reduce((s, it) => s + (parseFloat(it.cantidad) || 0) * (parseFloat(it.precio_unitario) || 0), 0)
+    await Promise.all(items.map(async (item) => {
       const precioUnit = parseFloat(item.precio_unitario) || 0
       const cantidad = parseFloat(item.cantidad) || 1
-      const calc = calculados[idx]
+      const subtotalItem = precioUnit * cantidad
+      const proporcion = subtotalTotal > 0 ? subtotalItem / subtotalTotal : 0
+      // Distribuir el flete total proporcionalmente y dividir por cantidad para flete unitario
+      const fleteUnitario = montoFlete > 0 ? (montoFlete * proporcion) / cantidad : 0
       const { data: prodActual } = await supabase.from("productos").select("stock, margen").eq("id", item.producto_id).single()
       const stockActual = prodActual?.stock ?? 0
       const margen = prodActual?.margen ?? 30
@@ -244,9 +248,8 @@ export default function ComprasPage() {
       }
 
       if (actualizarCostos && precioUnit > 0) {
-        // costo = precio de factura (sin IVA, que es pase al cliente)
-        // precio_venta = (costo + flete por unidad) × (1 + margen%)
-        const fleteUnitario = calc.fleteItem / cantidad
+        // Precio Neto = precio de factura (sin flete ni IVA)
+        // Costo (precio_venta) = Precio Neto × (1 + IVA%) × (1 + Flete%) = (precioUnit + fleteUnitario) × (1 + margen%)
         updates.costo = Math.round(precioUnit * 100) / 100
         updates.precio_venta = Math.round((precioUnit + fleteUnitario) * (1 + margen / 100) * 100) / 100
       }

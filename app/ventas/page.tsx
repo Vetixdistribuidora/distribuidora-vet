@@ -612,7 +612,7 @@ export default function Ventas() {
                             </div>
                             <input type="number" min="0" value={item.descuento || ""} placeholder="0"
                               onChange={e => cambiarDescuento(i, Number(e.target.value))}
-                              style={{ width: 54, padding: "5px 8px", border: tieneDescuento ? "1px solid #86efac" : "1px solid #e2e8f0", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box", background: tieneDescuento ? "#f0fdf4" : "white", textAlign: "center", color: tieneDescuento ? "#16a34a" : "#111827", fontWeight: tieneDescuento ? 700 : 400 }} />
+                              style={{ width: 80, padding: "5px 10px", border: tieneDescuento ? "1px solid #86efac" : "1px solid #e2e8f0", borderRadius: 7, fontSize: 13, outline: "none", boxSizing: "border-box", background: tieneDescuento ? "#f0fdf4" : "white", textAlign: "center", color: tieneDescuento ? "#16a34a" : "#111827", fontWeight: tieneDescuento ? 700 : 400 }} />
                           </div>
                           <div style={{ fontSize: 10, color: "#cbd5e1", whiteSpace: "nowrap" }}>stock: {item.stockDisponible}</div>
                         </div>
