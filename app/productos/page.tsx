@@ -94,6 +94,7 @@ export default function Productos() {
   const [editando, setEditando] = useState<any | null>(null)
   const [archivo, setArchivo] = useState<File | null>(null)
   const [margenImportacion, setMargenImportacion] = useState("")
+  const [fleteImportacion, setFleteImportacion] = useState("")
   const [preview, setPreview] = useState<any[]>([])
   const [importando, setImportando] = useState(false)
   const [progreso, setProgreso] = useState(0)
@@ -343,6 +344,7 @@ export default function Productos() {
     if (mapeo.length === 0) { mostrarToast("❌ Sin productos válidos con ese mapeo", "error"); return }
     setImportando(true); setProgreso(0)
     const margenDefault = Number(margenImportacion)
+    const fleteDefault = Number(fleteImportacion) || 0
     const nombresExistentes = new Map(productos.map((p: any) => [p.nombre.toLowerCase().trim(), p]))
 
     // Separar nuevos (sin stock aún) de existentes (conservan su stock actual)
@@ -351,7 +353,9 @@ export default function Productos() {
     for (const { nombre, costo, laboratorio } of mapeo) {
       const existente = nombresExistentes.get(nombre.toLowerCase().trim())
       const margen = existente ? existente.margen : margenDefault
-      const rec: any = { nombre, costo: Math.round(costo * 100) / 100, margen, precio_venta: Math.round(costo * (1 + margen / 100) * 100) / 100 }
+      // Fórmula: Precio Neto × (1 + IVA%) × (1 + Flete%)
+      const precio_venta = Math.round(costo * (1 + margen / 100) * (1 + fleteDefault / 100) * 100) / 100
+      const rec: any = { nombre, costo: Math.round(costo * 100) / 100, margen, precio_venta }
       if (laboratorio) rec.laboratorio = laboratorio
       if (existente) existentes.push(rec)
       else nuevos.push({ ...rec, stock: 0 })
@@ -365,7 +369,7 @@ export default function Productos() {
       procesados += Math.min(CHUNK, todosLotes.length - i)
       setProgreso(Math.round((procesados / todosLotes.length) * 100))
     }
-    setImportando(false); setPreview([]); setRawRows([]); setColumnas([]); setColNombre(""); setColCosto(""); setColLaboratorio(""); setArchivo(null)
+    setImportando(false); setPreview([]); setRawRows([]); setColumnas([]); setColNombre(""); setColCosto(""); setColLaboratorio(""); setArchivo(null); setFleteImportacion("")
     mostrarToast(`✅ ${nuevos.length} nuevos · ${existentes.length} actualizados`, "ok"); cargar()
   }
 
@@ -489,9 +493,9 @@ export default function Productos() {
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Laboratorio" value={laboratorio} onChange={e => setLaboratorio(e.target.value)} type="text"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
-            <input placeholder="Costo" value={costo} onChange={e => setCosto(e.target.value)} type="number"
+            <input placeholder="Precio Neto" value={costo} onChange={e => setCosto(e.target.value)} type="number"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
-            <input placeholder="% Margen" value={margen} onChange={e => setMargen(e.target.value)} type="number"
+            <input placeholder="% IVA" value={margen} onChange={e => setMargen(e.target.value)} type="number"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Stock" value={stock} onChange={e => setStock(e.target.value)} type="number"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
@@ -559,7 +563,7 @@ export default function Productos() {
           {columnas.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <p style={{ ...labelStyle, marginBottom: 8 }}>Mapeo de columnas</p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
                 <div>
                   <label style={labelStyle}>Columna de laboratorio</label>
                   <select value={colLaboratorio} onChange={e => { setColLaboratorio(e.target.value); setPreview([]) }}
@@ -577,7 +581,7 @@ export default function Productos() {
                   </select>
                 </div>
                 <div>
-                  <label style={labelStyle}>Columna de costo *</label>
+                  <label style={labelStyle}>Columna de precio neto *</label>
                   <select value={colCosto} onChange={e => { setColCosto(e.target.value); setPreview([]) }}
                     style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", cursor: "pointer" }}>
                     <option value="" style={{ background: "#1e293b", color: "white" }}>— elegir —</option>
@@ -585,11 +589,18 @@ export default function Productos() {
                   </select>
                 </div>
                 <div>
-                  <label style={labelStyle}>Margen para nuevos (%)</label>
-                  <input type="number" placeholder="ej: 35" value={margenImportacion}
+                  <label style={labelStyle}>IVA para nuevos (%)</label>
+                  <input type="number" placeholder="ej: 21" value={margenImportacion}
                     onChange={e => setMargenImportacion(e.target.value)}
                     style={{ width: "100%", padding: "9px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
-                  <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>Existentes conservan su margen</div>
+                  <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>Existentes conservan su IVA</div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Flete (%)</label>
+                  <input type="number" placeholder="ej: 5" value={fleteImportacion}
+                    onChange={e => setFleteImportacion(e.target.value)}
+                    style={{ width: "100%", padding: "9px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+                  <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>Costo = Precio Neto × (1+IVA) × (1+Flete)</div>
                 </div>
               </div>
             </div>
@@ -631,7 +642,7 @@ export default function Productos() {
                     <div style={{ padding: "7px 12px", background: "rgba(255,255,255,0.04)", display: "flex", gap: 12 }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", flex: 2 }}>NOMBRE</span>
                       {colLaboratorio && <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", flex: 1 }}>LABORATORIO</span>}
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", width: 90, textAlign: "right" }}>COSTO</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", width: 90, textAlign: "right" }}>PRECIO NETO</span>
                       <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", width: 50, textAlign: "center" }}>EST.</span>
                     </div>
                     {mapped.slice(0, 8).map((r, i) => {
@@ -691,10 +702,10 @@ export default function Productos() {
                   </p>
                   <div className="producto-edit-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12 }}>
                     {[
-                      { label: "Nombre",   key: "nombre", type: "text" },
-                      { label: "Costo",    key: "costo",  type: "number" },
-                      { label: "% Margen", key: "margen", type: "number" },
-                      { label: "Stock",    key: "stock",  type: "number" },
+                      { label: "Nombre",      key: "nombre", type: "text" },
+                      { label: "Precio Neto", key: "costo",  type: "number" },
+                      { label: "% IVA",       key: "margen", type: "number" },
+                      { label: "Stock",       key: "stock",  type: "number" },
                     ].map(f => (
                       <div key={f.key}>
                         <label style={labelStyle}>{f.label}</label>
@@ -720,7 +731,7 @@ export default function Productos() {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 10 }}>
                     <span style={{ color: "#93c5fd", fontSize: 13 }}>
-                      💵 Precio estimado: <b style={{ color: "white" }}>{formatearPrecio(precioEstimado)}</b>
+                      💵 Costo estimado (con IVA): <b style={{ color: "white" }}>{formatearPrecio(precioEstimado)}</b>
                     </span>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={guardarEdicion} style={{ background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>💾 Guardar</button>
@@ -768,11 +779,11 @@ export default function Productos() {
                         {badgeLote}
                       </div>
                       <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2, flexWrap: "wrap", display: "flex", gap: 4 }}>
-                        <span>Costo: <b style={{ color: "#374151" }}>{formatearPrecio(p.costo)}</b></span>
+                        <span>Precio Neto: <b style={{ color: "#374151" }}>{formatearPrecio(p.costo)}</b></span>
                         <span style={{ color: "#d1d5db" }}>·</span>
-                        <span>Margen: <b style={{ color: "#374151" }}>{p.margen}%</b></span>
+                        <span>IVA: <b style={{ color: "#374151" }}>{p.margen}%</b></span>
                         <span style={{ color: "#d1d5db" }}>·</span>
-                        <span>Venta: <b style={{ color: "#374151" }}>{formatearPrecio(p.precio_venta)}</b></span>
+                        <span>Costo: <b style={{ color: "#374151" }}>{formatearPrecio(p.precio_venta)}</b></span>
                         <span style={{ color: "#d1d5db" }}>·</span>
                         <span>Stock: <b style={{ color: p.stock === 0 ? "#dc2626" : p.stock <= 5 ? "#92400e" : "#374151" }}>{p.stock}</b></span>
                       </div>
