@@ -116,6 +116,8 @@ export default function ComprasPage() {
   const [formPago, setFormPago] = useState({ monto: "", metodo_pago: "Efectivo", notas: "" });
   const [guardandoPago, setGuardandoPago] = useState(false);
   const [cancelando, setCancelando] = useState(false);
+  const [modalCancelar, setModalCancelar] = useState(false);
+  const [descuentoCancelar, setDescuentoCancelar] = useState("");
   const [reaplicando, setReaplicando] = useState(false);
   const [confirmEliminarCompra, setConfirmEliminarCompra] = useState<Compra | null>(null);
   const [eliminandoCompra, setEliminandoCompra] = useState(false);
@@ -305,13 +307,22 @@ export default function ComprasPage() {
     setLoadingDetalle(false);
   }
 
-  async function cancelarCompra() {
+  async function cancelarCompra(descuentoPct: number = 0) {
     if (!compraVer) return;
     const saldo = compraVer.total - compraVer.total_pagado;
     if (saldo <= 0) return;
     setCancelando(true);
-    const { error } = await supabase.rpc("registrar_pago_compra", { p_compra_id: compraVer.id, p_monto: saldo, p_metodo_pago: "Efectivo", p_notas: "Cancelación total" });
+    let montoPago = saldo;
+    if (descuentoPct > 0) {
+      const montoDesc = Math.round(saldo * (descuentoPct / 100) * 100) / 100;
+      montoPago = Math.round((saldo - montoDesc) * 100) / 100;
+      const nuevoTotal = Math.round((compraVer.total - montoDesc) * 100) / 100;
+      await supabase.from("compras").update({ total: nuevoTotal }).eq("id", compraVer.id);
+    }
+    const notas = descuentoPct > 0 ? `Cancelación con ${descuentoPct}% de descuento` : "Cancelación total";
+    const { error } = await supabase.rpc("registrar_pago_compra", { p_compra_id: compraVer.id, p_monto: montoPago, p_metodo_pago: "Efectivo", p_notas: notas });
     if (error) { alert("Error: " + error.message); setCancelando(false); return; }
+    setModalCancelar(false); setDescuentoCancelar("");
     setCancelando(false); await cargarTodo();
     const { data: ca } = await supabase.from("compras").select("*").eq("id", compraVer.id).single();
     if (ca) setCompraVer(ca);
@@ -770,7 +781,7 @@ export default function ComprasPage() {
                     style={{ flex: 1, padding: "10px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                     💳 Pago parcial
                   </button>
-                  <button onClick={cancelarCompra} disabled={cancelando}
+                  <button onClick={() => { setDescuentoCancelar(""); setModalCancelar(true); }} disabled={cancelando}
                     style={{ flex: 1, padding: "10px", background: "linear-gradient(135deg, #2563eb, #3b82f6)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: cancelando ? 0.5 : 1 }}>
                     {cancelando ? "..." : `✅ Cancelar deuda (${fmt(compraVer.total - compraVer.total_pagado)})`}
                   </button>
@@ -949,6 +960,62 @@ export default function ComprasPage() {
           </div>
         </div>
       )}
+
+      {/* ── MODAL CANCELAR CON DESCUENTO ── */}
+      {modalCancelar && compraVer && (() => {
+        const saldo = compraVer.total - compraVer.total_pagado;
+        const pctDesc = parseFloat(descuentoCancelar) || 0;
+        const montoDesc = pctDesc > 0 ? Math.round(saldo * (pctDesc / 100) * 100) / 100 : 0;
+        const montoPago = Math.round((saldo - montoDesc) * 100) / 100;
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 70, padding: 16 }}>
+            <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 400, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+              <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: "0 0 6px" }}>✅ Cancelar deuda</h2>
+              <p style={{ color: "#6b7280", fontSize: 12, marginBottom: 24 }}>
+                Saldo pendiente: <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(saldo)}</span>
+              </p>
+
+              {/* Descuento */}
+              <div style={{ marginBottom: 20 }}>
+                <label style={labelStyle}>Descuento (opcional)</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <input type="number" min="0" max="100" step="0.01"
+                    value={descuentoCancelar}
+                    onChange={e => setDescuentoCancelar(e.target.value)}
+                    placeholder="0"
+                    style={{ ...inputDarkStyle, width: 90, textAlign: "center" }} />
+                  <span style={{ color: "#9ca3af", fontSize: 14, fontWeight: 700 }}>%</span>
+                  {montoDesc > 0 && (
+                    <span style={{ color: "#4ade80", fontSize: 13, fontWeight: 600 }}>− {fmt(montoDesc)}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Resumen */}
+              <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "14px 16px", marginBottom: 24 }}>
+                {montoDesc > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13, color: "#9ca3af" }}>
+                    <span>Descuento ({pctDesc}%)</span>
+                    <span style={{ color: "#4ade80", fontWeight: 600 }}>− {fmt(montoDesc)}</span>
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 800, color: "white" }}>
+                  <span>Total a pagar</span>
+                  <span style={{ color: "#60a5fa" }}>{fmt(montoPago)}</span>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setModalCancelar(false)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+                <button onClick={() => cancelarCompra(pctDesc)} disabled={cancelando}
+                  style={{ flex: 1, padding: "11px", background: "linear-gradient(135deg, #2563eb, #3b82f6)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: cancelando ? "not-allowed" : "pointer", opacity: cancelando ? 0.5 : 1 }}>
+                  {cancelando ? "Registrando..." : "Confirmar pago"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── MODAL ELIMINAR COMPRA ── */}
       {confirmEliminarCompra && (
