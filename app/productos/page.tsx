@@ -104,6 +104,7 @@ export default function Productos() {
   const [colLaboratorio, setColLaboratorio] = useState("")
   const [rawRows, setRawRows] = useState<any[]>([])
   const [laboratorio, setLaboratorio] = useState("")
+  const [fleteProducto, setFleteProducto] = useState("")
   const [confirmEliminar, setConfirmEliminar] = useState<any | null>(null)
   const [subiendoFoto, setSubiendoFoto] = useState<number | null>(null)
   const inputFotoRef = useRef<HTMLInputElement>(null)
@@ -225,22 +226,24 @@ export default function Productos() {
   async function agregar() {
     if (!nombre || !costo || !margen || !stock) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
     const costoNum = Number(costo)
-    const margenNum = Number(margen)
-    const precioVenta = costoNum + (costoNum * margenNum / 100)
-    const { data, error } = await supabase.from("productos").insert([{ nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(stock), categoria: categoria.trim(), laboratorio: laboratorio.trim() }]).select()
+    const ivaNum = Number(margen)
+    const fleteNum = Number(fleteProducto) || 0
+    const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * 100) / 100
+    const { data, error } = await supabase.from("productos").insert([{ nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(stock), categoria: categoria.trim(), laboratorio: laboratorio.trim() }]).select()
     if (error) return mostrarToast("❌ " + error.message, "error")
     await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 })
     mostrarToast("✅ Producto agregado", "ok")
-    setNombre(""); setCosto(""); setMargen(""); setStock(""); setCategoria(""); setLaboratorio("")
+    setNombre(""); setCosto(""); setMargen(""); setFleteProducto(""); setStock(""); setCategoria(""); setLaboratorio("")
     setMostrarAgregar(false); cargar()
   }
 
   async function guardarEdicion() {
     if (!editando.nombre || !editando.costo || !editando.margen) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
     const costoNum = Number(editando.costo)
-    const margenNum = Number(editando.margen)
-    const precioVenta = costoNum + (costoNum * margenNum / 100)
-    const { error } = await supabase.from("productos").update({ nombre: editando.nombre, costo: costoNum, margen: margenNum, precio_venta: precioVenta, stock: Number(editando.stock), categoria: editando.categoria || "", laboratorio: editando.laboratorio || "" }).eq("id", editando.id)
+    const ivaNum = Number(editando.margen)
+    const fleteNum = Number(editando.flete) || 0
+    const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * 100) / 100
+    const { error } = await supabase.from("productos").update({ nombre: editando.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(editando.stock), categoria: editando.categoria || "", laboratorio: editando.laboratorio || "" }).eq("id", editando.id)
     if (error) return mostrarToast("❌ " + error.message, "error")
     await supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id })
     mostrarToast("✅ Producto actualizado", "ok")
@@ -491,7 +494,7 @@ export default function Productos() {
       {mostrarAgregar && (
         <div className="productos-add-panel" style={{ background: "#0f172a", borderRadius: 14, padding: "20px 24px", marginBottom: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
           <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 }}>Nuevo producto</p>
-          <div className="productos-add-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+          <div className="productos-add-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
             <input placeholder="Nombre del producto" value={nombre} onChange={e => setNombre(e.target.value)} type="text"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Laboratorio" value={laboratorio} onChange={e => setLaboratorio(e.target.value)} type="text"
@@ -499,6 +502,8 @@ export default function Productos() {
             <input placeholder="Precio Neto" value={costo} onChange={e => setCosto(e.target.value)} type="number"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="% IVA" value={margen} onChange={e => setMargen(e.target.value)} type="number"
+              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+            <input placeholder="% Flete" value={fleteProducto} onChange={e => setFleteProducto(e.target.value)} type="number"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Stock" value={stock} onChange={e => setStock(e.target.value)} type="number"
               style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
@@ -679,7 +684,8 @@ export default function Productos() {
           const lotesVisible = lotesAbiertos.has(p.id)
           const costoNum = Number(editando?.costo || 0)
           const margenNum = Number(editando?.margen || 0)
-          const precioEstimado = costoNum + (costoNum * margenNum / 100)
+          const fleteEditNum = Number(editando?.flete || 0)
+          const precioEstimado = Math.round(costoNum * (1 + margenNum / 100) * (1 + fleteEditNum / 100) * 100) / 100
 
           let badgeLote = null
           if (lotes.length > 0) {
@@ -703,17 +709,19 @@ export default function Productos() {
                   <p style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>
                     Editando: <span style={{ color: "white" }}>{p.nombre}</span>
                   </p>
-                  <div className="producto-edit-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12 }}>
+                  <div className="producto-edit-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 12 }}>
                     {[
                       { label: "Nombre",      key: "nombre", type: "text" },
                       { label: "Precio Neto", key: "costo",  type: "number" },
                       { label: "% IVA",       key: "margen", type: "number" },
+                      { label: "% Flete",     key: "flete",  type: "number" },
                       { label: "Stock",       key: "stock",  type: "number" },
                     ].map(f => (
                       <div key={f.key}>
                         <label style={labelStyle}>{f.label}</label>
-                        <input type={f.type} value={editando[f.key] || ""}
+                        <input type={f.type} value={editando[f.key] ?? ""}
                           onChange={e => setEditando({ ...editando, [f.key]: e.target.value })}
+                          placeholder={f.key === "flete" ? "0" : ""}
                           style={inputStyle} />
                       </div>
                     ))}
@@ -734,7 +742,8 @@ export default function Productos() {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 10 }}>
                     <span style={{ color: "#93c5fd", fontSize: 13 }}>
-                      💵 Costo estimado (con IVA): <b style={{ color: "white" }}>{formatearPrecio(precioEstimado)}</b>
+                      💵 Costo estimado: <b style={{ color: "white" }}>{formatearPrecio(precioEstimado)}</b>
+                      <span style={{ color: "#6b7280", fontSize: 11 }}> = Neto × (1+IVA{margenNum > 0 ? " " + margenNum + "%" : ""}) × (1+Flete{fleteEditNum > 0 ? " " + fleteEditNum + "%" : ""})</span>
                     </span>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={guardarEdicion} style={{ background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>💾 Guardar</button>
@@ -784,7 +793,9 @@ export default function Productos() {
                       <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2, flexWrap: "wrap", display: "flex", gap: 4 }}>
                         <span>Precio Neto: <b style={{ color: "#374151" }}>{formatearPrecio(p.costo)}</b></span>
                         <span style={{ color: "#d1d5db" }}>·</span>
-                        <span>IVA: <b style={{ color: "#374151" }}>{p.margen}%</b></span>
+                        <span>IVA: <b style={{ color: "#374151" }}>{p.margen ?? 0}%</b></span>
+                        <span style={{ color: "#d1d5db" }}>·</span>
+                        <span>Flete: <b style={{ color: "#374151" }}>{p.flete ?? 0}%</b></span>
                         <span style={{ color: "#d1d5db" }}>·</span>
                         <span>Costo: <b style={{ color: "#374151" }}>{formatearPrecio(p.precio_venta)}</b></span>
                         <span style={{ color: "#d1d5db" }}>·</span>
