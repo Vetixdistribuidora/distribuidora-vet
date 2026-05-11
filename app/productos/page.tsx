@@ -361,20 +361,32 @@ export default function Productos() {
       const margen = existente ? existente.margen : margenDefault
       // Fórmula: Precio Neto × (1 + IVA%) × (1 + Flete%)
       const precio_venta = Math.round(costo * (1 + margen / 100) * (1 + fleteDefault / 100) * 100) / 100
-      const rec: any = { nombre, costo: Math.round(costo * 100) / 100, margen, precio_venta }
+      const rec: any = { nombre, costo: Math.round(costo * 100) / 100, margen, flete: fleteDefault, precio_venta }
       if (laboratorio) rec.laboratorio = laboratorio
       if (existente) existentes.push(rec)
       else nuevos.push({ ...rec, stock: 0 })
     }
 
-    const CHUNK = 100; let procesados = 0
-    const todosLotes = [...nuevos, ...existentes]
-    for (let i = 0; i < todosLotes.length; i += CHUNK) {
-      const { error } = await supabase.from("productos").upsert(todosLotes.slice(i, i + CHUNK), { onConflict: "nombre" })
+    const CHUNK = 100; let procesados = 0; const total = nuevos.length + existentes.length
+
+    // Insertar nuevos en chunks
+    for (let i = 0; i < nuevos.length; i += CHUNK) {
+      const { error } = await supabase.from("productos").insert(nuevos.slice(i, i + CHUNK))
       if (error) { mostrarToast("❌ " + error.message, "error"); setImportando(false); return }
-      procesados += Math.min(CHUNK, todosLotes.length - i)
-      setProgreso(Math.round((procesados / todosLotes.length) * 100))
+      procesados += Math.min(CHUNK, nuevos.length - i)
+      setProgreso(Math.round((procesados / total) * 100))
     }
+
+    // Actualizar existentes uno a uno para garantizar que flete se guarda
+    for (const prod of existentes) {
+      const campos: any = { costo: prod.costo, margen: prod.margen, flete: prod.flete, precio_venta: prod.precio_venta }
+      if (prod.laboratorio) campos.laboratorio = prod.laboratorio
+      const { error } = await supabase.from("productos").update(campos).eq("nombre", prod.nombre)
+      if (error) { mostrarToast("❌ " + error.message, "error"); setImportando(false); return }
+      procesados++
+      setProgreso(Math.round((procesados / total) * 100))
+    }
+
     setImportando(false); setPreview([]); setRawRows([]); setColumnas([]); setColNombre(""); setColCosto(""); setColLaboratorio(""); setArchivo(null); setFleteImportacion("")
     mostrarToast(`✅ ${nuevos.length} nuevos · ${existentes.length} actualizados`, "ok"); cargar()
   }
