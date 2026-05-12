@@ -353,26 +353,38 @@ export default function Productos() {
     const fleteDefault = Number(fleteImportacion) || 0
     const nombresExistentes = new Map(productos.map((p: any) => [p.nombre.toLowerCase().trim(), p]))
 
-    // Separar nuevos (sin stock aún) de existentes (conservan su stock actual)
+    // Separar nuevos de existentes
     const nuevos: any[] = []
     const existentes: any[] = []
     for (const { nombre, costo, laboratorio } of mapeo) {
       const existente = nombresExistentes.get(nombre.toLowerCase().trim())
-      // El IVA% y flete% importados siempre sobreescriben el valor existente
       const precio_venta = Math.round(costo * (1 + margenDefault / 100) * (1 + fleteDefault / 100) * 100) / 100
-      const rec: any = { nombre, costo: Math.round(costo * 100) / 100, margen: margenDefault, flete: fleteDefault, precio_venta }
-      if (laboratorio) rec.laboratorio = laboratorio
-      if (existente) existentes.push(rec)
-      else nuevos.push({ ...rec, stock: 0 })
+      const campos: any = { costo: Math.round(costo * 100) / 100, margen: margenDefault, flete: fleteDefault, precio_venta }
+      if (laboratorio) campos.laboratorio = laboratorio
+      if (existente) {
+        // Usar id para garantizar que actualiza el registro correcto sin importar mayúsculas
+        existentes.push({ id: existente.id, nombre: existente.nombre, ...campos })
+      } else {
+        nuevos.push({ nombre, stock: 0, ...campos })
+      }
     }
 
-    const CHUNK = 100; let procesados = 0
-    const todosLotes = [...nuevos, ...existentes]
-    for (let i = 0; i < todosLotes.length; i += CHUNK) {
-      const { error } = await supabase.from("productos").upsert(todosLotes.slice(i, i + CHUNK), { onConflict: "nombre" })
+    const CHUNK = 100; let procesados = 0; const total = nuevos.length + existentes.length
+
+    // Nuevos: insert en chunks
+    for (let i = 0; i < nuevos.length; i += CHUNK) {
+      const { error } = await supabase.from("productos").insert(nuevos.slice(i, i + CHUNK))
       if (error) { mostrarToast("❌ " + error.message, "error"); setImportando(false); return }
-      procesados += Math.min(CHUNK, todosLotes.length - i)
-      setProgreso(Math.round((procesados / todosLotes.length) * 100))
+      procesados += Math.min(CHUNK, nuevos.length - i)
+      setProgreso(Math.round((procesados / total) * 100))
+    }
+
+    // Existentes: upsert por id (siempre actualiza el registro correcto)
+    for (let i = 0; i < existentes.length; i += CHUNK) {
+      const { error } = await supabase.from("productos").upsert(existentes.slice(i, i + CHUNK), { onConflict: "id" })
+      if (error) { mostrarToast("❌ " + error.message, "error"); setImportando(false); return }
+      procesados += Math.min(CHUNK, existentes.length - i)
+      setProgreso(Math.round((procesados / total) * 100))
     }
     setImportando(false); setPreview([]); setRawRows([]); setColumnas([]); setColNombre(""); setColCosto(""); setColLaboratorio(""); setArchivo(null); setFleteImportacion("")
     mostrarToast(`✅ ${nuevos.length} nuevos · ${existentes.length} actualizados`, "ok"); cargar()
