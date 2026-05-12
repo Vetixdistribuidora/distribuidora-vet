@@ -358,10 +358,9 @@ export default function Productos() {
     const existentes: any[] = []
     for (const { nombre, costo, laboratorio } of mapeo) {
       const existente = nombresExistentes.get(nombre.toLowerCase().trim())
-      const margen = existente ? existente.margen : margenDefault
-      // Fórmula: Precio Neto × (1 + IVA%) × (1 + Flete%)
-      const precio_venta = Math.round(costo * (1 + margen / 100) * (1 + fleteDefault / 100) * 100) / 100
-      const rec: any = { nombre, costo: Math.round(costo * 100) / 100, margen, flete: fleteDefault, precio_venta }
+      // El IVA% y flete% importados siempre sobreescriben el valor existente
+      const precio_venta = Math.round(costo * (1 + margenDefault / 100) * (1 + fleteDefault / 100) * 100) / 100
+      const rec: any = { nombre, costo: Math.round(costo * 100) / 100, margen: margenDefault, flete: fleteDefault, precio_venta }
       if (laboratorio) rec.laboratorio = laboratorio
       if (existente) existentes.push(rec)
       else nuevos.push({ ...rec, stock: 0 })
