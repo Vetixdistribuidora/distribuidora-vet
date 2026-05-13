@@ -439,8 +439,8 @@ export default function Productos() {
   async function guardarLote() {
     if (!modalLote) return
     // Leer directo del DOM para evitar cualquier problema de estado/closure
-    const cantidad = loteCantidadRef.current?.value?.trim() ?? ""
-    const fecha_vencimiento = loteFechaValor.current || loteFechaRef.current?.value?.trim() || ""
+    const cantidad = loteCantidadRef.current?.value?.trim() || formLote.cantidad || ""
+    const fecha_vencimiento = loteFechaValor.current || loteFechaRef.current?.value?.trim() || formLote.fecha_vencimiento || ""
     if (!cantidad) { mostrarToast("⚠️ Ingresá la cantidad", "error"); return }
     if (!fecha_vencimiento) { mostrarToast("⚠️ Ingresá la fecha de vencimiento", "error"); return }
     setGuardandoLote(true)
@@ -928,16 +928,21 @@ export default function Productos() {
             <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>{modalLote.productoNombre}</p>
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Cantidad</label>
-              <input ref={loteCantidadRef} type="number" min="1" placeholder="Ej: 50" defaultValue="" style={inputStyle} />
+              <input
+                ref={loteCantidadRef}
+                type="number" min="1" placeholder="Ej: 50"
+                value={formLote.cantidad}
+                onChange={e => { const v = e.target.value; setFormLote(prev => ({ ...prev, cantidad: v })) }}
+                style={inputStyle}
+              />
             </div>
             <div style={{ marginBottom: 24 }}>
               <label style={labelStyle}>Fecha de vencimiento</label>
               <input
                 ref={loteFechaRef}
                 type="date"
-                defaultValue=""
-                onChange={e => { loteFechaValor.current = e.target.value }}
-                onBlur={e => { if (e.target.value) loteFechaValor.current = e.target.value }}
+                value={formLote.fecha_vencimiento}
+                onChange={e => { const v = e.target.value; loteFechaValor.current = v; setFormLote(prev => ({ ...prev, fecha_vencimiento: v })) }}
                 style={{ ...inputStyle, colorScheme: "dark" }}
               />
             </div>
