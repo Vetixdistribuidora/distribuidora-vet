@@ -131,6 +131,7 @@ export default function ComprasPage() {
   const [modalCancelar, setModalCancelar] = useState(false);
   const [descuentoCancelar, setDescuentoCancelar] = useState("");
   const [reaplicando, setReaplicando] = useState(false);
+  const [corrigiendoStock, setCorrigiendoStock] = useState(false);
   const [confirmEliminarCompra, setConfirmEliminarCompra] = useState<Compra | null>(null);
   const [eliminandoCompra, setEliminandoCompra] = useState(false);
   const [mostrarFormNuevoProd, setMostrarFormNuevoProd] = useState(false);
@@ -368,6 +369,22 @@ export default function ComprasPage() {
     setReaplicando(false);
     cargarTodo();
     alert(`✅ Costo y precio de venta actualizados para ${detalle.length} producto${detalle.length !== 1 ? "s" : ""}.`);
+  }
+
+  async function corregirStockDuplicado() {
+    if (!compraVer || detalle.length === 0) return;
+    setCorrigiendoStock(true);
+    await Promise.all(detalle.map(async (d) => {
+      const { data: prod } = await supabase.from("productos").select("stock").eq("id", d.producto_id).single();
+      if (prod) {
+        await supabase.from("productos").update({
+          stock: Math.max(0, prod.stock - d.cantidad),
+        }).eq("id", d.producto_id);
+      }
+    }));
+    setCorrigiendoStock(false);
+    cargarTodo();
+    alert(`✅ Stock corregido: se restaron las cantidades de ${detalle.length} producto${detalle.length !== 1 ? "s" : ""}.`);
   }
 
   async function guardarPago() {
@@ -927,10 +944,14 @@ export default function ComprasPage() {
                       {compraVer.notas && (
                         <p style={{ marginTop: 12, fontSize: 12, color: "#9ca3af", background: "rgba(255,255,255,0.04)", padding: "8px 12px", borderRadius: 8 }}>📝 {compraVer.notas}</p>
                       )}
-                      <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 14 }}>
+                      <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
                         <button onClick={reaplicarCompraAProductos} disabled={reaplicando}
                           style={{ width: "100%", padding: "11px", background: reaplicando ? "rgba(255,255,255,0.05)" : "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: 10, color: reaplicando ? "#6b7280" : "#60a5fa", fontSize: 13, fontWeight: 700, cursor: reaplicando ? "not-allowed" : "pointer" }}>
                           {reaplicando ? "Aplicando..." : "🔄 Aplicar a productos (costo · precio de venta)"}
+                        </button>
+                        <button onClick={corregirStockDuplicado} disabled={corrigiendoStock}
+                          style={{ width: "100%", padding: "11px", background: corrigiendoStock ? "rgba(255,255,255,0.05)" : "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, color: corrigiendoStock ? "#6b7280" : "#f87171", fontSize: 13, fontWeight: 700, cursor: corrigiendoStock ? "not-allowed" : "pointer" }}>
+                          {corrigiendoStock ? "Corrigiendo..." : "⚠️ Corregir stock duplicado (restar cantidades de esta compra)"}
                         </button>
                       </div>
                     </div>
