@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, memo } from "react"
 import { supabase } from "@/lib/supabase"
 import * as XLSX from "xlsx"
 
@@ -80,6 +80,84 @@ const responsiveStyles = `
   }
 `
 
+// ─── Componente aislado para el modal de lote ───────────────────────────────
+// Estado local propio → re-renders del padre nunca resetean los campos
+const ModalLote = memo(function ModalLote({
+  productoId,
+  productoNombre,
+  onClose,
+  onGuardar,
+  guardando,
+}: {
+  productoId: number
+  productoNombre: string
+  onClose: () => void
+  onGuardar: (cantidad: number, fecha: string) => void
+  guardando: boolean
+}) {
+  const [cantidad, setCantidad] = useState("")
+  const [fecha, setFecha] = useState("")
+  const [err, setErr] = useState("")
+
+  function handleGuardar() {
+    const c = cantidad.trim()
+    const f = fecha.trim()
+    if (!c || Number(c) <= 0) { setErr("⚠️ Ingresá la cantidad"); return }
+    if (!f) { setErr("⚠️ Ingresá la fecha de vencimiento"); return }
+    setErr("")
+    onGuardar(Number(c), f)
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+      <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 380, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+        <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "0 0 4px" }}>Agregar lote</h2>
+        <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>{productoNombre}</p>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Cantidad</label>
+          <input
+            type="number"
+            min="1"
+            placeholder="Ej: 50"
+            value={cantidad}
+            onChange={e => setCantidad(e.target.value)}
+            style={inputStyle}
+            autoFocus
+          />
+        </div>
+
+        <div style={{ marginBottom: err ? 12 : 24 }}>
+          <label style={labelStyle}>Fecha de vencimiento</label>
+          <input
+            type="date"
+            value={fecha}
+            onChange={e => setFecha(e.target.value)}
+            style={{ ...inputStyle, colorScheme: "dark" }}
+          />
+        </div>
+
+        {err && (
+          <p style={{ color: "#f87171", fontSize: 13, margin: "0 0 16px", fontWeight: 600 }}>{err}</p>
+        )}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={onClose}
+            style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}
+          >Cancelar</button>
+          <button
+            onClick={handleGuardar}
+            disabled={guardando}
+            style={{ flex: 1, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardando ? 0.5 : 1 }}
+          >{guardando ? "Guardando..." : "✅ Guardar lote"}</button>
+        </div>
+      </div>
+    </div>
+  )
+})
+// ────────────────────────────────────────────────────────────────────────────
+
 export default function Productos() {
   const [productos, setProductos] = useState<any[]>([])
   const [cargando, setCargando] = useState(true)
@@ -109,9 +187,6 @@ export default function Productos() {
   const [subiendoFoto, setSubiendoFoto] = useState<number | null>(null)
   const inputFotoRef = useRef<HTMLInputElement>(null)
   const productoFotoRef = useRef<number | null>(null)
-  const loteCantidadRef = useRef<HTMLInputElement>(null)
-  const loteFechaRef = useRef<HTMLInputElement>(null)
-  const loteFechaValor = useRef("")
   const [pagina, setPagina] = useState(1)
   const [mostrarImport, setMostrarImport] = useState(false)
   const [mostrarAgregar, setMostrarAgregar] = useState(false)
@@ -119,8 +194,6 @@ export default function Productos() {
   const [lotesMap, setLotesMap] = useState<Record<number, any[]>>({})
   const [lotesAbiertos, setLotesAbiertos] = useState<Set<number>>(new Set())
   const [modalLote, setModalLote] = useState<{ productoId: number, productoNombre: string } | null>(null)
-  const [formLote, setFormLote] = useState({ cantidad: "", fecha_vencimiento: "" })
-  const formLoteRef = useRef({ cantidad: "", fecha_vencimiento: "" })
   const [guardandoLote, setGuardandoLote] = useState(false)
   const [confirmEliminarLote, setConfirmEliminarLote] = useState<any | null>(null)
   const [modalPrecios, setModalPrecios] = useState(false)
@@ -436,25 +509,19 @@ export default function Productos() {
     setSubiendoFoto(null)
   }
 
-  async function guardarLote() {
+  async function guardarLote(cantidad: number, fecha_vencimiento: string) {
     if (!modalLote) return
-    // Primero forzar que el DOM haya procesado cualquier valor pendiente
-    const cantidadDOM = loteCantidadRef.current?.value ?? ""
-    const fechaDOM = loteFechaRef.current?.value ?? ""
-    const cantidad = cantidadDOM.trim() || formLote.cantidad || ""
-    const fecha_vencimiento = fechaDOM.trim() || loteFechaValor.current || formLote.fecha_vencimiento || ""
-    if (!cantidad) { mostrarToast("⚠️ Ingresá la cantidad", "error"); return }
-    if (!fecha_vencimiento) { mostrarToast("⚠️ Ingresá la fecha de vencimiento", "error"); return }
     setGuardandoLote(true)
-    const { error } = await supabase.from("lotes").insert({ producto_id: modalLote.productoId, cantidad: Number(cantidad), fecha_vencimiento })
+    const { error } = await supabase.from("lotes").insert({ producto_id: modalLote.productoId, cantidad, fecha_vencimiento })
     if (error) { setGuardandoLote(false); return mostrarToast("❌ " + error.message, "error") }
     await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "lotes", registro_id: modalLote.productoId })
     const { data: prodActual } = await supabase.from("productos").select("stock").eq("id", modalLote.productoId).single()
     const stockActual = prodActual?.stock ?? 0
-    await supabase.from("productos").update({ stock: stockActual + Number(cantidad) }).eq("id", modalLote.productoId)
+    await supabase.from("productos").update({ stock: stockActual + cantidad }).eq("id", modalLote.productoId)
     setGuardandoLote(false)
     mostrarToast("✅ Lote agregado", "ok")
-    setModalLote(null); setFormLote({ cantidad: "", fecha_vencimiento: "" }); cargar()
+    setModalLote(null)
+    cargar()
   }
 
   async function eliminarLote() {
@@ -854,7 +921,7 @@ export default function Productos() {
                         border: `1px solid ${lotes.length > 0 ? "#bfdbfe" : "#e5e7eb"}`,
                         borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600
                       }}>📅 {lotes.length}</button>
-                      <button onClick={() => { loteFechaValor.current = ""; setModalLote({ productoId: p.id, productoNombre: p.nombre }); setFormLote({ cantidad: "", fecha_vencimiento: "" }) }} style={{
+                      <button onClick={() => setModalLote({ productoId: p.id, productoNombre: p.nombre })} style={{
                         background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0",
                         borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600
                       }}>+ Lote</button>
@@ -924,41 +991,14 @@ export default function Productos() {
 
       {/* ── MODAL AGREGAR LOTE ── */}
       {modalLote && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
-          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 380, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
-            <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "0 0 4px" }}>Agregar lote</h2>
-            <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>{modalLote.productoNombre}</p>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Cantidad</label>
-              <input
-                key={`cant-${modalLote.productoId}`}
-                ref={loteCantidadRef}
-                type="number" min="1" placeholder="Ej: 50"
-                defaultValue=""
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ marginBottom: 24 }}>
-              <label style={labelStyle}>Fecha de vencimiento</label>
-              <input
-                key={`fecha-${modalLote.productoId}`}
-                ref={loteFechaRef}
-                type="date"
-                defaultValue=""
-                onInput={e => { const v = (e.target as HTMLInputElement).value; if (v) loteFechaValor.current = v }}
-                onChange={e => { loteFechaValor.current = e.target.value }}
-                onBlur={e => { if (e.target.value) loteFechaValor.current = e.target.value }}
-                style={{ ...inputStyle, colorScheme: "dark" }}
-              />
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setModalLote(null)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
-              <button onClick={guardarLote} disabled={guardandoLote} style={{ flex: 1, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardandoLote ? 0.5 : 1 }}>
-                {guardandoLote ? "Guardando..." : "✅ Guardar lote"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ModalLote
+          key={modalLote.productoId}
+          productoId={modalLote.productoId}
+          productoNombre={modalLote.productoNombre}
+          onClose={() => setModalLote(null)}
+          onGuardar={guardarLote}
+          guardando={guardandoLote}
+        />
       )}
 
       {/* ── MODAL ACTUALIZAR PRECIOS ── */}
