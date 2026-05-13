@@ -15,6 +15,7 @@ interface Compra {
   fecha_vencimiento: string | null; metodo_pago: string | null; notas: string | null;
   total: number; total_pagado: number; estado: string;
   incluye_iva: boolean; monto_iva: number; porcentaje_iva: number; monto_flete: number;
+  descuento_pct: number; monto_descuento: number;
   proveedores: { nombre: string } | null;
 }
 interface DetalleCompra {
@@ -38,13 +39,16 @@ function fmt(n: number) {
 
 function calcularTotales(
   items: ItemForm[], incluyeIva: boolean, porcentajeIva: number,
-  incluyeFlete: boolean, tipoFlete: "pct" | "pesos", valorFlete: number
+  incluyeFlete: boolean, tipoFlete: "pct" | "pesos", valorFlete: number,
+  descuentoPct: number = 0
 ) {
   const subtotal = items.reduce((s, it) => s + (parseFloat(it.cantidad) || 0) * (parseFloat(it.precio_unitario) || 0), 0);
-  const iva = incluyeIva && porcentajeIva > 0 ? Math.round(subtotal * (porcentajeIva / 100) * 100) / 100 : 0;
+  const descuento = descuentoPct > 0 ? Math.round(subtotal * (descuentoPct / 100) * 100) / 100 : 0;
+  const subtotalNeto = subtotal - descuento;
+  const iva = incluyeIva && porcentajeIva > 0 ? Math.round(subtotalNeto * (porcentajeIva / 100) * 100) / 100 : 0;
   const flete = incluyeFlete && valorFlete > 0
-    ? tipoFlete === "pct" ? Math.round(subtotal * (valorFlete / 100) * 100) / 100 : valorFlete : 0;
-  return { subtotal, iva, flete, total: subtotal + iva + flete };
+    ? tipoFlete === "pct" ? Math.round(subtotalNeto * (valorFlete / 100) * 100) / 100 : valorFlete : 0;
+  return { subtotal, descuento, subtotalNeto, iva, flete, total: subtotalNeto + iva + flete };
 }
 
 const labelStyle: React.CSSProperties = {
@@ -101,6 +105,7 @@ export default function ComprasPage() {
     numero_remito: "", fecha_vencimiento: "", metodo_pago: "Efectivo",
     notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
     incluye_flete: false, tipo_flete: "pesos" as "pct" | "pesos", valor_flete: "",
+    incluye_descuento: false, porcentaje_descuento: "",
   });
   const [items, setItems] = useState<ItemForm[]>([]);
   const [guardando, setGuardando] = useState(false);
@@ -155,6 +160,7 @@ export default function ComprasPage() {
       numero_remito: "", fecha_vencimiento: "", metodo_pago: "Efectivo",
       notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
       incluye_flete: false, tipo_flete: "pesos", valor_flete: "",
+      incluye_descuento: false, porcentaje_descuento: "",
     });
     setItems([]); setBusquedaProducto(""); setErrorForm(null); setMostrarFormNuevoProd(false); setModalNueva(true);
   }
@@ -193,9 +199,10 @@ export default function ComprasPage() {
 
   const pctIvaForm = parseFloat(form.porcentaje_iva) || 0;
   const valFleteForm = parseFloat(form.valor_flete) || 0;
+  const pctDescuentoForm = parseFloat(form.porcentaje_descuento) || 0;
 
   function calcularItemsConExtras() {
-    const { subtotal, iva, flete } = calcularTotales(items, form.incluye_iva, pctIvaForm, form.incluye_flete, form.tipo_flete, valFleteForm);
+    const { subtotal, iva, flete } = calcularTotales(items, form.incluye_iva, pctIvaForm, form.incluye_flete, form.tipo_flete, valFleteForm, form.incluye_descuento ? pctDescuentoForm : 0);
     return items.map(it => {
       const subtotalItem = (parseFloat(it.cantidad) || 0) * (parseFloat(it.precio_unitario) || 0);
       const proporcion = subtotal > 0 ? subtotalItem / subtotal : 0;
@@ -205,8 +212,8 @@ export default function ComprasPage() {
     });
   }
 
-  const { subtotal: subtotalForm, iva: ivaForm, flete: fleteForm, total: totalForm } =
-    calcularTotales(items, form.incluye_iva, pctIvaForm, form.incluye_flete, form.tipo_flete, valFleteForm);
+  const { subtotal: subtotalForm, descuento: descuentoForm, subtotalNeto: subtotalNetoForm, iva: ivaForm, flete: fleteForm, total: totalForm } =
+    calcularTotales(items, form.incluye_iva, pctIvaForm, form.incluye_flete, form.tipo_flete, valFleteForm, form.incluye_descuento ? pctDescuentoForm : 0);
   const itemsCalculados = calcularItemsConExtras();
 
   async function guardarCompra() {
@@ -215,8 +222,9 @@ export default function ComprasPage() {
     if (items.some(it => (parseFloat(it.precio_unitario) || 0) <= 0)) { setErrorForm("Todos los productos deben tener precio mayor a 0."); return; }
     const pctIva = parseFloat(form.porcentaje_iva) || 0;
     const valFlete = parseFloat(form.valor_flete) || 0;
+    const pctDesc = form.incluye_descuento ? (parseFloat(form.porcentaje_descuento) || 0) : 0;
     if (form.incluye_flete && valFlete <= 0) { setErrorForm("El valor del flete debe ser mayor a 0."); return; }
-    const { flete: montoFlete } = calcularTotales(items, form.incluye_iva, pctIva, form.incluye_flete, form.tipo_flete, valFlete);
+    const { flete: montoFlete, descuento: montoDescuento, total: totalConDescuento } = calcularTotales(items, form.incluye_iva, pctIva, form.incluye_flete, form.tipo_flete, valFlete, pctDesc);
     setGuardando(true); setErrorForm(null);
     const { error } = await supabase.rpc("registrar_compra", {
       p_proveedor_id: Number(form.proveedor_id), p_fecha: form.fecha,
@@ -231,6 +239,19 @@ export default function ComprasPage() {
     });
     setGuardando(false);
     if (error) { setErrorForm("Error: " + error.message); return; }
+    // Si hay descuento, corregir el total en la compra recién creada
+    if (pctDesc > 0) {
+      const { data: compraCreada } = await supabase
+        .from("compras").select("id").eq("proveedor_id", Number(form.proveedor_id))
+        .order("id", { ascending: false }).limit(1).single();
+      if (compraCreada) {
+        await supabase.from("compras").update({
+          total: totalConDescuento,
+          descuento_pct: pctDesc,
+          monto_descuento: montoDescuento,
+        }).eq("id", compraCreada.id);
+      }
+    }
     // Actualizar stock + costo/precio_venta por producto
     // Usamos montoFlete (ya calculado antes del await) para distribuir flete por item
     const subtotalTotal = items.reduce((s, it) => s + (parseFloat(it.cantidad) || 0) * (parseFloat(it.precio_unitario) || 0), 0)
@@ -646,10 +667,30 @@ export default function ComprasPage() {
                     {/* Resumen siempre visible */}
                     <div style={{ marginTop: 8, padding: "10px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
                       <span style={{ fontSize: 12, color: "#6b7280" }}>Subtotal: <b style={{ color: "#d1d5db" }}>{fmt(subtotalForm)}</b></span>
+                      {form.incluye_descuento && descuentoForm > 0 && <span style={{ fontSize: 12, color: "#4ade80" }}>🏷️ −{pctDescuentoForm}%: <b>−{fmt(descuentoForm)}</b></span>}
                       {form.incluye_iva && ivaForm > 0 && <span style={{ fontSize: 12, color: "#93c5fd" }}>IVA {pctIvaForm}%: <b>{fmt(ivaForm)}</b></span>}
                       {form.incluye_flete && fleteForm > 0 && <span style={{ fontSize: 12, color: "#fb923c" }}>🚚 Flete: <b>{fmt(fleteForm)}</b></span>}
                       <span style={{ fontSize: 14, color: "white", fontWeight: 800 }}>Total: {fmt(totalForm)}</span>
                     </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Descuento toggle */}
+              <div onClick={() => setForm({ ...form, incluye_descuento: !form.incluye_descuento })}
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 10, cursor: "pointer", background: form.incluye_descuento ? "rgba(74,222,128,0.1)" : "rgba(255,255,255,0.04)", border: form.incluye_descuento ? "1px solid rgba(74,222,128,0.3)" : "1px solid rgba(255,255,255,0.08)", flexWrap: "wrap" }}>
+                <div style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, background: form.incluye_descuento ? "#16a34a" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {form.incluye_descuento && <span style={{ color: "white", fontSize: 12 }}>✓</span>}
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: form.incluye_descuento ? "#4ade80" : "#9ca3af" }}>🏷️ Descuento</span>
+                {form.incluye_descuento && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 8 }} onClick={e => e.stopPropagation()}>
+                    <input type="number" min="0" max="100" step="0.01" value={form.porcentaje_descuento}
+                      onChange={e => setForm({ ...form, porcentaje_descuento: e.target.value })}
+                      placeholder="0"
+                      style={{ width: 60, padding: "6px 10px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(74,222,128,0.3)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", textAlign: "center" }} />
+                    <span style={{ color: "#4ade80", fontSize: 13 }}>%</span>
+                    {descuentoForm > 0 && <span style={{ marginLeft: 8, color: "#4ade80", fontSize: 12, fontWeight: 700 }}>−{fmt(descuentoForm)}</span>}
                   </div>
                 )}
               </div>
@@ -750,6 +791,7 @@ export default function ComprasPage() {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
                   <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: 0 }}>Detalle de compra</h2>
                   {(() => { const est = ESTADO_LABEL[compraVer.estado] ?? ESTADO_LABEL.pendiente; return <span style={{ background: est.bg, color: est.color, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>{est.label}</span> })()}
+                  {compraVer.monto_descuento > 0 && <span style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20 }}>🏷️ Desc. {compraVer.descuento_pct}% (−{fmt(compraVer.monto_descuento)})</span>}
                   {compraVer.incluye_iva && <span style={{ background: "rgba(59,130,246,0.12)", color: "#93c5fd", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20 }}>IVA {compraVer.porcentaje_iva}%</span>}
                   {compraVer.monto_flete > 0 && <span style={{ background: "rgba(249,115,22,0.12)", color: "#fb923c", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20 }}>🚚 {fmt(compraVer.monto_flete)}</span>}
                 </div>
