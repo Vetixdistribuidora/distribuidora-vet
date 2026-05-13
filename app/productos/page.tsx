@@ -438,9 +438,11 @@ export default function Productos() {
 
   async function guardarLote() {
     if (!modalLote) return
-    // Leer directo del DOM para evitar cualquier problema de estado/closure
-    const cantidad = loteCantidadRef.current?.value?.trim() || formLote.cantidad || ""
-    const fecha_vencimiento = loteFechaValor.current || loteFechaRef.current?.value?.trim() || formLote.fecha_vencimiento || ""
+    // Primero forzar que el DOM haya procesado cualquier valor pendiente
+    const cantidadDOM = loteCantidadRef.current?.value ?? ""
+    const fechaDOM = loteFechaRef.current?.value ?? ""
+    const cantidad = cantidadDOM.trim() || formLote.cantidad || ""
+    const fecha_vencimiento = fechaDOM.trim() || loteFechaValor.current || formLote.fecha_vencimiento || ""
     if (!cantidad) { mostrarToast("⚠️ Ingresá la cantidad", "error"); return }
     if (!fecha_vencimiento) { mostrarToast("⚠️ Ingresá la fecha de vencimiento", "error"); return }
     setGuardandoLote(true)
@@ -929,20 +931,23 @@ export default function Productos() {
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Cantidad</label>
               <input
+                key={`cant-${modalLote.productoId}`}
                 ref={loteCantidadRef}
                 type="number" min="1" placeholder="Ej: 50"
-                value={formLote.cantidad}
-                onChange={e => { const v = e.target.value; setFormLote(prev => ({ ...prev, cantidad: v })) }}
+                defaultValue=""
                 style={inputStyle}
               />
             </div>
             <div style={{ marginBottom: 24 }}>
               <label style={labelStyle}>Fecha de vencimiento</label>
               <input
+                key={`fecha-${modalLote.productoId}`}
                 ref={loteFechaRef}
                 type="date"
-                value={formLote.fecha_vencimiento}
-                onChange={e => { const v = e.target.value; loteFechaValor.current = v; setFormLote(prev => ({ ...prev, fecha_vencimiento: v })) }}
+                defaultValue=""
+                onInput={e => { const v = (e.target as HTMLInputElement).value; if (v) loteFechaValor.current = v }}
+                onChange={e => { loteFechaValor.current = e.target.value }}
+                onBlur={e => { if (e.target.value) loteFechaValor.current = e.target.value }}
                 style={{ ...inputStyle, colorScheme: "dark" }}
               />
             </div>
