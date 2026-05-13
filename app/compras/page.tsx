@@ -246,17 +246,17 @@ export default function ComprasPage() {
     });
     setGuardando(false);
     if (error) { setErrorForm("Error: " + error.message); return; }
-    // Si hay descuento, corregir el total en la compra recién creada
-    if (pctDesc > 0) {
+    // Corregir campos que el RPC no maneja correctamente
+    const pagoInicial = parseFloat(form.pago_inicial) || 0;
+    if (pctDesc > 0 || pagoInicial === 0) {
       const { data: compraCreada } = await supabase
         .from("compras").select("id").eq("proveedor_id", Number(form.proveedor_id))
         .order("id", { ascending: false }).limit(1).single();
       if (compraCreada) {
-        await supabase.from("compras").update({
-          total: totalConDescuento,
-          descuento_pct: pctDesc,
-          monto_descuento: montoDescuento,
-        }).eq("id", compraCreada.id);
+        const patch: Record<string, any> = {};
+        if (pctDesc > 0) { patch.total = totalConDescuento; patch.descuento_pct = pctDesc; patch.monto_descuento = montoDescuento; }
+        if (pagoInicial === 0) patch.metodo_pago = null;
+        await supabase.from("compras").update(patch).eq("id", compraCreada.id);
       }
     }
     // Actualizar stock + costo/precio_venta por producto
@@ -495,7 +495,7 @@ export default function ComprasPage() {
                     <span>📅 {c.fecha}</span>
                     {c.numero_remito && <span>🧾 {c.numero_remito}</span>}
                     {c.fecha_vencimiento && <span style={{ color: vencido ? "#dc2626" : "#6b7280" }}>⏰ {c.fecha_vencimiento}</span>}
-                    {c.metodo_pago && <span>💳 {c.metodo_pago}</span>}
+                    {c.total_pagado > 0 && c.metodo_pago && <span>💳 {c.metodo_pago}</span>}
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
