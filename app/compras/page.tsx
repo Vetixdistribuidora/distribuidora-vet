@@ -259,33 +259,24 @@ export default function ComprasPage() {
         await supabase.from("compras").update(patch).eq("id", compraCreada.id);
       }
     }
-    // Actualizar stock + costo/precio_venta por producto
-    // Usamos montoFlete (ya calculado antes del await) para distribuir flete por item
-    const subtotalTotal = items.reduce((s, it) => s + (parseFloat(it.cantidad) || 0) * (parseFloat(it.precio_unitario) || 0), 0)
-    await Promise.all(items.map(async (item) => {
-      const precioUnit = parseFloat(item.precio_unitario) || 0
-      const cantidad = parseFloat(item.cantidad) || 1
-      const subtotalItem = precioUnit * cantidad
-      const proporcion = subtotalTotal > 0 ? subtotalItem / subtotalTotal : 0
-      // Distribuir el flete total proporcionalmente y dividir por cantidad para flete unitario
-      const fleteUnitario = montoFlete > 0 ? (montoFlete * proporcion) / cantidad : 0
-      const { data: prodActual } = await supabase.from("productos").select("stock, margen").eq("id", item.producto_id).single()
-      const stockActual = prodActual?.stock ?? 0
-      const margen = prodActual?.margen ?? 30
-
-      const updates: Record<string, number> = {
-        stock: stockActual + cantidad,
-      }
-
-      if (actualizarCostos && precioUnit > 0) {
-        // Precio Neto = precio de factura (sin flete ni IVA)
-        // Costo (precio_venta) = Precio Neto × (1 + IVA%) × (1 + Flete%) = (precioUnit + fleteUnitario) × (1 + margen%)
-        updates.costo = Math.round(precioUnit * 100) / 100
-        updates.precio_venta = Math.round((precioUnit + fleteUnitario) * (1 + margen / 100) * 100) / 100
-      }
-
-      await supabase.from("productos").update(updates).eq("id", item.producto_id)
-    }))
+    // El RPC registrar_compra ya actualiza el stock. Aquí solo actualizamos costo/precio_venta si está activado.
+    if (actualizarCostos) {
+      const subtotalTotal = items.reduce((s, it) => s + (parseFloat(it.cantidad) || 0) * (parseFloat(it.precio_unitario) || 0), 0)
+      await Promise.all(items.map(async (item) => {
+        const precioUnit = parseFloat(item.precio_unitario) || 0
+        if (!precioUnit) return
+        const cantidad = parseFloat(item.cantidad) || 1
+        const subtotalItem = precioUnit * cantidad
+        const proporcion = subtotalTotal > 0 ? subtotalItem / subtotalTotal : 0
+        const fleteUnitario = montoFlete > 0 ? (montoFlete * proporcion) / cantidad : 0
+        const { data: prodActual } = await supabase.from("productos").select("margen").eq("id", item.producto_id).single()
+        const margen = prodActual?.margen ?? 30
+        await supabase.from("productos").update({
+          costo: Math.round(precioUnit * 100) / 100,
+          precio_venta: Math.round((precioUnit + fleteUnitario) * (1 + margen / 100) * 100) / 100,
+        }).eq("id", item.producto_id)
+      }))
+    }
     setModalNueva(false); cargarTodo();
   }
 
@@ -361,23 +352,22 @@ export default function ComprasPage() {
   async function reaplicarCompraAProductos() {
     if (!compraVer || detalle.length === 0) return;
     setReaplicando(true);
+    // Solo actualiza costo y precio_venta — el stock ya fue sumado por el RPC al crear la compra
     const subtotalBase = detalle.reduce((s, d) => s + d.cantidad * d.precio_unitario, 0);
     await Promise.all(detalle.map(async (d) => {
       const proporcion = subtotalBase > 0 ? (d.cantidad * d.precio_unitario) / subtotalBase : 0;
       const fleteItem = compraVer.monto_flete > 0 ? Math.round(compraVer.monto_flete * proporcion * 100) / 100 : 0;
-      const fleteUnitario = fleteItem / d.cantidad;
-      const { data: prodActual } = await supabase.from("productos").select("stock, margen").eq("id", d.producto_id).single();
-      const stockActual = prodActual?.stock ?? 0;
+      const fleteUnitario = d.cantidad > 0 ? fleteItem / d.cantidad : 0;
+      const { data: prodActual } = await supabase.from("productos").select("margen").eq("id", d.producto_id).single();
       const margen = prodActual?.margen ?? 30;
       await supabase.from("productos").update({
-        stock: stockActual + d.cantidad,
         costo: Math.round(d.precio_unitario * 100) / 100,
         precio_venta: Math.round((d.precio_unitario + fleteUnitario) * (1 + margen / 100) * 100) / 100,
       }).eq("id", d.producto_id);
     }));
     setReaplicando(false);
     cargarTodo();
-    alert(`✅ Stock, costo y precio de venta actualizados para ${detalle.length} producto${detalle.length !== 1 ? "s" : ""}.`);
+    alert(`✅ Costo y precio de venta actualizados para ${detalle.length} producto${detalle.length !== 1 ? "s" : ""}.`);
   }
 
   async function guardarPago() {
@@ -940,7 +930,7 @@ export default function ComprasPage() {
                       <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 14 }}>
                         <button onClick={reaplicarCompraAProductos} disabled={reaplicando}
                           style={{ width: "100%", padding: "11px", background: reaplicando ? "rgba(255,255,255,0.05)" : "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: 10, color: reaplicando ? "#6b7280" : "#60a5fa", fontSize: 13, fontWeight: 700, cursor: reaplicando ? "not-allowed" : "pointer" }}>
-                          {reaplicando ? "Aplicando..." : "🔄 Aplicar a productos (stock · costo · precio de venta)"}
+                          {reaplicando ? "Aplicando..." : "🔄 Aplicar a productos (costo · precio de venta)"}
                         </button>
                       </div>
                     </div>
