@@ -518,29 +518,60 @@ export default function Productos() {
 
   async function guardarLote(cantidad: number, fecha_vencimiento: string) {
     if (!modalLote) return
+    const productoId = modalLote.productoId
     setGuardandoLote(true)
-    const { error } = await supabase.from("lotes").insert({ producto_id: modalLote.productoId, cantidad, fecha_vencimiento })
+
+    // Insertar lote y obtener el registro creado (con su ID real)
+    const { data: nuevoLote, error } = await supabase
+      .from("lotes").insert({ producto_id: productoId, cantidad, fecha_vencimiento }).select().single()
     if (error) { setGuardandoLote(false); return mostrarToast("❌ " + error.message, "error") }
-    await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "lotes", registro_id: modalLote.productoId })
-    const { data: prodActual } = await supabase.from("productos").select("stock").eq("id", modalLote.productoId).single()
-    const stockActual = prodActual?.stock ?? 0
-    await supabase.from("productos").update({ stock: stockActual + cantidad }).eq("id", modalLote.productoId)
+
+    // Auditoría sin bloquear (fire-and-forget)
+    supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "lotes", registro_id: productoId })
+
+    // Leer stock fresco de la BD y actualizar
+    const { data: prodActual } = await supabase.from("productos").select("stock").eq("id", productoId).single()
+    const nuevoStock = (prodActual?.stock ?? 0) + cantidad
+    await supabase.from("productos").update({ stock: nuevoStock }).eq("id", productoId)
+
+    // Actualizar estado local inmediatamente (sin recargar todo)
+    setProductos(prev => prev.map(p => p.id === productoId ? { ...p, stock: nuevoStock } : p))
+    setLotesMap(prev => {
+      const existing = prev[productoId] || []
+      const merged = [...existing, nuevoLote]
+        .sort((a: any, b: any) => (a.fecha_vencimiento || "9999").localeCompare(b.fecha_vencimiento || "9999"))
+      return { ...prev, [productoId]: merged }
+    })
+
     setGuardandoLote(false)
     mostrarToast("✅ Lote agregado", "ok")
     setModalLote(null)
-    cargar()
   }
 
   async function eliminarLote() {
     if (!confirmEliminarLote) return
-    const producto = productos.find(p => p.id === confirmEliminarLote.producto_id)
-    if (producto) {
-      await supabase.from("productos").update({ stock: Math.max(0, producto.stock - confirmEliminarLote.cantidad) }).eq("id", confirmEliminarLote.producto_id)
-    }
-    const { error } = await supabase.from("lotes").delete().eq("id", confirmEliminarLote.id)
-    if (error) return mostrarToast("❌ " + error.message, "error")
+    const productoId = confirmEliminarLote.producto_id
+    const loteId = confirmEliminarLote.id
+    const cantidadLote = confirmEliminarLote.cantidad
+
+    // Borrar lote PRIMERO — si falla no tocamos el stock
+    const { error } = await supabase.from("lotes").delete().eq("id", loteId)
+    if (error) { mostrarToast("❌ " + error.message, "error"); setConfirmEliminarLote(null); return }
+
+    // Leer stock fresco y descontar
+    const { data: prodActual } = await supabase.from("productos").select("stock").eq("id", productoId).single()
+    const nuevoStock = Math.max(0, (prodActual?.stock ?? 0) - cantidadLote)
+    await supabase.from("productos").update({ stock: nuevoStock }).eq("id", productoId)
+
+    // Actualizar estado local inmediatamente (sin recargar todo)
+    setProductos(prev => prev.map(p => p.id === productoId ? { ...p, stock: nuevoStock } : p))
+    setLotesMap(prev => ({
+      ...prev,
+      [productoId]: (prev[productoId] || []).filter((l: any) => l.id !== loteId)
+    }))
+
     mostrarToast("🗑️ Lote eliminado", "ok")
-    setConfirmEliminarLote(null); cargar()
+    setConfirmEliminarLote(null)
   }
 
   function toggleLotes(id: number) {
