@@ -919,11 +919,11 @@ export default function Productos() {
             <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>{modalLote.productoNombre}</p>
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Cantidad</label>
-              <input type="number" min="1" placeholder="Ej: 50" value={formLote.cantidad} onChange={e => setFormLote({ ...formLote, cantidad: e.target.value })} style={inputStyle} />
+              <input type="number" min="1" placeholder="Ej: 50" value={formLote.cantidad} onChange={e => { const v = e.target.value; setFormLote(prev => ({ ...prev, cantidad: v })) }} style={inputStyle} />
             </div>
             <div style={{ marginBottom: 24 }}>
               <label style={labelStyle}>Fecha de vencimiento</label>
-              <input type="date" value={formLote.fecha_vencimiento} onChange={e => setFormLote({ ...formLote, fecha_vencimiento: e.target.value })} style={{ ...inputStyle, colorScheme: "dark" }} />
+              <input type="date" value={formLote.fecha_vencimiento} onChange={e => { const v = e.target.value; setFormLote(prev => ({ ...prev, fecha_vencimiento: v })) }} style={{ ...inputStyle, colorScheme: "dark" }} />
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => setModalLote(null)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
