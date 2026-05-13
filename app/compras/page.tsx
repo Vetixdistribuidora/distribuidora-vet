@@ -742,22 +742,31 @@ export default function ComprasPage() {
                 )}
               </div>
 
-              <div className="compras-modal-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <div>
-                  <label style={labelStyle}>Pago inicial (vacío = a crédito)</label>
-                  <input type="number" min="0" step="0.01" value={form.pago_inicial}
-                    onChange={e => setForm({ ...form, pago_inicial: e.target.value, metodo_pago: e.target.value && parseFloat(e.target.value) > 0 ? (form.metodo_pago || "Efectivo") : "" })}
-                    placeholder="0" style={inputDarkStyle} />
-                </div>
-                {parseFloat(form.pago_inicial) > 0 && (
-                  <div>
-                    <label style={labelStyle}>Método de pago</label>
-                    <select value={form.metodo_pago} onChange={e => setForm({ ...form, metodo_pago: e.target.value })} style={selectDarkStyle}>
-                      {METODOS.map(m => <option key={m} style={{ background: "#1e293b", color: "white" }}>{m}</option>)}
-                    </select>
+              {(() => {
+                const hayPago = !!form.pago_inicial && parseFloat(form.pago_inicial) > 0
+                return (
+                  <div className="compras-modal-grid" style={{ display: "grid", gridTemplateColumns: hayPago ? "1fr 1fr" : "1fr", gap: 14 }}>
+                    <div>
+                      <label style={labelStyle}>Pago inicial (vacío = a crédito)</label>
+                      <input type="number" min="0" step="0.01" value={form.pago_inicial}
+                        onChange={e => {
+                          const val = e.target.value
+                          const tieneValor = !!val && parseFloat(val) > 0
+                          setForm({ ...form, pago_inicial: val, metodo_pago: tieneValor ? (form.metodo_pago || "Efectivo") : "" })
+                        }}
+                        placeholder="Dejar vacío = a crédito" style={inputDarkStyle} />
+                    </div>
+                    {hayPago && (
+                      <div>
+                        <label style={labelStyle}>Método de pago</label>
+                        <select value={form.metodo_pago} onChange={e => setForm({ ...form, metodo_pago: e.target.value })} style={selectDarkStyle}>
+                          {METODOS.map(m => <option key={m} style={{ background: "#1e293b", color: "white" }}>{m}</option>)}
+                        </select>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                )
+              })()}
 
               <div>
                 <label style={labelStyle}>Notas</label>
