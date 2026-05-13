@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef, memo } from "react"
+import { useEffect, useState, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import * as XLSX from "xlsx"
 
@@ -81,27 +81,24 @@ const responsiveStyles = `
 `
 
 // ─── Componente aislado para el modal de lote ───────────────────────────────
-// Estado local propio → re-renders del padre nunca resetean los campos
-const ModalLote = memo(function ModalLote({
-  productoId,
+function ModalLote({
   productoNombre,
   onClose,
   onGuardar,
   guardando,
 }: {
-  productoId: number
   productoNombre: string
   onClose: () => void
   onGuardar: (cantidad: number, fecha: string) => void
   guardando: boolean
 }) {
-  const [cantidad, setCantidad] = useState("")
-  const [fecha, setFecha] = useState("")
+  const cantRef = useRef<HTMLInputElement>(null)
+  const fechaRef = useRef<HTMLInputElement>(null)
   const [err, setErr] = useState("")
 
   function handleGuardar() {
-    const c = cantidad.trim()
-    const f = fecha.trim()
+    const c = (cantRef.current?.value ?? "").trim()
+    const f = (fechaRef.current?.value ?? "").trim()
     if (!c || Number(c) <= 0) { setErr("⚠️ Ingresá la cantidad"); return }
     if (!f) { setErr("⚠️ Ingresá la fecha de vencimiento"); return }
     setErr("")
@@ -117,11 +114,10 @@ const ModalLote = memo(function ModalLote({
         <div style={{ marginBottom: 16 }}>
           <label style={labelStyle}>Cantidad</label>
           <input
+            ref={cantRef}
             type="number"
             min="1"
             placeholder="Ej: 50"
-            value={cantidad}
-            onChange={e => setCantidad(e.target.value)}
             style={inputStyle}
             autoFocus
           />
@@ -130,10 +126,18 @@ const ModalLote = memo(function ModalLote({
         <div style={{ marginBottom: err ? 12 : 24 }}>
           <label style={labelStyle}>Fecha de vencimiento</label>
           <input
+            ref={fechaRef}
             type="date"
-            value={fecha}
-            onChange={e => setFecha(e.target.value)}
-            style={{ ...inputStyle, colorScheme: "dark" }}
+            style={{ ...inputStyle, colorScheme: "dark", color: "white" }}
+          />
+          <p style={{ color: "#6b7280", fontSize: 11, marginTop: 5, marginBottom: 0 }}>
+            Si el selector no responde, usá el campo de texto:
+          </p>
+          <input
+            type="text"
+            placeholder="AAAA-MM-DD  (ej: 2026-12-31)"
+            onChange={e => { if (fechaRef.current) fechaRef.current.value = e.target.value }}
+            style={{ ...inputStyle, marginTop: 6, fontSize: 13 }}
           />
         </div>
 
@@ -155,7 +159,7 @@ const ModalLote = memo(function ModalLote({
       </div>
     </div>
   )
-})
+}
 // ────────────────────────────────────────────────────────────────────────────
 
 export default function Productos() {
@@ -993,7 +997,6 @@ export default function Productos() {
       {modalLote && (
         <ModalLote
           key={modalLote.productoId}
-          productoId={modalLote.productoId}
           productoNombre={modalLote.productoNombre}
           onClose={() => setModalLote(null)}
           onGuardar={guardarLote}

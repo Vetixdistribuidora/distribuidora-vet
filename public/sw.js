@@ -1,4 +1,4 @@
-const CACHE = "vetix-v4"
+const CACHE = "vetix-v5"
 const OFFLINE_URL = "/"
 
 self.addEventListener("install", (e) => {
