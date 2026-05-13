@@ -27,6 +27,13 @@ interface PagoCompra {
 }
 
 const METODOS = ["Efectivo", "Transferencia", "Cheque", "Tarjeta", "Otro"];
+const METODO_COLOR: Record<string, { bg: string; color: string }> = {
+  Efectivo:      { bg: "rgba(74,222,128,0.15)",  color: "#4ade80" },
+  Transferencia: { bg: "rgba(96,165,250,0.15)",  color: "#60a5fa" },
+  Cheque:        { bg: "rgba(251,191,36,0.15)",  color: "#fbbf24" },
+  Tarjeta:       { bg: "rgba(167,139,250,0.15)", color: "#a78bfa" },
+  Otro:          { bg: "rgba(156,163,175,0.15)", color: "#9ca3af" },
+};
 const ESTADO_LABEL: Record<string, { label: string; bg: string; color: string }> = {
   pendiente: { label: "Pendiente", bg: "rgba(239,68,68,0.12)",   color: "#f87171" },
   parcial:   { label: "Parcial",   bg: "rgba(251,191,36,0.12)",  color: "#fbbf24" },
@@ -102,7 +109,7 @@ export default function ComprasPage() {
   const [modalNueva, setModalNueva] = useState(false);
   const [form, setForm] = useState({
     proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
-    numero_remito: "", fecha_vencimiento: "", metodo_pago: "Efectivo",
+    numero_remito: "", fecha_vencimiento: "", metodo_pago: "",
     notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
     incluye_flete: false, tipo_flete: "pesos" as "pct" | "pesos", valor_flete: "",
     incluye_descuento: false, porcentaje_descuento: "",
@@ -157,7 +164,7 @@ export default function ComprasPage() {
   function abrirNueva() {
     setForm({
       proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
-      numero_remito: "", fecha_vencimiento: "", metodo_pago: "Efectivo",
+      numero_remito: "", fecha_vencimiento: "", metodo_pago: "",
       notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
       incluye_flete: false, tipo_flete: "pesos", valor_flete: "",
       incluye_descuento: false, porcentaje_descuento: "",
@@ -229,7 +236,7 @@ export default function ComprasPage() {
     const { error } = await supabase.rpc("registrar_compra", {
       p_proveedor_id: Number(form.proveedor_id), p_fecha: form.fecha,
       p_numero_remito: form.numero_remito || null, p_fecha_vencimiento: form.fecha_vencimiento || null,
-      p_metodo_pago: form.metodo_pago, p_notas: form.notas || null,
+      p_metodo_pago: (parseFloat(form.pago_inicial) || 0) > 0 ? (form.metodo_pago || null) : null, p_notas: form.notas || null,
       p_pago_inicial: parseFloat(form.pago_inicial) || 0,
       p_items: items.map(it => ({
         producto_id: it.producto_id, cantidad: parseFloat(it.cantidad) || 1,
@@ -737,16 +744,19 @@ export default function ComprasPage() {
 
               <div className="compras-modal-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <div>
-                  <label style={labelStyle}>Pago inicial (0 = a crédito)</label>
+                  <label style={labelStyle}>Pago inicial (vacío = a crédito)</label>
                   <input type="number" min="0" step="0.01" value={form.pago_inicial}
-                    onChange={e => setForm({ ...form, pago_inicial: e.target.value })} placeholder="0" style={inputDarkStyle} />
+                    onChange={e => setForm({ ...form, pago_inicial: e.target.value, metodo_pago: e.target.value && parseFloat(e.target.value) > 0 ? (form.metodo_pago || "Efectivo") : "" })}
+                    placeholder="0" style={inputDarkStyle} />
                 </div>
-                <div>
-                  <label style={labelStyle}>Método de pago</label>
-                  <select value={form.metodo_pago} onChange={e => setForm({ ...form, metodo_pago: e.target.value })} style={selectDarkStyle}>
-                    {METODOS.map(m => <option key={m} style={{ background: "#1e293b", color: "white" }}>{m}</option>)}
-                  </select>
-                </div>
+                {parseFloat(form.pago_inicial) > 0 && (
+                  <div>
+                    <label style={labelStyle}>Método de pago</label>
+                    <select value={form.metodo_pago} onChange={e => setForm({ ...form, metodo_pago: e.target.value })} style={selectDarkStyle}>
+                      {METODOS.map(m => <option key={m} style={{ background: "#1e293b", color: "white" }}>{m}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -933,34 +943,25 @@ export default function ComprasPage() {
                     {pagos.length === 0 ? (
                       <p style={{ textAlign: "center", padding: 24, color: "#6b7280", fontSize: 13 }}>Sin pagos registrados todavía.</p>
                     ) : (
-                      <div style={{ overflowX: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                          <thead>
-                            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                              {["#", "Fecha", "Método", "Monto", "Notas"].map((h, i) => (
-                                <th key={i} style={{ padding: "8px 10px", textAlign: i === 3 ? "right" : "left", color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>{h}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {pagos.map((p, idx) => (
-                              <tr key={p.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                                <td style={{ padding: "9px 10px", color: "#6b7280", fontSize: 12 }}>{idx + 1}</td>
-                                <td style={{ padding: "9px 10px", color: "#d1d5db", fontSize: 12 }}>{p.fecha}</td>
-                                <td style={{ padding: "9px 10px", color: "#9ca3af", fontSize: 12 }}>{p.metodo_pago ?? "—"}</td>
-                                <td style={{ padding: "9px 10px", textAlign: "right", color: "#4ade80", fontWeight: 700, fontSize: 13 }}>{fmt(p.monto)}</td>
-                                <td style={{ padding: "9px 10px", color: "#6b7280", fontSize: 12 }}>{p.notas ?? ""}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                          <tfoot>
-                            <tr style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                              <td colSpan={3} style={{ padding: "10px 10px", textAlign: "right", color: "white", fontSize: 13, fontWeight: 700 }}>Total pagado:</td>
-                              <td style={{ padding: "10px 10px", textAlign: "right", color: "#4ade80", fontSize: 14, fontWeight: 800 }}>{fmt(compraVer.total_pagado)}</td>
-                              <td></td>
-                            </tr>
-                          </tfoot>
-                        </table>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {pagos.map((p, idx) => {
+                          const mc = METODO_COLOR[p.metodo_pago] ?? METODO_COLOR["Otro"]
+                          return (
+                            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.06)", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 700, flexShrink: 0 }}>#{idx + 1}</span>
+                              <span style={{ fontSize: 12, color: "#9ca3af", flexShrink: 0 }}>📅 {p.fecha}</span>
+                              {p.metodo_pago
+                                ? <span style={{ background: mc.bg, color: mc.color, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, flexShrink: 0 }}>💳 {p.metodo_pago}</span>
+                                : <span style={{ color: "#4b5563", fontSize: 11 }}>—</span>
+                              }
+                              <span style={{ marginLeft: "auto", color: "#4ade80", fontWeight: 800, fontSize: 14, flexShrink: 0 }}>{fmt(p.monto)}</span>
+                              {p.notas && <span style={{ width: "100%", fontSize: 11, color: "#6b7280", paddingLeft: 24 }}>📝 {p.notas}</span>}
+                            </div>
+                          )
+                        })}
+                        <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 14px", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 4 }}>
+                          <span style={{ color: "white", fontSize: 13, fontWeight: 700 }}>Total pagado: <span style={{ color: "#4ade80", fontSize: 15 }}>{fmt(compraVer.total_pagado)}</span></span>
+                        </div>
                       </div>
                     )}
                   </div>
