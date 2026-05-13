@@ -94,13 +94,14 @@ export default function Dashboard() {
 
     const { data: detalleVentas } = await supabase.from("detalle_ventas").select("producto_id, cantidad, venta_id")
 
-    // ── Filtros de período ──
-    const ventasHoy = ventas.filter(v => {
+    // ── Filtros de período (excluye ventas anuladas) ──
+    const ventasActivas = ventas.filter(v => v.estado !== "anulada")
+    const ventasHoy = ventasActivas.filter(v => {
       const f = new Date(v.fecha)
       return f.getDate() === hoyDate.getDate() && f.getMonth() === hoyDate.getMonth() && f.getFullYear() === hoyDate.getFullYear()
     })
-    const ventasMes = ventas.filter(v => new Date(v.fecha) >= inicioMesDate)
-    const ventasMesAnterior = ventas.filter(v => {
+    const ventasMes = ventasActivas.filter(v => new Date(v.fecha) >= inicioMesDate)
+    const ventasMesAnterior = ventasActivas.filter(v => {
       const f = new Date(v.fecha)
       return f >= inicioMesAnteriorDate && f < inicioMesDate
     })
@@ -116,8 +117,8 @@ export default function Dashboard() {
     const comprasMes = todasCompras.filter(c => new Date(c.fecha) >= inicioMesDate)
     const totalComprasMes = comprasMes.reduce((acc, c) => acc + Number(c.total), 0)
 
-    // ── Cuentas corrientes pendientes ──
-    const ccLista = ventas.filter(v => v.estado === "cuenta_corriente")
+    // ── Cuentas corrientes pendientes (excluye anuladas) ──
+    const ccLista = ventasActivas.filter(v => v.estado === "cuenta_corriente")
     const totalCC = ccLista.reduce((acc, v) => acc + Number(v.total), 0)
     setCcPendientes(ccLista)
 
@@ -151,11 +152,13 @@ export default function Dashboard() {
     const sinStock = productos.filter(p => p.stock == null || p.stock === 0)
     const stockBajo = productos.filter(p => p.stock != null && p.stock > 0 && p.stock <= 5)
 
-    // ── Sin ventas / Sin rotación ──
-    const vendidosIds = new Set(detalleVentas?.map(d => d.producto_id))
+    // ── Sin ventas / Sin rotación (solo ventas activas) ──
+    const idsVentasActivas = new Set(ventasActivas.map(v => v.id))
+    const detalleActivos = detalleVentas?.filter(d => idsVentasActivas.has(d.venta_id))
+    const vendidosIds = new Set(detalleActivos?.map(d => d.producto_id))
     const sinVentas = productos.filter(p => !vendidosIds.has(p.id))
     const hace30 = new Date(); hace30.setDate(hace30.getDate() - 30)
-    const ventasIds30d = new Set(ventas.filter(v => new Date(v.fecha) >= hace30).map(v => v.id))
+    const ventasIds30d = new Set(ventasActivas.filter(v => new Date(v.fecha) >= hace30).map(v => v.id))
     const vendidos30dIds = new Set(detalleVentas?.filter(d => ventasIds30d.has(d.venta_id)).map(d => d.producto_id))
     const sinRotacion = productos.filter(p => (p.stock != null && p.stock > 0) && !vendidos30dIds.has(p.id))
 
@@ -173,24 +176,24 @@ export default function Dashboard() {
       .order("fecha_vencimiento", { ascending: true })
     setLotesPorVencer(lotes || [])
 
-    // ── Gráfico 7 días (solo ventas) ──
+    // ── Gráfico 7 días (solo ventas activas) ──
     const ultimos7 = [...Array(7)].map((_, i) => {
       const fecha = new Date(); fecha.setDate(fecha.getDate() - i)
       const f = fecha.toISOString().slice(0, 10)
-      const total = ventas.filter(v => new Date(v.fecha).toISOString().slice(0, 10) === f)
+      const total = ventasActivas.filter(v => new Date(v.fecha).toISOString().slice(0, 10) === f)
         .reduce((acc, v) => acc + Number(v.total), 0)
       return { fecha: f.slice(5), total }
     }).reverse()
     setVentasGrafico(ultimos7)
 
-    // ── Gráfico 6 meses (ventas + compras) ──
+    // ── Gráfico 6 meses (ventas activas + compras) ──
     const ultimos6Meses = [...Array(6)].map((_, i) => {
       const fecha = new Date()
       fecha.setDate(1)
       fecha.setMonth(fecha.getMonth() - i)
       const mes = fecha.toISOString().slice(0, 7)
       const label = fecha.toLocaleDateString("es-AR", { month: "short", year: "2-digit" })
-      const ventasTotal = ventas.filter(v => new Date(v.fecha).toISOString().slice(0, 7) === mes)
+      const ventasTotal = ventasActivas.filter(v => new Date(v.fecha).toISOString().slice(0, 7) === mes)
         .reduce((acc, v) => acc + Number(v.total), 0)
       const comprasTotal = todasCompras.filter(c => new Date(c.fecha).toISOString().slice(0, 7) === mes)
         .reduce((acc, c) => acc + Number(c.total), 0)

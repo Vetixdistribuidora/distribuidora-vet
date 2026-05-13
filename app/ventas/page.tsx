@@ -110,6 +110,8 @@ export default function Ventas() {
   const [detalleItems, setDetalleItems] = useState<any[]>([])
   const [loadingDetalle, setLoadingDetalle] = useState(false)
   const [confirmAnular, setConfirmAnular] = useState<any>(null)
+  const [confirmEliminarVenta, setConfirmEliminarVenta] = useState<any>(null)
+  const [eliminandoVenta, setEliminandoVenta] = useState(false)
   const [anulando, setAnulando] = useState(false)
   const [reimprimiendo, setReimprimiendo] = useState(false)
   const [metodoCobro, setMetodoCobro] = useState("efectivo")
@@ -205,6 +207,19 @@ export default function Ventas() {
     setAnulando(false); setConfirmAnular(null)
     if (ventaDetalle?.id === confirmAnular.id) setVentaDetalle({ ...ventaDetalle, estado: "anulada" })
     mostrarToast("🗑️ Venta anulada y stock restaurado", "ok")
+    cargarHistorial()
+  }
+
+  async function eliminarVenta() {
+    if (!confirmEliminarVenta) return
+    setEliminandoVenta(true)
+    await supabase.from("detalle_ventas").delete().eq("venta_id", confirmEliminarVenta.id)
+    await supabase.from("facturas_impresion").delete().eq("venta_id", confirmEliminarVenta.id)
+    await supabase.from("ventas").delete().eq("id", confirmEliminarVenta.id)
+    setEliminandoVenta(false)
+    setConfirmEliminarVenta(null)
+    if (ventaDetalle?.id === confirmEliminarVenta.id) setVentaDetalle(null)
+    mostrarToast("🗑️ Venta eliminada", "ok")
     cargarHistorial()
   }
 
@@ -764,6 +779,9 @@ export default function Ventas() {
                       {v.estado !== "anulada" && (
                         <button onClick={() => setConfirmAnular(v)} style={{ padding: "6px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#dc2626" }}>Anular</button>
                       )}
+                      {v.estado === "anulada" && (
+                        <button onClick={() => setConfirmEliminarVenta(v)} style={{ padding: "6px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", color: "#dc2626" }}>🗑️ Borrar</button>
+                      )}
                     </div>
                   </div>
                 )
@@ -817,7 +835,31 @@ export default function Ventas() {
               {ventaDetalle.estado !== "anulada" && (
                 <button onClick={() => { setConfirmAnular(ventaDetalle); setVentaDetalle(null) }} style={{ flex: 1, minWidth: 120, padding: "10px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Anular venta</button>
               )}
+              {ventaDetalle.estado === "anulada" && (
+                <button onClick={() => { setConfirmEliminarVenta(ventaDetalle); setVentaDetalle(null) }} style={{ flex: 1, minWidth: 120, padding: "10px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🗑️ Borrar venta</button>
+              )}
               <button onClick={() => setVentaDetalle(null)} style={{ flex: 1, minWidth: 120, padding: "10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer" }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL CONFIRMAR ELIMINAR VENTA ANULADA ── */}
+      {confirmEliminarVenta && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 }} onClick={() => setConfirmEliminarVenta(null)}>
+          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 380, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🗑️</div>
+            <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "0 0 8px" }}>¿Eliminar venta anulada?</h2>
+            <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 8 }}>Cliente: <span style={{ color: "white", fontWeight: 600 }}>{confirmEliminarVenta.clientes?.nombre} {confirmEliminarVenta.clientes?.apellido}</span></p>
+            <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 16 }}>N° {confirmEliminarVenta.nro_factura} · {confirmEliminarVenta.fecha?.slice(0, 10)}</p>
+            <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "10px 12px", marginBottom: 24 }}>
+              <p style={{ color: "#f87171", fontSize: 12, margin: 0 }}>Se elimina el registro definitivamente. El stock ya fue restaurado al anularla.</p>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setConfirmEliminarVenta(null)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+              <button onClick={eliminarVenta} disabled={eliminandoVenta} style={{ flex: 1, padding: "11px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: eliminandoVenta ? 0.5 : 1 }}>
+                {eliminandoVenta ? "Eliminando..." : "Eliminar"}
+              </button>
             </div>
           </div>
         </div>
