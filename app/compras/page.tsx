@@ -954,7 +954,7 @@ export default function ComprasPage() {
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         {pagos.map((p, idx) => {
-                          const mc = METODO_COLOR[p.metodo_pago] ?? METODO_COLOR["Otro"]
+                          const mc = (p.metodo_pago ? METODO_COLOR[p.metodo_pago] : null) ?? METODO_COLOR["Otro"]
                           return (
                             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.06)", flexWrap: "wrap" }}>
                               <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 700, flexShrink: 0 }}>#{idx + 1}</span>
