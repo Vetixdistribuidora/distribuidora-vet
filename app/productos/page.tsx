@@ -80,6 +80,30 @@ const responsiveStyles = `
   }
 `
 
+// ─── Helpers de fecha DD/MM/AA ──────────────────────────────────────────────
+// Auto-formatea dígitos ingresados a DD/MM/AA o DD/MM/AAAA
+function autoFormatFecha(raw: string): string {
+  const d = raw.replace(/\D/g, "").slice(0, 8)
+  if (d.length <= 2) return d
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`
+}
+// Convierte "DD/MM/AA" o "DD/MM/AAAA" a "AAAA-MM-DD" para la BD
+function parseFechaLote(raw: string): string | null {
+  const d = raw.replace(/\D/g, "")
+  let dia: number, mes: number, anio: number
+  if (d.length === 6) {
+    dia = parseInt(d.slice(0, 2)); mes = parseInt(d.slice(2, 4)); anio = 2000 + parseInt(d.slice(4, 6))
+  } else if (d.length === 8) {
+    dia = parseInt(d.slice(0, 2)); mes = parseInt(d.slice(2, 4)); anio = parseInt(d.slice(4, 8))
+  } else return null
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null
+  const check = new Date(anio, mes - 1, dia)
+  if (check.getFullYear() !== anio || check.getMonth() + 1 !== mes || check.getDate() !== dia) return null
+  return `${anio}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 // ─── Componente aislado para el modal de lote ───────────────────────────────
 function ModalLote({
   productoNombre,
@@ -93,22 +117,29 @@ function ModalLote({
   guardando: boolean
 }) {
   const [cantidad, setCantidad] = useState("")
-  const [fecha, setFecha] = useState("")
+  const [fecha, setFecha] = useState("") // en formato DD/MM/AA o DD/MM/AAAA
   const [err, setErr] = useState("")
+  const pickerRef = useRef<HTMLInputElement>(null)
+
+  // Cuando el usuario elige del almanaque nativo → convertir a DD/MM/AA
+  function onPickerChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const iso = e.target.value // "AAAA-MM-DD"
+    if (!iso) return
+    const [y, m, d] = iso.split("-")
+    const yy = y.slice(2) // "2026" → "26"
+    setFecha(`${d}/${m}/${yy}`)
+    setErr("")
+  }
 
   function handleGuardar() {
     const c = cantidad.trim()
-    const f = fecha.trim()
     if (!c || Number(c) <= 0) { setErr("⚠️ Ingresá la cantidad"); return }
-    if (!f) { setErr("⚠️ Ingresá la fecha"); return }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(f)) { setErr("⚠️ Formato: AAAA-MM-DD  (ej: 2026-12-31)"); return }
-    const [y, m, d] = f.split("-").map(Number)
-    const dateCheck = new Date(y, m - 1, d)
-    if (dateCheck.getFullYear() !== y || dateCheck.getMonth() + 1 !== m || dateCheck.getDate() !== d) {
-      setErr("⚠️ Fecha inválida — verificá el día y mes"); return
+    const isoFecha = parseFechaLote(fecha)
+    if (!isoFecha) {
+      setErr("⚠️ Fecha inválida — ingresá DD/MM/AA  (ej: 30/06/26)"); return
     }
     setErr("")
-    onGuardar(Number(c), f)
+    onGuardar(Number(c), isoFecha)
   }
 
   return (
@@ -132,15 +163,35 @@ function ModalLote({
 
         <div style={{ marginBottom: err ? 12 : 24 }}>
           <label style={labelStyle}>Fecha de vencimiento</label>
-          <input
-            type="text"
-            placeholder="2026-12-31"
-            value={fecha}
-            onChange={e => setFecha(e.target.value)}
-            style={inputStyle}
-          />
-          <p style={{ color: "#6b7280", fontSize: 11, marginTop: 5, marginBottom: 0 }}>
-            Escribí en formato AAAA-MM-DD
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {/* Campo de texto: DD/MM/AA con auto-formato */}
+            <input
+              type="text"
+              placeholder="30/06/26"
+              value={fecha}
+              onChange={e => { setFecha(autoFormatFecha(e.target.value)); setErr("") }}
+              style={{ ...inputStyle, flex: 1, letterSpacing: 1 }}
+              maxLength={10}
+              inputMode="numeric"
+            />
+            {/* Botón almanaque — abre el date picker nativo */}
+            <button
+              type="button"
+              title="Elegir del almanaque"
+              onClick={() => pickerRef.current?.showPicker?.()}
+              style={{ padding: "9px 13px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, cursor: "pointer", fontSize: 18, lineHeight: 1, flexShrink: 0 }}
+            >📅</button>
+            {/* Input date invisible — solo para el picker nativo */}
+            <input
+              ref={pickerRef}
+              type="date"
+              tabIndex={-1}
+              onChange={onPickerChange}
+              style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 0, height: 0 }}
+            />
+          </div>
+          <p style={{ color: "#6b7280", fontSize: 11, marginTop: 6, marginBottom: 0 }}>
+            Escribí DD/MM/AA  •  26 = año 2026  •  o usá el 📅
           </p>
         </div>
 
