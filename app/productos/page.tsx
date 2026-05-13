@@ -120,7 +120,7 @@ export default function Productos() {
   const [guardandoLote, setGuardandoLote] = useState(false)
   const [confirmEliminarLote, setConfirmEliminarLote] = useState<any | null>(null)
   const [modalPrecios, setModalPrecios] = useState(false)
-  const [ajusteTipo, setAjusteTipo] = useState<"porcentaje" | "pesos">("porcentaje")
+  const [ajusteTipo, setAjusteTipo] = useState<"porcentaje" | "pesos" | "recalcular">("porcentaje")
   const [ajusteValor, setAjusteValor] = useState("")
   const [ajusteAplica, setAjusteAplica] = useState<"costos" | "precios">("costos")
   const [aplicandoPrecios, setAplicandoPrecios] = useState(false)
@@ -130,21 +130,42 @@ export default function Productos() {
   }
 
   async function actualizarPrecios() {
-    const valor = parseFloat(ajusteValor)
-    if (!valor || valor <= 0) { mostrarToast("Ingresá un valor válido", "error"); return }
     setAplicandoPrecios(true)
+
+    // Modo recalcular: aplica la fórmula Precio Neto × (1+IVA%) × (1+Flete%) a todos los productos
+    if (ajusteTipo === "recalcular") {
+      const updates = productos.map(p => {
+        const fleteNum = Number(p.flete) || 0
+        const margenNum = Number(p.margen) || 0
+        const nuevoPrecio = Math.round(p.costo * (1 + margenNum / 100) * (1 + fleteNum / 100) * 100) / 100
+        return { id: p.id, precio_venta: nuevoPrecio }
+      })
+      const CHUNK = 50
+      for (let i = 0; i < updates.length; i += CHUNK) {
+        await Promise.all(updates.slice(i, i + CHUNK).map(u =>
+          supabase.from("productos").update({ precio_venta: u.precio_venta }).eq("id", u.id)
+        ))
+      }
+      setAplicandoPrecios(false)
+      setModalPrecios(false)
+      setAjusteValor("")
+      mostrarToast(`✅ ${productos.length} precios recalculados desde fórmula`, "ok")
+      cargar()
+      return
+    }
+
+    const valor = parseFloat(ajusteValor)
+    if (!valor || valor <= 0) { setAplicandoPrecios(false); mostrarToast("Ingresá un valor válido", "error"); return }
     const updates = productos.map(p => {
       let nuevoCosto = p.costo
       let nuevoMargen = p.margen
       if (ajusteAplica === "costos") {
         nuevoCosto = ajusteTipo === "porcentaje" ? p.costo * (1 + valor / 100) : p.costo + valor
-        // Mantener el ratio precio_venta/costo para preservar el flete incluido
-        // Si costo era 100 y precio_venta 127 (incluye IVA+flete), el ratio 1.27 se mantiene
-        const ratio = p.costo > 0 ? p.precio_venta / p.costo : (1 + nuevoMargen / 100)
-        const nuevoPrecio = nuevoCosto * ratio
-        return { id: p.id, costo: Math.round(nuevoCosto * 100) / 100, margen: nuevoMargen, precio_venta: Math.round(nuevoPrecio * 100) / 100 }
+        const fleteNum = Number(p.flete) || 0
+        const margenNum = Number(p.margen) || 0
+        const nuevoPrecio = Math.round(nuevoCosto * (1 + margenNum / 100) * (1 + fleteNum / 100) * 100) / 100
+        return { id: p.id, costo: Math.round(nuevoCosto * 100) / 100, margen: nuevoMargen, precio_venta: nuevoPrecio }
       } else {
-        // precios: update precio_venta, recalculate margen
         const nuevoPrecio = ajusteTipo === "porcentaje" ? p.precio_venta * (1 + valor / 100) : p.precio_venta + valor
         nuevoMargen = nuevoCosto > 0 ? ((nuevoPrecio / nuevoCosto) - 1) * 100 : p.margen
         return { id: p.id, costo: nuevoCosto, margen: Math.round(nuevoMargen * 100) / 100, precio_venta: Math.round(nuevoPrecio * 100) / 100 }
@@ -941,49 +962,83 @@ export default function Productos() {
 
               <div>
                 <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 8 }}>Tipo de ajuste</label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {([["porcentaje", "% Porcentaje"], ["pesos", "$ Pesos fijos"]] as const).map(([val, label]) => (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {([["porcentaje", "% Porcentaje"], ["pesos", "$ Pesos fijos"], ["recalcular", "🔄 Recalcular"]] as const).map(([val, label]) => (
                     <button key={val} onClick={() => setAjusteTipo(val)}
-                      style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid " + (ajusteTipo === val ? "#3b82f6" : "rgba(255,255,255,0.1)"), background: ajusteTipo === val ? "rgba(59,130,246,0.2)" : "transparent", color: ajusteTipo === val ? "#93c5fd" : "#9ca3af", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      style={{ flex: 1, minWidth: 90, padding: "10px", borderRadius: 10, border: "1px solid " + (ajusteTipo === val ? (val === "recalcular" ? "#22c55e" : "#3b82f6") : "rgba(255,255,255,0.1)"), background: ajusteTipo === val ? (val === "recalcular" ? "rgba(34,197,94,0.2)" : "rgba(59,130,246,0.2)") : "transparent", color: ajusteTipo === val ? (val === "recalcular" ? "#4ade80" : "#93c5fd") : "#9ca3af", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                       {label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 8 }}>
-                  Valor ({ajusteTipo === "porcentaje" ? "%" : "$"})
-                </label>
-                <input
-                  type="number" min="0" step="0.1"
-                  placeholder={ajusteTipo === "porcentaje" ? "Ej: 10 para subir 10%" : "Ej: 500 para sumar $500"}
-                  value={ajusteValor} onChange={e => setAjusteValor(e.target.value)}
-                  style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, color: "white", fontSize: 16, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
-              </div>
-
-              {ajusteValor && parseFloat(ajusteValor) > 0 && productos.length > 0 && (() => {
-                const p = productos[0]
-                const valor = parseFloat(ajusteValor)
-                let ejCosto = p.costo, ejPrecio = p.precio_venta
-                if (ajusteAplica === "costos") {
-                  ejCosto = ajusteTipo === "porcentaje" ? p.costo * (1 + valor / 100) : p.costo + valor
-                  const ratio = p.costo > 0 ? p.precio_venta / p.costo : 1
-                  ejPrecio = ejCosto * ratio
-                } else {
-                  ejPrecio = ajusteTipo === "porcentaje" ? p.precio_venta * (1 + valor / 100) : p.precio_venta + valor
-                }
-                return (
-                  <div style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 10, padding: "12px 14px", fontSize: 12 }}>
-                    <div style={{ color: "#9ca3af", marginBottom: 4 }}>Ejemplo con <b style={{ color: "white" }}>{p.nombre.slice(0, 30)}</b>:</div>
-                    <div style={{ color: "#c4b5fd" }}>
-                      Costo: ${p.costo.toLocaleString("es-AR")} → <b>${ejCosto.toLocaleString("es-AR", { maximumFractionDigits: 2 })}</b>
-                      &nbsp;·&nbsp;
-                      Precio: ${p.precio_venta.toLocaleString("es-AR")} → <b>${ejPrecio.toLocaleString("es-AR", { maximumFractionDigits: 2 })}</b>
-                    </div>
+              {ajusteTipo === "recalcular" ? (
+                <div style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 10, padding: "14px 16px", fontSize: 12 }}>
+                  <div style={{ color: "#4ade80", fontWeight: 700, marginBottom: 6 }}>🔄 Recalcular precios desde fórmula</div>
+                  <div style={{ color: "#9ca3af", lineHeight: 1.6 }}>
+                    Recalcula el <b style={{ color: "white" }}>Costo</b> de cada producto aplicando:<br />
+                    <span style={{ color: "#d1d5db" }}>Precio Neto × (1 + IVA%) × (1 + Flete%)</span>
                   </div>
-                )
-              })()}
+                  <div style={{ marginTop: 8, color: "#6b7280", fontSize: 11 }}>
+                    Útil si productos con Flete % no tienen el flete aplicado en el precio.
+                  </div>
+                  {productos.length > 0 && (() => {
+                    const ej = productos.find(p => (p.flete || 0) > 0) || productos[0]
+                    const fleteNum = Number(ej.flete) || 0
+                    const margenNum = Number(ej.margen) || 0
+                    const nuevo = Math.round(ej.costo * (1 + margenNum / 100) * (1 + fleteNum / 100) * 100) / 100
+                    return (
+                      <div style={{ marginTop: 10, background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "8px 12px", fontSize: 11 }}>
+                        <span style={{ color: "#9ca3af" }}>Ej: <b style={{ color: "white" }}>{ej.nombre.slice(0, 28)}</b></span><br />
+                        <span style={{ color: "#9ca3af" }}>
+                          ${ej.costo.toLocaleString("es-AR")} × (1+{margenNum}%) × (1+{fleteNum}%) = {" "}
+                          <b style={{ color: "#4ade80" }}>${nuevo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</b>
+                          {ej.precio_venta !== nuevo && (
+                            <span style={{ color: "#f87171" }}> (antes: ${ej.precio_venta.toLocaleString("es-AR")})</span>
+                          )}
+                        </span>
+                      </div>
+                    )
+                  })()}
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 8 }}>
+                      Valor ({ajusteTipo === "porcentaje" ? "%" : "$"})
+                    </label>
+                    <input
+                      type="number" min="0" step="0.1"
+                      placeholder={ajusteTipo === "porcentaje" ? "Ej: 10 para subir 10%" : "Ej: 500 para sumar $500"}
+                      value={ajusteValor} onChange={e => setAjusteValor(e.target.value)}
+                      style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, color: "white", fontSize: 16, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+                  </div>
+
+                  {ajusteValor && parseFloat(ajusteValor) > 0 && productos.length > 0 && (() => {
+                    const p = productos[0]
+                    const valor = parseFloat(ajusteValor)
+                    let ejCosto = p.costo, ejPrecio = p.precio_venta
+                    if (ajusteAplica === "costos") {
+                      ejCosto = ajusteTipo === "porcentaje" ? p.costo * (1 + valor / 100) : p.costo + valor
+                      const fleteNum = Number(p.flete) || 0
+                      const margenNum = Number(p.margen) || 0
+                      ejPrecio = Math.round(ejCosto * (1 + margenNum / 100) * (1 + fleteNum / 100) * 100) / 100
+                    } else {
+                      ejPrecio = ajusteTipo === "porcentaje" ? p.precio_venta * (1 + valor / 100) : p.precio_venta + valor
+                    }
+                    return (
+                      <div style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 10, padding: "12px 14px", fontSize: 12 }}>
+                        <div style={{ color: "#9ca3af", marginBottom: 4 }}>Ejemplo con <b style={{ color: "white" }}>{p.nombre.slice(0, 30)}</b>:</div>
+                        <div style={{ color: "#c4b5fd" }}>
+                          Costo: ${p.costo.toLocaleString("es-AR")} → <b>${ejCosto.toLocaleString("es-AR", { maximumFractionDigits: 2 })}</b>
+                          &nbsp;·&nbsp;
+                          Precio: ${p.precio_venta.toLocaleString("es-AR")} → <b>${ejPrecio.toLocaleString("es-AR", { maximumFractionDigits: 2 })}</b>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </>
+              )}
             </div>
 
             <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
@@ -991,9 +1046,23 @@ export default function Productos() {
                 style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
                 Cancelar
               </button>
-              <button onClick={actualizarPrecios} disabled={aplicandoPrecios || !ajusteValor || parseFloat(ajusteValor) <= 0}
-                style={{ flex: 1, padding: "11px", background: aplicandoPrecios || !ajusteValor ? "rgba(139,92,246,0.3)" : "linear-gradient(135deg, #7c3aed, #8b5cf6)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: aplicandoPrecios || !ajusteValor ? "not-allowed" : "pointer" }}>
-                {aplicandoPrecios ? `Actualizando...` : `Aplicar a ${productos.length} productos`}
+              <button
+                onClick={actualizarPrecios}
+                disabled={aplicandoPrecios || (ajusteTipo !== "recalcular" && (!ajusteValor || parseFloat(ajusteValor) <= 0))}
+                style={{
+                  flex: 1, padding: "11px",
+                  background: aplicandoPrecios ? "rgba(139,92,246,0.3)"
+                    : ajusteTipo === "recalcular" ? "linear-gradient(135deg, #16a34a, #22c55e)"
+                    : (!ajusteValor || parseFloat(ajusteValor) <= 0) ? "rgba(139,92,246,0.3)"
+                    : "linear-gradient(135deg, #7c3aed, #8b5cf6)",
+                  border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700,
+                  cursor: (aplicandoPrecios || (ajusteTipo !== "recalcular" && (!ajusteValor || parseFloat(ajusteValor) <= 0))) ? "not-allowed" : "pointer"
+                }}>
+                {aplicandoPrecios
+                  ? "Procesando..."
+                  : ajusteTipo === "recalcular"
+                  ? `🔄 Recalcular ${productos.length} productos`
+                  : `Aplicar a ${productos.length} productos`}
               </button>
             </div>
           </div>
