@@ -102,6 +102,11 @@ function ModalLote({
     if (!c || Number(c) <= 0) { setErr("⚠️ Ingresá la cantidad"); return }
     if (!f) { setErr("⚠️ Ingresá la fecha"); return }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(f)) { setErr("⚠️ Formato: AAAA-MM-DD  (ej: 2026-12-31)"); return }
+    const [y, m, d] = f.split("-").map(Number)
+    const dateCheck = new Date(y, m - 1, d)
+    if (dateCheck.getFullYear() !== y || dateCheck.getMonth() + 1 !== m || dateCheck.getDate() !== d) {
+      setErr("⚠️ Fecha inválida — verificá el día y mes"); return
+    }
     setErr("")
     onGuardar(Number(c), f)
   }
