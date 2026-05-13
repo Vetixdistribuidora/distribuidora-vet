@@ -117,6 +117,7 @@ export default function Productos() {
   const [lotesAbiertos, setLotesAbiertos] = useState<Set<number>>(new Set())
   const [modalLote, setModalLote] = useState<{ productoId: number, productoNombre: string } | null>(null)
   const [formLote, setFormLote] = useState({ cantidad: "", fecha_vencimiento: "" })
+  const formLoteRef = useRef({ cantidad: "", fecha_vencimiento: "" })
   const [guardandoLote, setGuardandoLote] = useState(false)
   const [confirmEliminarLote, setConfirmEliminarLote] = useState<any | null>(null)
   const [modalPrecios, setModalPrecios] = useState(false)
@@ -434,15 +435,19 @@ export default function Productos() {
 
   async function guardarLote() {
     if (!modalLote) return
-    if (!formLote.cantidad || !formLote.fecha_vencimiento) { mostrarToast("⚠️ Completá cantidad y fecha", "error"); return }
+    // Leer siempre del ref para evitar problemas de closure viejo
+    const { cantidad, fecha_vencimiento } = formLoteRef.current
+    if (!cantidad || !fecha_vencimiento) { mostrarToast("⚠️ Completá cantidad y fecha", "error"); return }
     setGuardandoLote(true)
-    const { error } = await supabase.from("lotes").insert({ producto_id: modalLote.productoId, cantidad: Number(formLote.cantidad), fecha_vencimiento: formLote.fecha_vencimiento })
+    const { error } = await supabase.from("lotes").insert({ producto_id: modalLote.productoId, cantidad: Number(cantidad), fecha_vencimiento })
     if (error) { setGuardandoLote(false); return mostrarToast("❌ " + error.message, "error") }
     await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "lotes", registro_id: modalLote.productoId })
-    const { error: errorStock } = await supabase.from("productos").update({ stock: productos.find(p => p.id === modalLote.productoId)?.stock + Number(formLote.cantidad) }).eq("id", modalLote.productoId)
+    const { data: prodActual } = await supabase.from("productos").select("stock").eq("id", modalLote.productoId).single()
+    const stockActual = prodActual?.stock ?? 0
+    await supabase.from("productos").update({ stock: stockActual + Number(cantidad) }).eq("id", modalLote.productoId)
     setGuardandoLote(false)
-    if (errorStock) return mostrarToast("❌ Error actualizando stock", "error")
     mostrarToast("✅ Lote agregado", "ok")
+    formLoteRef.current = { cantidad: "", fecha_vencimiento: "" }
     setModalLote(null); setFormLote({ cantidad: "", fecha_vencimiento: "" }); cargar()
   }
 
@@ -843,7 +848,7 @@ export default function Productos() {
                         border: `1px solid ${lotes.length > 0 ? "#bfdbfe" : "#e5e7eb"}`,
                         borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600
                       }}>📅 {lotes.length}</button>
-                      <button onClick={() => { setModalLote({ productoId: p.id, productoNombre: p.nombre }); setFormLote({ cantidad: "", fecha_vencimiento: "" }) }} style={{
+                      <button onClick={() => { formLoteRef.current = { cantidad: "", fecha_vencimiento: "" }; setModalLote({ productoId: p.id, productoNombre: p.nombre }); setFormLote({ cantidad: "", fecha_vencimiento: "" }) }} style={{
                         background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0",
                         borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600
                       }}>+ Lote</button>
@@ -919,11 +924,11 @@ export default function Productos() {
             <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>{modalLote.productoNombre}</p>
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Cantidad</label>
-              <input type="number" min="1" placeholder="Ej: 50" value={formLote.cantidad} onChange={e => { const v = e.target.value; setFormLote(prev => ({ ...prev, cantidad: v })) }} style={inputStyle} />
+              <input type="number" min="1" placeholder="Ej: 50" value={formLote.cantidad} onChange={e => { const v = e.target.value; formLoteRef.current = { ...formLoteRef.current, cantidad: v }; setFormLote(prev => ({ ...prev, cantidad: v })) }} style={inputStyle} />
             </div>
             <div style={{ marginBottom: 24 }}>
               <label style={labelStyle}>Fecha de vencimiento</label>
-              <input type="date" value={formLote.fecha_vencimiento} onChange={e => { const v = e.target.value; setFormLote(prev => ({ ...prev, fecha_vencimiento: v })) }} style={{ ...inputStyle, colorScheme: "dark" }} />
+              <input type="date" value={formLote.fecha_vencimiento} onChange={e => { const v = e.target.value; formLoteRef.current = { ...formLoteRef.current, fecha_vencimiento: v }; setFormLote(prev => ({ ...prev, fecha_vencimiento: v })) }} style={{ ...inputStyle, colorScheme: "dark" }} />
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => setModalLote(null)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
