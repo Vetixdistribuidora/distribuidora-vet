@@ -92,15 +92,16 @@ function ModalLote({
   onGuardar: (cantidad: number, fecha: string) => void
   guardando: boolean
 }) {
-  const cantRef = useRef<HTMLInputElement>(null)
-  const fechaRef = useRef<HTMLInputElement>(null)
+  const [cantidad, setCantidad] = useState("")
+  const [fecha, setFecha] = useState("")
   const [err, setErr] = useState("")
 
   function handleGuardar() {
-    const c = (cantRef.current?.value ?? "").trim()
-    const f = (fechaRef.current?.value ?? "").trim()
+    const c = cantidad.trim()
+    const f = fecha.trim()
     if (!c || Number(c) <= 0) { setErr("⚠️ Ingresá la cantidad"); return }
-    if (!f) { setErr("⚠️ Ingresá la fecha de vencimiento"); return }
+    if (!f) { setErr("⚠️ Ingresá la fecha"); return }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f)) { setErr("⚠️ Formato: AAAA-MM-DD  (ej: 2026-12-31)"); return }
     setErr("")
     onGuardar(Number(c), f)
   }
@@ -114,10 +115,11 @@ function ModalLote({
         <div style={{ marginBottom: 16 }}>
           <label style={labelStyle}>Cantidad</label>
           <input
-            ref={cantRef}
             type="number"
             min="1"
             placeholder="Ej: 50"
+            value={cantidad}
+            onChange={e => setCantidad(e.target.value)}
             style={inputStyle}
             autoFocus
           />
@@ -126,19 +128,15 @@ function ModalLote({
         <div style={{ marginBottom: err ? 12 : 24 }}>
           <label style={labelStyle}>Fecha de vencimiento</label>
           <input
-            ref={fechaRef}
-            type="date"
-            style={{ ...inputStyle, colorScheme: "dark", color: "white" }}
+            type="text"
+            placeholder="2026-12-31"
+            value={fecha}
+            onChange={e => setFecha(e.target.value)}
+            style={inputStyle}
           />
           <p style={{ color: "#6b7280", fontSize: 11, marginTop: 5, marginBottom: 0 }}>
-            Si el selector no responde, usá el campo de texto:
+            Escribí en formato AAAA-MM-DD
           </p>
-          <input
-            type="text"
-            placeholder="AAAA-MM-DD  (ej: 2026-12-31)"
-            onChange={e => { if (fechaRef.current) fechaRef.current.value = e.target.value }}
-            style={{ ...inputStyle, marginTop: 6, fontSize: 13 }}
-          />
         </div>
 
         {err && (
