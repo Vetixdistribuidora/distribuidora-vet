@@ -111,6 +111,7 @@ export default function Productos() {
   const productoFotoRef = useRef<number | null>(null)
   const loteCantidadRef = useRef<HTMLInputElement>(null)
   const loteFechaRef = useRef<HTMLInputElement>(null)
+  const loteFechaValor = useRef("")
   const [pagina, setPagina] = useState(1)
   const [mostrarImport, setMostrarImport] = useState(false)
   const [mostrarAgregar, setMostrarAgregar] = useState(false)
@@ -439,7 +440,7 @@ export default function Productos() {
     if (!modalLote) return
     // Leer directo del DOM para evitar cualquier problema de estado/closure
     const cantidad = loteCantidadRef.current?.value?.trim() ?? ""
-    const fecha_vencimiento = loteFechaRef.current?.value?.trim() ?? ""
+    const fecha_vencimiento = loteFechaValor.current || loteFechaRef.current?.value?.trim() || ""
     if (!cantidad) { mostrarToast("⚠️ Ingresá la cantidad", "error"); return }
     if (!fecha_vencimiento) { mostrarToast("⚠️ Ingresá la fecha de vencimiento", "error"); return }
     setGuardandoLote(true)
@@ -851,7 +852,7 @@ export default function Productos() {
                         border: `1px solid ${lotes.length > 0 ? "#bfdbfe" : "#e5e7eb"}`,
                         borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600
                       }}>📅 {lotes.length}</button>
-                      <button onClick={() => { setModalLote({ productoId: p.id, productoNombre: p.nombre }); setFormLote({ cantidad: "", fecha_vencimiento: "" }) }} style={{
+                      <button onClick={() => { loteFechaValor.current = ""; setModalLote({ productoId: p.id, productoNombre: p.nombre }); setFormLote({ cantidad: "", fecha_vencimiento: "" }) }} style={{
                         background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0",
                         borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600
                       }}>+ Lote</button>
@@ -931,7 +932,14 @@ export default function Productos() {
             </div>
             <div style={{ marginBottom: 24 }}>
               <label style={labelStyle}>Fecha de vencimiento</label>
-              <input ref={loteFechaRef} type="date" defaultValue="" style={{ ...inputStyle, colorScheme: "dark" }} />
+              <input
+                ref={loteFechaRef}
+                type="date"
+                defaultValue=""
+                onChange={e => { loteFechaValor.current = e.target.value }}
+                onBlur={e => { if (e.target.value) loteFechaValor.current = e.target.value }}
+                style={{ ...inputStyle, colorScheme: "dark" }}
+              />
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => setModalLote(null)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
