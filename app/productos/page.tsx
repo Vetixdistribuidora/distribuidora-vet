@@ -525,13 +525,18 @@ export default function Productos() {
       }
     }
 
-    const CHUNK = 100; let procesados = 0; const total = nuevos.length + existentes.length
+    // Deduplicar nuevos por nombre (por si el Excel tiene filas repetidas)
+    const nuevosPorNombre = new Map<string, any>()
+    for (const item of nuevos) nuevosPorNombre.set(item.nombre.toLowerCase().trim(), item)
+    const nuevosSinDup = Array.from(nuevosPorNombre.values())
 
-    // Nuevos: insert en chunks
-    for (let i = 0; i < nuevos.length; i += CHUNK) {
-      const { error } = await supabase.from("productos").insert(nuevos.slice(i, i + CHUNK))
+    const CHUNK = 100; let procesados = 0; const total = nuevosSinDup.length + existentes.length
+
+    // Nuevos: upsert por nombre (por si ya existe en BD pero no estaba en caché)
+    for (let i = 0; i < nuevosSinDup.length; i += CHUNK) {
+      const { error } = await supabase.from("productos").upsert(nuevosSinDup.slice(i, i + CHUNK), { onConflict: "nombre" })
       if (error) { mostrarToast("❌ " + error.message, "error"); setImportando(false); return }
-      procesados += Math.min(CHUNK, nuevos.length - i)
+      procesados += Math.min(CHUNK, nuevosSinDup.length - i)
       setProgreso(Math.round((procesados / total) * 100))
     }
 
@@ -543,7 +548,7 @@ export default function Productos() {
       setProgreso(Math.round((procesados / total) * 100))
     }
     setImportando(false); setPreview([]); setRawRows([]); setColumnas([]); setColNombre(""); setColCosto(""); setColLaboratorio(""); setArchivo(null); setFleteImportacion("")
-    mostrarToast(`✅ ${nuevos.length} nuevos · ${existentes.length} actualizados`, "ok"); cargar()
+    mostrarToast(`✅ ${nuevosSinDup.length} nuevos · ${existentes.length} actualizados`, "ok"); cargar()
   }
 
   function abrirSelectorFoto(productoId: number) {
