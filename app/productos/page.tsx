@@ -323,14 +323,15 @@ export default function Productos() {
     const data = productos.map(p => ({
       "Nombre": p.nombre,
       "Laboratorio": p.laboratorio || "",
-      "Costo ($)": p.costo,
-      "Margen (%)": p.margen,
-      "Precio Venta ($)": p.precio_venta,
+      "Precio Neto ($)": p.costo,
+      "IVA (%)": p.margen,
+      "Flete (%)": p.flete ?? 0,
+      "Costo ($)": p.precio_venta,
       "Stock (u.)": p.stock,
-      "Capital ($)": Math.round(p.costo * p.stock * 100) / 100,
+      "Capital ($)": Math.round(p.precio_venta * p.stock * 100) / 100,
     }))
     const ws = XLSX.utils.json_to_sheet(data)
-    ws["!cols"] = [{ wch: 40 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 14 }]
+    ws["!cols"] = [{ wch: 40 }, { wch: 22 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 14 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Stock")
     XLSX.writeFile(wb, `stock_${new Date().toISOString().slice(0, 10)}.xlsx`)
@@ -1110,7 +1111,7 @@ export default function Productos() {
               <div>
                 <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 8 }}>¿Qué actualizar?</label>
                 <div style={{ display: "flex", gap: 8 }}>
-                  {([["costos", "Costos (recalcula precio)"], ["precios", "Precios de venta"]] as const).map(([val, label]) => (
+                  {([["costos", "Precio Neto (recalcula costo)"], ["precios", "Costo directo"]] as const).map(([val, label]) => (
                     <button key={val} onClick={() => setAjusteAplica(val)}
                       style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid " + (ajusteAplica === val ? "#8b5cf6" : "rgba(255,255,255,0.1)"), background: ajusteAplica === val ? "rgba(139,92,246,0.2)" : "transparent", color: ajusteAplica === val ? "#c4b5fd" : "#9ca3af", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                       {label}
@@ -1189,9 +1190,9 @@ export default function Productos() {
                       <div style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 10, padding: "12px 14px", fontSize: 12 }}>
                         <div style={{ color: "#9ca3af", marginBottom: 4 }}>Ejemplo con <b style={{ color: "white" }}>{p.nombre.slice(0, 30)}</b>:</div>
                         <div style={{ color: "#c4b5fd" }}>
-                          Costo: ${p.costo.toLocaleString("es-AR")} → <b>${ejCosto.toLocaleString("es-AR", { maximumFractionDigits: 2 })}</b>
+                          Precio Neto: ${p.costo.toLocaleString("es-AR")} → <b>${ejCosto.toLocaleString("es-AR", { maximumFractionDigits: 2 })}</b>
                           &nbsp;·&nbsp;
-                          Precio: ${p.precio_venta.toLocaleString("es-AR")} → <b>${ejPrecio.toLocaleString("es-AR", { maximumFractionDigits: 2 })}</b>
+                          Costo: ${p.precio_venta.toLocaleString("es-AR")} → <b>${ejPrecio.toLocaleString("es-AR", { maximumFractionDigits: 2 })}</b>
                         </div>
                       </div>
                     )
