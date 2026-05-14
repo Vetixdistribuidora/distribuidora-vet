@@ -115,6 +115,7 @@ export default function Ventas() {
   const [anulando, setAnulando] = useState(false)
   const [reimprimiendo, setReimprimiendo] = useState(false)
   const [metodoCobro, setMetodoCobro] = useState("efectivo")
+  const [aplicarSaldo, setAplicarSaldo] = useState(false)
 
   // ── NOTAS DE CRÉDITO ─────────────────────────────────────────────────────────
   const [notasCredito, setNotasCredito] = useState<any[]>([])
@@ -490,6 +491,7 @@ export default function Ventas() {
   function limpiarCliente() {
     setClienteId(""); setClienteSeleccionado(null)
     setBusquedaCliente(""); setClienteDropdown(false); setClienteIndice(-1)
+    setAplicarSaldo(false)
   }
 
   function agregarAlCarrito() {
@@ -534,6 +536,9 @@ export default function Ventas() {
   }, 0)
   const ivaNum = Number(iva)
   const total = subtotal + subtotal * ivaNum / 100
+  const saldoDisponible = Number(clienteSeleccionado?.saldo_favor || 0)
+  const saldoAplicado = aplicarSaldo && !esCuentaCorriente ? Math.min(saldoDisponible, total) : 0
+  const totalFinal = Math.max(0, total - saldoAplicado)
 
   async function guardarVenta() {
     if (!clienteId || carrito.length === 0) { mostrarToast("Faltan datos", "error"); return }
@@ -542,8 +547,10 @@ export default function Ventas() {
       if (producto && item.cantidad > producto.stock) { mostrarToast("Sin stock para: " + item.nombre, "error"); return }
     }
     setGuardando(true)
+    const saldoAplicadoLocal = aplicarSaldo && !esCuentaCorriente ? Math.min(Number(clienteSeleccionado?.saldo_favor || 0), total) : 0
+    const totalAGuardar = Math.max(0, total - saldoAplicadoLocal)
     const { data: venta, error: errorVenta } = await supabase.from("ventas").insert({
-      cliente_id: Number(clienteId), total, fecha: new Date(),
+      cliente_id: Number(clienteId), total: totalAGuardar, fecha: new Date(),
       estado: esCuentaCorriente ? "cuenta_corriente" : "cobrada", nro_factura: nroFactura,
       metodo_cobro: esCuentaCorriente ? null : metodoCobro
     }).select().single()
@@ -552,10 +559,16 @@ export default function Ventas() {
       carrito.map(item => ({ venta_id: venta.id, producto_id: item.producto_id, cantidad: item.cantidad, precio: precioEfectivo(item) }))
     )
     if (errorDetalle) { mostrarToast("Error al guardar detalle", "error"); setGuardando(false); return }
+    if (saldoAplicadoLocal > 0) {
+      const { data: clienteActual } = await supabase.from("clientes").select("saldo_favor").eq("id", Number(clienteId)).single()
+      const nuevoSaldo = Math.max(0, Number(clienteActual?.saldo_favor || 0) - saldoAplicadoLocal)
+      await supabase.from("clientes").update({ saldo_favor: nuevoSaldo }).eq("id", Number(clienteId))
+      setClientes(prev => prev.map(c => c.id === Number(clienteId) ? { ...c, saldo_favor: nuevoSaldo } : c))
+    }
     if (esCuentaCorriente) {
       const { data: ultimo } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", Number(clienteId)).order("id", { ascending: false }).limit(1).maybeSingle()
-      const nuevoSaldo = (ultimo?.saldo || 0) + total
-      await supabase.from("cuentas_corrientes").insert({ cliente_id: Number(clienteId), tipo: "venta", monto: total, saldo: nuevoSaldo, venta_id: venta.id, fecha: new Date() })
+      const nuevoSaldo = (ultimo?.saldo || 0) + totalAGuardar
+      await supabase.from("cuentas_corrientes").insert({ cliente_id: Number(clienteId), tipo: "venta", monto: totalAGuardar, saldo: nuevoSaldo, venta_id: venta.id, fecha: new Date() })
     }
     for (const item of carrito) {
       const producto = productos.find(p => p.id === item.producto_id)
@@ -574,8 +587,8 @@ export default function Ventas() {
     }
     const carritoEfectivo = carrito.map(item => ({ ...item, precio: precioEfectivo(item) }))
     await supabase.from("facturas_impresion").insert([{ nro_factura: nroFactura, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? null : metodoCobro } }])
-    mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : "✅ Venta confirmada", "ok")
-    setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false)
+    mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : (saldoAplicadoLocal > 0 ? `✅ Venta confirmada — se usaron ${fmt(saldoAplicadoLocal)} de saldo a favor` : "✅ Venta confirmada"), "ok")
+    setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false); setAplicarSaldo(false)
     localStorage.removeItem("vetix_borrador")
     setGuardando(false); cargar()
   }
@@ -885,11 +898,29 @@ export default function Ventas() {
                     <span style={{ color: "#93c5fd", fontSize: 13, fontWeight: 600 }}>{fmt(subtotal * ivaNum / 100)}</span>
                   </div>
                 )}
+                {saldoAplicado > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span style={{ color: "#4ade80", fontSize: 13 }}>Saldo a favor</span>
+                    <span style={{ color: "#4ade80", fontSize: 13, fontWeight: 600 }}>−{fmt(saldoAplicado)}</span>
+                  </div>
+                )}
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
                   <span style={{ color: "white", fontSize: 15, fontWeight: 700 }}>Total</span>
-                  <span style={{ color: "white", fontSize: 20, fontWeight: 800 }}>{fmt(total)}</span>
+                  <span style={{ color: "white", fontSize: 20, fontWeight: 800 }}>{fmt(totalFinal)}</span>
                 </div>
               </div>
+              {clienteSeleccionado && saldoDisponible > 0 && !esCuentaCorriente && (
+                <div onClick={() => setAplicarSaldo(!aplicarSaldo)}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, cursor: "pointer", marginBottom: 12, background: aplicarSaldo ? "rgba(74,222,128,0.12)" : "rgba(255,255,255,0.04)", border: aplicarSaldo ? "1px solid rgba(74,222,128,0.4)" : "1px solid rgba(255,255,255,0.08)", transition: "all 0.2s" }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, background: aplicarSaldo ? "#16a34a" : "rgba(255,255,255,0.1)", border: aplicarSaldo ? "none" : "1px solid rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {aplicarSaldo && <span style={{ color: "white", fontSize: 12 }}>✓</span>}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: aplicarSaldo ? "#4ade80" : "#9ca3af" }}>Aplicar saldo a favor</div>
+                    <div style={{ fontSize: 11, color: "#6b7280" }}>Disponible: {fmt(saldoDisponible)}</div>
+                  </div>
+                </div>
+              )}
               <div onClick={() => setEsCuentaCorriente(!esCuentaCorriente)}
                 style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, cursor: "pointer", marginBottom: 16, background: esCuentaCorriente ? "rgba(230,119,0,0.15)" : "rgba(255,255,255,0.04)", border: esCuentaCorriente ? "1px solid rgba(230,119,0,0.4)" : "1px solid rgba(255,255,255,0.08)", transition: "all 0.2s" }}>
                 <div style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, background: esCuentaCorriente ? "#e67700" : "rgba(255,255,255,0.1)", border: esCuentaCorriente ? "none" : "1px solid rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
