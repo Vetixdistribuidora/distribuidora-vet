@@ -78,7 +78,7 @@ const responsiveStyles = `
 `
 
 export default function Ventas() {
-  const [tab, setTab] = useState<"nueva" | "historial" | "borradores">("nueva")
+  const [tab, setTab] = useState<"nueva" | "historial" | "borradores" | "notascredito">("nueva")
 
   const [clientes, setClientes] = useState<any[]>([])
   const [productos, setProductos] = useState<any[]>([])
@@ -116,6 +116,15 @@ export default function Ventas() {
   const [reimprimiendo, setReimprimiendo] = useState(false)
   const [metodoCobro, setMetodoCobro] = useState("efectivo")
 
+  // ── NOTAS DE CRÉDITO ─────────────────────────────────────────────────────────
+  const [notasCredito, setNotasCredito] = useState<any[]>([])
+  const [loadingNC, setLoadingNC] = useState(false)
+  const [modalNC, setModalNC] = useState<{ venta: any, items: any[] } | null>(null)
+  const [ncCantidades, setNcCantidades] = useState<Record<number, number>>({})
+  const [ncMotivo, setNcMotivo] = useState("")
+  const [guardandoNC, setGuardandoNC] = useState(false)
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // ── BORRADORES ──────────────────────────────────────────────────────────────
   const [borradores, setBorradores] = useState<any[]>([])
   const [loadingBorradores, setLoadingBorradores] = useState(false)
@@ -138,6 +147,7 @@ export default function Ventas() {
   useEffect(() => {
     if (tab === "historial") cargarHistorial()
     if (tab === "borradores") cargarBorradores()
+    if (tab === "notascredito") cargarNotasCredito()
   }, [tab])
   useEffect(() => { if (tab === "historial") cargarHistorial() }, [fechaDesde, fechaHasta])
 
@@ -162,6 +172,97 @@ export default function Ventas() {
       }
     } catch {}
   }, [])
+
+  // ── FUNCIONES NOTAS DE CRÉDITO ───────────────────────────────────────────────
+  async function cargarNotasCredito() {
+    setLoadingNC(true)
+    const { data } = await supabase.from("notas_credito").select("*, clientes(nombre, apellido)").order("id", { ascending: false }).limit(200)
+    setNotasCredito(data || [])
+    setLoadingNC(false)
+  }
+
+  async function abrirModalNC(venta: any) {
+    let items = detalleItems
+    if (!items.length || items[0]?.venta_id !== venta.id) {
+      const { data } = await supabase.from("detalle_ventas").select("*, productos(nombre)").eq("venta_id", venta.id)
+      items = data || []
+      setDetalleItems(items)
+    }
+    const cantInit: Record<number, number> = {}
+    items.forEach((it: any) => { cantInit[it.producto_id] = it.cantidad })
+    setNcCantidades(cantInit)
+    setNcMotivo("")
+    setModalNC({ venta, items })
+    setVentaDetalle(null)
+  }
+
+  async function confirmarNC() {
+    if (!modalNC) return
+    const itemsDevueltos = modalNC.items.filter((it: any) => (ncCantidades[it.producto_id] || 0) > 0)
+    if (!itemsDevueltos.length) { mostrarToast("Seleccioná al menos un producto a devolver", "error"); return }
+    setGuardandoNC(true)
+
+    // Generar número de NC
+    const { data: ultima } = await supabase.from("notas_credito").select("nro_nota").order("id", { ascending: false }).limit(1).maybeSingle()
+    let nextNum = 1
+    if (ultima?.nro_nota) { const m = ultima.nro_nota.match(/(\d+)$/); if (m) nextNum = parseInt(m[1], 10) + 1 }
+    const nroNota = "NC-" + String(nextNum).padStart(5, "0")
+
+    const totalNC = itemsDevueltos.reduce((acc: number, it: any) => acc + it.precio * (ncCantidades[it.producto_id] || 0), 0)
+    const ncItemsData = itemsDevueltos.map((it: any) => ({
+      producto_id: it.producto_id,
+      nombre: it.productos?.nombre || "",
+      cantidad: ncCantidades[it.producto_id] || 0,
+      precio: it.precio
+    }))
+
+    const { error } = await supabase.from("notas_credito").insert({
+      nro_nota: nroNota,
+      venta_id: modalNC.venta.id,
+      cliente_id: modalNC.venta.cliente_id,
+      items: ncItemsData,
+      total: totalNC,
+      motivo: ncMotivo || null,
+      estado: "activa"
+    })
+    if (error) { setGuardandoNC(false); return mostrarToast("❌ " + error.message, "error") }
+
+    // Devolver stock
+    for (const it of itemsDevueltos) {
+      const qty = ncCantidades[it.producto_id] || 0
+      const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
+      if (prod) await supabase.from("productos").update({ stock: (prod.stock || 0) + qty }).eq("id", it.producto_id)
+      await supabase.from("lotes").insert({ producto_id: it.producto_id, cantidad: qty, fecha_vencimiento: null, nro_remito: "NC " + nroNota })
+    }
+
+    // Acreditar saldo a favor
+    const { data: clienteData } = await supabase.from("clientes").select("saldo_favor").eq("id", modalNC.venta.cliente_id).single()
+    const nuevoSaldo = Number(clienteData?.saldo_favor || 0) + totalNC
+    await supabase.from("clientes").update({ saldo_favor: nuevoSaldo }).eq("id", modalNC.venta.cliente_id)
+    // Actualizar en memoria para que se muestre en nueva venta
+    setClientes(prev => prev.map(c => c.id === modalNC.venta.cliente_id ? { ...c, saldo_favor: nuevoSaldo } : c))
+
+    setGuardandoNC(false)
+    setModalNC(null)
+    mostrarToast("✅ Nota de crédito " + nroNota + " creada — saldo acreditado al cliente", "ok")
+    if (tab === "notascredito") cargarNotasCredito()
+  }
+
+  async function anularNC(nc: any) {
+    // Revertir: descontar stock y saldo_favor
+    const items: any[] = nc.items || []
+    for (const it of items) {
+      const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
+      if (prod) await supabase.from("productos").update({ stock: Math.max(0, (prod.stock || 0) - it.cantidad) }).eq("id", it.producto_id)
+    }
+    const { data: clienteData } = await supabase.from("clientes").select("saldo_favor").eq("id", nc.cliente_id).single()
+    const nuevoSaldo = Math.max(0, Number(clienteData?.saldo_favor || 0) - Number(nc.total))
+    await supabase.from("clientes").update({ saldo_favor: nuevoSaldo }).eq("id", nc.cliente_id)
+    await supabase.from("notas_credito").update({ estado: "anulada" }).eq("id", nc.id)
+    setNotasCredito(prev => prev.map(n => n.id === nc.id ? { ...n, estado: "anulada" } : n))
+    mostrarToast("🗑️ Nota de crédito anulada y stock revertido", "ok")
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
 
   // ── FUNCIONES BORRADORES ────────────────────────────────────────────────────
   async function cargarBorradores() {
@@ -507,7 +608,7 @@ export default function Ventas() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "white", padding: 4, borderRadius: 12, border: "1px solid #e2e8f0", width: "fit-content", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-        {([{ key: "nueva", label: "➕ Nueva venta" }, { key: "historial", label: "📋 Historial" }, { key: "borradores", label: "📝 Borradores" }] as const).map(t => (
+        {([{ key: "nueva", label: "➕ Nueva venta" }, { key: "historial", label: "📋 Historial" }, { key: "borradores", label: "📝 Borradores" }, { key: "notascredito", label: "↩️ Notas de Crédito" }] as const).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             padding: "8px 20px", borderRadius: 9, border: "none", cursor: "pointer",
             fontSize: 13, fontWeight: 700, transition: "all 0.15s",
@@ -584,6 +685,12 @@ export default function Ventas() {
                     <div style={{ marginTop: 6, padding: "6px 10px", background: "#f0f9ff", borderRadius: 8, border: "1px solid #bae6fd", fontSize: 12, color: "#0369a1", display: "flex", gap: 12, flexWrap: "wrap" }}>
                       {clienteSeleccionado.localidad && <span>📍 {clienteSeleccionado.localidad}</span>}
                       {clienteSeleccionado.telefono && <span>📞 {clienteSeleccionado.telefono}</span>}
+                    </div>
+                  )}
+                  {clienteSeleccionado && Number(clienteSeleccionado.saldo_favor) > 0 && (
+                    <div style={{ marginTop: 6, padding: "8px 12px", background: "#f0fdf4", borderRadius: 8, border: "1px solid #86efac", fontSize: 12, color: "#15803d", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span>💚 Saldo a favor: <b>{fmt(Number(clienteSeleccionado.saldo_favor))}</b></span>
+                      <span style={{ color: "#6b7280" }}>Se aplica automáticamente como descuento al confirmar</span>
                     </div>
                   )}
                 </div>
@@ -1112,6 +1219,127 @@ export default function Ventas() {
         </div>
       )}
 
+      {/* ══ TAB NOTAS DE CRÉDITO ══ */}
+      {tab === "notascredito" && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div>
+              <h2 style={{ fontSize: 17, fontWeight: 700, color: "#111827", margin: 0 }}>Notas de Crédito</h2>
+              <p style={{ fontSize: 12, color: "#6b7280", margin: "4px 0 0" }}>Devoluciones de productos — generá una desde el detalle de cualquier venta</p>
+            </div>
+          </div>
+          {loadingNC ? (
+            <p style={{ color: "#6b7280", fontSize: 13 }}>Cargando...</p>
+          ) : notasCredito.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "60px 20px", color: "#9ca3af" }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>↩️</div>
+              <p style={{ fontSize: 15, fontWeight: 600 }}>No hay notas de crédito</p>
+              <p style={{ fontSize: 13 }}>Para crear una, abrí el detalle de una venta y hacé clic en "Nota de Crédito"</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {notasCredito.map((nc: any) => {
+                const estadoColor = nc.estado === "anulada" ? { bg: "#fef2f2", color: "#dc2626" } : { bg: "#f0fdf4", color: "#16a34a" }
+                const items: any[] = nc.items || []
+                return (
+                  <div key={nc.id} style={{ background: "white", borderRadius: 12, padding: "16px 20px", border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.04)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{nc.nro_nota}</span>
+                        <span style={{ background: estadoColor.bg, color: estadoColor.color, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>{nc.estado === "anulada" ? "Anulada" : "Activa"}</span>
+                      </div>
+                      <p style={{ margin: "0 0 4px", fontSize: 13, color: "#374151", fontWeight: 600 }}>{nc.clientes?.nombre} {nc.clientes?.apellido}</p>
+                      <p style={{ margin: "0 0 4px", fontSize: 12, color: "#6b7280" }}>Venta N° {nc.venta_id} · {nc.fecha?.slice(0, 10)}</p>
+                      {nc.motivo && <p style={{ margin: "0 0 4px", fontSize: 12, color: "#6b7280" }}>Motivo: {nc.motivo}</p>}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                        {items.map((it: any, i: number) => (
+                          <span key={i} style={{ background: "#f1f5f9", borderRadius: 6, padding: "2px 8px", fontSize: 11, color: "#374151" }}>{it.nombre} ×{it.cantidad}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <p style={{ margin: "0 0 8px", fontWeight: 800, fontSize: 16, color: "#059669" }}>{fmt(Number(nc.total))}</p>
+                      {nc.estado !== "anulada" && (
+                        <button onClick={() => { if (confirm("¿Anular esta nota de crédito? Se revertirá el stock y el saldo del cliente.")) anularNC(nc) }}
+                          style={{ background: "none", border: "1px solid #fca5a5", borderRadius: 8, padding: "5px 10px", fontSize: 11, color: "#dc2626", cursor: "pointer", fontWeight: 600 }}>
+                          Anular
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── MODAL CREAR NOTA DE CRÉDITO ── */}
+      {modalNC && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 55, padding: 16 }} onClick={() => !guardandoNC && setModalNC(null)}>
+          <div style={{ background: "white", borderRadius: 20, padding: "28px 24px", width: "100%", maxWidth: 520, maxHeight: "85vh", overflow: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.4)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ marginBottom: 20 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>Nueva Nota de Crédito</h2>
+              <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>Venta N° {modalNC.venta.nro_factura} · {modalNC.venta.clientes?.nombre} {modalNC.venta.clientes?.apellido}</p>
+            </div>
+
+            <p style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Productos a devolver</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+              {modalNC.items.map((it: any) => {
+                const maxCant = it.cantidad
+                const cantSelec = ncCantidades[it.producto_id] ?? maxCant
+                return (
+                  <div key={it.producto_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: cantSelec > 0 ? "#f0fdf4" : "#f9fafb", borderRadius: 10, border: cantSelec > 0 ? "1px solid #86efac" : "1px solid #e5e7eb" }}>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#111827" }}>{it.productos?.nombre}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280" }}>Compró {maxCant} u. × {fmt(it.precio)}</p>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: "#6b7280" }}>Devolver:</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <button onClick={() => setNcCantidades(prev => ({ ...prev, [it.producto_id]: Math.max(0, (prev[it.producto_id] ?? maxCant) - 1) }))}
+                          style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #d1d5db", background: "white", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                        <span style={{ minWidth: 24, textAlign: "center", fontWeight: 700, fontSize: 14, color: "#111827" }}>{cantSelec}</span>
+                        <button onClick={() => setNcCantidades(prev => ({ ...prev, [it.producto_id]: Math.min(maxCant, (prev[it.producto_id] ?? maxCant) + 1) }))}
+                          style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #d1d5db", background: "white", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Motivo (opcional)</label>
+              <input type="text" value={ncMotivo} onChange={e => setNcMotivo(e.target.value)} placeholder="Ej: producto dañado, error en pedido..."
+                style={{ width: "100%", padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+            </div>
+
+            {(() => {
+              const totalNC = modalNC.items.reduce((acc: number, it: any) => acc + it.precio * (ncCantidades[it.producto_id] ?? it.cantidad), 0)
+              return (
+                <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 12, color: "#15803d", fontWeight: 600 }}>Total a acreditar</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280" }}>Se suma al saldo a favor del cliente</p>
+                  </div>
+                  <span style={{ fontSize: 22, fontWeight: 800, color: "#059669" }}>{fmt(totalNC)}</span>
+                </div>
+              )
+            })()}
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setModalNC(null)} disabled={guardandoNC}
+                style={{ flex: 1, padding: "11px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 10, color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Cancelar</button>
+              <button onClick={confirmarNC} disabled={guardandoNC}
+                style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, #059669, #10b981)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardandoNC ? 0.6 : 1 }}>
+                {guardandoNC ? "Generando..." : "✅ Confirmar Nota de Crédito"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── MODAL DETALLE VENTA ── */}
       {ventaDetalle && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }} onClick={() => setVentaDetalle(null)}>
@@ -1153,6 +1381,9 @@ export default function Ventas() {
                 style={{ flex: 1, minWidth: 110, padding: "10px", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, color: "#e2e8f0", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: reimprimiendo || loadingDetalle ? 0.6 : 1 }}>
                 📦 Remito
               </button>
+              {ventaDetalle.estado !== "anulada" && (
+                <button onClick={() => abrirModalNC(ventaDetalle)} disabled={loadingDetalle} style={{ flex: 1, minWidth: 120, padding: "10px", background: "linear-gradient(135deg, #059669, #10b981)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: loadingDetalle ? 0.6 : 1 }}>↩️ Nota de Crédito</button>
+              )}
               {ventaDetalle.estado !== "anulada" && (
                 <button onClick={() => { setConfirmAnular(ventaDetalle); setVentaDetalle(null) }} style={{ flex: 1, minWidth: 120, padding: "10px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Anular venta</button>
               )}
