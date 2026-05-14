@@ -95,19 +95,34 @@ export default function Clientes() {
   }
 
   async function cargarDeudas(lista: any[]) {
+    if (!lista.length) return
+    const clienteIds = lista.map((c: any) => c.id)
+    // 2 queries en lugar de N×M
+    const [ventasRes, pagosRes] = await Promise.all([
+      supabase.from("ventas").select("id, total, cliente_id").in("cliente_id", clienteIds).eq("estado", "cuenta_corriente"),
+      supabase.from("cuentas_corrientes").select("cliente_id, saldo").in("cliente_id", clienteIds).order("id", { ascending: false })
+    ])
+    // Usar el último saldo de cuentas_corrientes por cliente (más eficiente)
+    const ultimoSaldoMap: Record<number, number> = {}
+    ventasRes.data?.forEach((v: any) => {
+      if (!(v.cliente_id in ultimoSaldoMap)) ultimoSaldoMap[v.cliente_id] = 0
+    })
+    pagosRes.data?.forEach((cc: any) => {
+      if (!(cc.cliente_id in ultimoSaldoMap)) ultimoSaldoMap[cc.cliente_id] = Number(cc.saldo)
+      else if (ultimoSaldoMap[cc.cliente_id] === 0 && cc.saldo > 0) ultimoSaldoMap[cc.cliente_id] = Number(cc.saldo)
+    })
+    // Fallback: calcular desde ventas si cuentas_corrientes no tiene datos
+    const ventaIds = (ventasRes.data || []).map((v: any) => v.id)
+    const { data: pagos } = ventaIds.length
+      ? await supabase.from("pagos_cuenta_corriente").select("venta_id, monto").in("venta_id", ventaIds)
+      : { data: [] }
+    const pagosMap: Record<number, number> = {}
+    pagos?.forEach((p: any) => { pagosMap[p.venta_id] = (pagosMap[p.venta_id] || 0) + Number(p.monto) })
     const mapa: Record<number, number> = {}
-    await Promise.all(lista.map(async (c) => {
-      const { data: vv } = await supabase.from("ventas").select("id, total").eq("cliente_id", c.id).eq("estado", "cuenta_corriente")
-      if (!vv?.length) return
-      let deuda = 0
-      await Promise.all(vv.map(async (v) => {
-        const { data: pp } = await supabase.from("pagos_cuenta_corriente").select("monto").eq("venta_id", v.id)
-        const pagado = (pp || []).reduce((s: number, p: any) => s + Number(p.monto), 0)
-        const saldo = Number(v.total) - pagado
-        if (saldo > 0) deuda += saldo
-      }))
-      if (deuda > 0) mapa[c.id] = deuda
-    }))
+    ventasRes.data?.forEach((v: any) => {
+      const saldo = Number(v.total) - (pagosMap[v.id] || 0)
+      if (saldo > 0) mapa[v.cliente_id] = (mapa[v.cliente_id] || 0) + saldo
+    })
     setDeudasPorCliente(mapa)
   }
 

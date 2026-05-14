@@ -272,9 +272,12 @@ export default function Reportes() {
               </div>
               <span style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>{kpi.label}</span>
             </div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: kpi.color }}>{kpi.value}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: kpi.label === "Ganancia" && kpis.ganancia < 0 ? "#dc2626" : kpi.color }}>{kpi.value}</div>
             {kpi.label === "Total vendido" && (
               <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>{kpis.cantVentas} ventas</div>
+            )}
+            {kpi.label === "Ganancia" && (
+              <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 4 }}>Estimada con costos actuales</div>
             )}
           </div>
         ))}

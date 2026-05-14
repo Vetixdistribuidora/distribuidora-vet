@@ -301,9 +301,9 @@ export default function Productos() {
         const nuevoPrecio = Math.round(nuevoCosto * (1 + margenNum / 100) * (1 + fleteNum / 100) * 100) / 100
         return { id: p.id, costo: Math.round(nuevoCosto * 100) / 100, margen: nuevoMargen, precio_venta: nuevoPrecio }
       } else {
+        // Ajuste directo de precio_venta: no modificar margen (IVA%) ni costo
         const nuevoPrecio = ajusteTipo === "porcentaje" ? p.precio_venta * (1 + valor / 100) : p.precio_venta + valor
-        nuevoMargen = nuevoCosto > 0 ? ((nuevoPrecio / nuevoCosto) - 1) * 100 : p.margen
-        return { id: p.id, costo: nuevoCosto, margen: Math.round(nuevoMargen * 100) / 100, precio_venta: Math.round(nuevoPrecio * 100) / 100 }
+        return { id: p.id, costo: p.costo, margen: p.margen, precio_venta: Math.round(nuevoPrecio * 100) / 100 }
       }
     })
     const CHUNK = 50
