@@ -995,14 +995,13 @@ export default function Productos() {
                         ) : null}
                         {badgeLote}
                       </div>
-                      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2, flexWrap: "wrap", display: "flex", gap: 4 }}>
-                        <span>Precio Neto: <b style={{ color: "#374151" }}>{formatearPrecio(p.costo)}</b></span>
-                        <span style={{ color: "#d1d5db" }}>·</span>
-                        <span>IVA: <b style={{ color: "#374151" }}>{p.margen ?? 0}%</b></span>
-                        <span style={{ color: "#d1d5db" }}>·</span>
-                        <span>Flete: <b style={{ color: "#374151" }}>{p.flete ?? 0}%</b></span>
-                        <span style={{ color: "#d1d5db" }}>·</span>
-                        <span>Costo: <b style={{ color: "#374151" }}>{formatearPrecio(p.precio_venta)}</b></span>
+                      <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2, flexWrap: "wrap", display: "flex", gap: 8, alignItems: "center" }}>
+                        <span style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6, padding: "2px 8px" }}>
+                          🏥 Vet. <b style={{ color: "#1d4ed8" }}>{formatearPrecio(Math.round(p.precio_venta * 1.30 * 100) / 100)}</b>
+                        </span>
+                        <span style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, padding: "2px 8px" }}>
+                          🌾 Prod. <b style={{ color: "#15803d" }}>{formatearPrecio(Math.round(p.precio_venta * 1.56 * 100) / 100)}</b>
+                        </span>
                         <span style={{ color: "#d1d5db" }}>·</span>
                         <span>Stock: <b style={{ color: p.stock === 0 ? "#dc2626" : p.stock <= 5 ? "#92400e" : "#374151" }}>{p.stock}</b></span>
                       </div>
