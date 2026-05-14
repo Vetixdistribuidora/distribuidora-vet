@@ -115,7 +115,6 @@ export default function Ventas() {
   const [anulando, setAnulando] = useState(false)
   const [reimprimiendo, setReimprimiendo] = useState(false)
   const [metodoCobro, setMetodoCobro] = useState("efectivo")
-  const [aplicarSaldo, setAplicarSaldo] = useState(false)
 
   // ── NOTAS DE CRÉDITO ─────────────────────────────────────────────────────────
   const [notasCredito, setNotasCredito] = useState<any[]>([])
@@ -236,32 +235,47 @@ export default function Ventas() {
       await supabase.from("lotes").insert({ producto_id: it.producto_id, cantidad: qty, fecha_vencimiento: null, nro_remito: "NC " + nroNota })
     }
 
-    // Acreditar saldo a favor
-    const { data: clienteData } = await supabase.from("clientes").select("saldo_favor").eq("id", modalNC.venta.cliente_id).single()
-    const nuevoSaldo = Number(clienteData?.saldo_favor || 0) + totalNC
-    await supabase.from("clientes").update({ saldo_favor: nuevoSaldo }).eq("id", modalNC.venta.cliente_id)
-    // Actualizar en memoria para que se muestre en nueva venta
-    setClientes(prev => prev.map(c => c.id === modalNC.venta.cliente_id ? { ...c, saldo_favor: nuevoSaldo } : c))
+    // Descontar de la venta original
+    const nuevoTotalVenta = Math.max(0, Number(modalNC.venta.total) - totalNC)
+    await supabase.from("ventas").update({ total: nuevoTotalVenta }).eq("id", modalNC.venta.id)
+    // Si era cuenta corriente, actualizar el movimiento de CC
+    if (modalNC.venta.estado === "cuenta_corriente") {
+      const { data: ultimo } = await supabase.from("cuentas_corrientes").select("id, saldo").eq("cliente_id", modalNC.venta.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
+      if (ultimo) {
+        const nuevoSaldoCC = Math.max(0, Number(ultimo.saldo) - totalNC)
+        await supabase.from("cuentas_corrientes").insert({ cliente_id: modalNC.venta.cliente_id, tipo: "nota_credito", monto: -totalNC, saldo: nuevoSaldoCC, venta_id: modalNC.venta.id, fecha: new Date() })
+      }
+    }
 
     setGuardandoNC(false)
     setModalNC(null)
-    mostrarToast("✅ Nota de crédito " + nroNota + " creada — saldo acreditado al cliente", "ok")
+    mostrarToast("✅ Nota de crédito " + nroNota + " creada — total de la venta actualizado", "ok")
     if (tab === "notascredito") cargarNotasCredito()
   }
 
   async function anularNC(nc: any) {
-    // Revertir: descontar stock y saldo_favor
+    // Revertir stock
     const items: any[] = nc.items || []
     for (const it of items) {
       const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
       if (prod) await supabase.from("productos").update({ stock: Math.max(0, (prod.stock || 0) - it.cantidad) }).eq("id", it.producto_id)
     }
-    const { data: clienteData } = await supabase.from("clientes").select("saldo_favor").eq("id", nc.cliente_id).single()
-    const nuevoSaldo = Math.max(0, Number(clienteData?.saldo_favor || 0) - Number(nc.total))
-    await supabase.from("clientes").update({ saldo_favor: nuevoSaldo }).eq("id", nc.cliente_id)
+    // Restaurar total de la venta original
+    const { data: ventaOrig } = await supabase.from("ventas").select("total, estado, cliente_id").eq("id", nc.venta_id).single()
+    if (ventaOrig) {
+      const totalRestaurado = Number(ventaOrig.total) + Number(nc.total)
+      await supabase.from("ventas").update({ total: totalRestaurado }).eq("id", nc.venta_id)
+      if (ventaOrig.estado === "cuenta_corriente") {
+        const { data: ultimo } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", ventaOrig.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
+        if (ultimo) {
+          const nuevoSaldoCC = Number(ultimo.saldo) + Number(nc.total)
+          await supabase.from("cuentas_corrientes").insert({ cliente_id: ventaOrig.cliente_id, tipo: "anulacion_nc", monto: Number(nc.total), saldo: nuevoSaldoCC, venta_id: nc.venta_id, fecha: new Date() })
+        }
+      }
+    }
     await supabase.from("notas_credito").update({ estado: "anulada" }).eq("id", nc.id)
     setNotasCredito(prev => prev.map(n => n.id === nc.id ? { ...n, estado: "anulada" } : n))
-    mostrarToast("🗑️ Nota de crédito anulada y stock revertido", "ok")
+    mostrarToast("🗑️ Nota de crédito anulada y venta original restaurada", "ok")
   }
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -491,7 +505,6 @@ export default function Ventas() {
   function limpiarCliente() {
     setClienteId(""); setClienteSeleccionado(null)
     setBusquedaCliente(""); setClienteDropdown(false); setClienteIndice(-1)
-    setAplicarSaldo(false)
   }
 
   function agregarAlCarrito() {
@@ -536,9 +549,6 @@ export default function Ventas() {
   }, 0)
   const ivaNum = Number(iva)
   const total = subtotal + subtotal * ivaNum / 100
-  const saldoDisponible = Number(clienteSeleccionado?.saldo_favor || 0)
-  const saldoAplicado = aplicarSaldo && !esCuentaCorriente ? Math.min(saldoDisponible, total) : 0
-  const totalFinal = Math.max(0, total - saldoAplicado)
 
   async function guardarVenta() {
     if (!clienteId || carrito.length === 0) { mostrarToast("Faltan datos", "error"); return }
@@ -547,10 +557,8 @@ export default function Ventas() {
       if (producto && item.cantidad > producto.stock) { mostrarToast("Sin stock para: " + item.nombre, "error"); return }
     }
     setGuardando(true)
-    const saldoAplicadoLocal = aplicarSaldo && !esCuentaCorriente ? Math.min(Number(clienteSeleccionado?.saldo_favor || 0), total) : 0
-    const totalAGuardar = Math.max(0, total - saldoAplicadoLocal)
     const { data: venta, error: errorVenta } = await supabase.from("ventas").insert({
-      cliente_id: Number(clienteId), total: totalAGuardar, fecha: new Date(),
+      cliente_id: Number(clienteId), total, fecha: new Date(),
       estado: esCuentaCorriente ? "cuenta_corriente" : "cobrada", nro_factura: nroFactura,
       metodo_cobro: esCuentaCorriente ? null : metodoCobro
     }).select().single()
@@ -559,16 +567,10 @@ export default function Ventas() {
       carrito.map(item => ({ venta_id: venta.id, producto_id: item.producto_id, cantidad: item.cantidad, precio: precioEfectivo(item) }))
     )
     if (errorDetalle) { mostrarToast("Error al guardar detalle", "error"); setGuardando(false); return }
-    if (saldoAplicadoLocal > 0) {
-      const { data: clienteActual } = await supabase.from("clientes").select("saldo_favor").eq("id", Number(clienteId)).single()
-      const nuevoSaldo = Math.max(0, Number(clienteActual?.saldo_favor || 0) - saldoAplicadoLocal)
-      await supabase.from("clientes").update({ saldo_favor: nuevoSaldo }).eq("id", Number(clienteId))
-      setClientes(prev => prev.map(c => c.id === Number(clienteId) ? { ...c, saldo_favor: nuevoSaldo } : c))
-    }
     if (esCuentaCorriente) {
       const { data: ultimo } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", Number(clienteId)).order("id", { ascending: false }).limit(1).maybeSingle()
-      const nuevoSaldo = (ultimo?.saldo || 0) + totalAGuardar
-      await supabase.from("cuentas_corrientes").insert({ cliente_id: Number(clienteId), tipo: "venta", monto: totalAGuardar, saldo: nuevoSaldo, venta_id: venta.id, fecha: new Date() })
+      const nuevoSaldo = (ultimo?.saldo || 0) + total
+      await supabase.from("cuentas_corrientes").insert({ cliente_id: Number(clienteId), tipo: "venta", monto: total, saldo: nuevoSaldo, venta_id: venta.id, fecha: new Date() })
     }
     for (const item of carrito) {
       const producto = productos.find(p => p.id === item.producto_id)
@@ -587,8 +589,8 @@ export default function Ventas() {
     }
     const carritoEfectivo = carrito.map(item => ({ ...item, precio: precioEfectivo(item) }))
     await supabase.from("facturas_impresion").insert([{ nro_factura: nroFactura, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? null : metodoCobro } }])
-    mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : (saldoAplicadoLocal > 0 ? `✅ Venta confirmada — se usaron ${fmt(saldoAplicadoLocal)} de saldo a favor` : "✅ Venta confirmada"), "ok")
-    setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false); setAplicarSaldo(false)
+    mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : "✅ Venta confirmada", "ok")
+    setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false)
     localStorage.removeItem("vetix_borrador")
     setGuardando(false); cargar()
   }
@@ -698,12 +700,6 @@ export default function Ventas() {
                     <div style={{ marginTop: 6, padding: "6px 10px", background: "#f0f9ff", borderRadius: 8, border: "1px solid #bae6fd", fontSize: 12, color: "#0369a1", display: "flex", gap: 12, flexWrap: "wrap" }}>
                       {clienteSeleccionado.localidad && <span>📍 {clienteSeleccionado.localidad}</span>}
                       {clienteSeleccionado.telefono && <span>📞 {clienteSeleccionado.telefono}</span>}
-                    </div>
-                  )}
-                  {clienteSeleccionado && Number(clienteSeleccionado.saldo_favor) > 0 && (
-                    <div style={{ marginTop: 6, padding: "8px 12px", background: "#f0fdf4", borderRadius: 8, border: "1px solid #86efac", fontSize: 12, color: "#15803d", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span>💚 Saldo a favor: <b>{fmt(Number(clienteSeleccionado.saldo_favor))}</b></span>
-                      <span style={{ color: "#6b7280" }}>Se aplica automáticamente como descuento al confirmar</span>
                     </div>
                   )}
                 </div>
@@ -898,29 +894,11 @@ export default function Ventas() {
                     <span style={{ color: "#93c5fd", fontSize: 13, fontWeight: 600 }}>{fmt(subtotal * ivaNum / 100)}</span>
                   </div>
                 )}
-                {saldoAplicado > 0 && (
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <span style={{ color: "#4ade80", fontSize: 13 }}>Saldo a favor</span>
-                    <span style={{ color: "#4ade80", fontSize: 13, fontWeight: 600 }}>−{fmt(saldoAplicado)}</span>
-                  </div>
-                )}
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
                   <span style={{ color: "white", fontSize: 15, fontWeight: 700 }}>Total</span>
-                  <span style={{ color: "white", fontSize: 20, fontWeight: 800 }}>{fmt(totalFinal)}</span>
+                  <span style={{ color: "white", fontSize: 20, fontWeight: 800 }}>{fmt(total)}</span>
                 </div>
               </div>
-              {clienteSeleccionado && saldoDisponible > 0 && !esCuentaCorriente && (
-                <div onClick={() => setAplicarSaldo(!aplicarSaldo)}
-                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, cursor: "pointer", marginBottom: 12, background: aplicarSaldo ? "rgba(74,222,128,0.12)" : "rgba(255,255,255,0.04)", border: aplicarSaldo ? "1px solid rgba(74,222,128,0.4)" : "1px solid rgba(255,255,255,0.08)", transition: "all 0.2s" }}>
-                  <div style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, background: aplicarSaldo ? "#16a34a" : "rgba(255,255,255,0.1)", border: aplicarSaldo ? "none" : "1px solid rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {aplicarSaldo && <span style={{ color: "white", fontSize: 12 }}>✓</span>}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: aplicarSaldo ? "#4ade80" : "#9ca3af" }}>Aplicar saldo a favor</div>
-                    <div style={{ fontSize: 11, color: "#6b7280" }}>Disponible: {fmt(saldoDisponible)}</div>
-                  </div>
-                </div>
-              )}
               <div onClick={() => setEsCuentaCorriente(!esCuentaCorriente)}
                 style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, cursor: "pointer", marginBottom: 16, background: esCuentaCorriente ? "rgba(230,119,0,0.15)" : "rgba(255,255,255,0.04)", border: esCuentaCorriente ? "1px solid rgba(230,119,0,0.4)" : "1px solid rgba(255,255,255,0.08)", transition: "all 0.2s" }}>
                 <div style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, background: esCuentaCorriente ? "#e67700" : "rgba(255,255,255,0.1)", border: esCuentaCorriente ? "none" : "1px solid rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
