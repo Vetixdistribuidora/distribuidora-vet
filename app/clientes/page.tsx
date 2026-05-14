@@ -191,6 +191,10 @@ export default function Clientes() {
       cliente_id: modalHistorial.id, venta_id: ventaParaPagar.id, monto, nota: notaPago || null
     }])
     if (error) { mostrarToast("Error: " + error.message, "error"); setGuardandoPago(false); return }
+    // Registrar movimiento en cuentas_corrientes para mantener el saldo sincronizado
+    const { data: ultimoCC } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", modalHistorial.id).order("id", { ascending: false }).limit(1).maybeSingle()
+    const nuevoSaldoCC = Math.max(0, Number(ultimoCC?.saldo || 0) - monto)
+    await supabase.from("cuentas_corrientes").insert({ cliente_id: modalHistorial.id, tipo: "pago", monto: -monto, saldo: nuevoSaldoCC, venta_id: ventaParaPagar.id, fecha: new Date() })
     if (monto >= ventaParaPagar.saldo) {
       await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaParaPagar.id)
     }

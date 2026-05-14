@@ -340,10 +340,11 @@ export default function Productos() {
   function exportarListaPrecios() {
     const data = productos.filter(p => p.stock > 0).map(p => ({
       "Producto": p.nombre,
-      "Precio ($)": p.precio_venta,
+      "Precio Vet. ($)": Math.round(p.precio_venta * 1.30 * 100) / 100,
+      "Precio Prod. ($)": Math.round(p.precio_venta * 1.56 * 100) / 100,
     }))
     const ws = XLSX.utils.json_to_sheet(data)
-    ws["!cols"] = [{ wch: 45 }, { wch: 14 }]
+    ws["!cols"] = [{ wch: 45 }, { wch: 16 }, { wch: 16 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Lista de Precios")
     XLSX.writeFile(wb, `lista_precios_${new Date().toISOString().slice(0, 10)}.xlsx`)
