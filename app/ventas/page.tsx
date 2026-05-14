@@ -176,7 +176,7 @@ export default function Ventas() {
   // ── FUNCIONES NOTAS DE CRÉDITO ───────────────────────────────────────────────
   async function cargarNotasCredito() {
     setLoadingNC(true)
-    const { data } = await supabase.from("notas_credito").select("*, clientes(nombre, apellido)").order("id", { ascending: false }).limit(200)
+    const { data } = await supabase.from("notas_credito").select("*, clientes(nombre, apellido), ventas(nro_factura)").order("id", { ascending: false }).limit(200)
     setNotasCredito(data || [])
     setLoadingNC(false)
   }
@@ -189,7 +189,7 @@ export default function Ventas() {
       setDetalleItems(items)
     }
     const cantInit: Record<number, number> = {}
-    items.forEach((it: any) => { cantInit[it.producto_id] = it.cantidad })
+    items.forEach((it: any) => { cantInit[it.producto_id] = 0 })
     setNcCantidades(cantInit)
     setNcMotivo("")
     setModalNC({ venta, items })
@@ -254,12 +254,13 @@ export default function Ventas() {
   }
 
   async function anularNC(nc: any) {
-    // Revertir stock
+    // Revertir stock y eliminar los lotes de devolución creados por esta NC
     const items: any[] = nc.items || []
     for (const it of items) {
       const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
       if (prod) await supabase.from("productos").update({ stock: Math.max(0, (prod.stock || 0) - it.cantidad) }).eq("id", it.producto_id)
     }
+    await supabase.from("lotes").delete().eq("nro_remito", "NC " + nc.nro_nota)
     // Restaurar total de la venta original
     const { data: ventaOrig } = await supabase.from("ventas").select("total, estado, cliente_id").eq("id", nc.venta_id).single()
     if (ventaOrig) {
@@ -1258,7 +1259,7 @@ export default function Ventas() {
                         <span style={{ background: estadoColor.bg, color: estadoColor.color, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>{nc.estado === "anulada" ? "Anulada" : "Activa"}</span>
                       </div>
                       <p style={{ margin: "0 0 4px", fontSize: 13, color: "#374151", fontWeight: 600 }}>{nc.clientes?.nombre} {nc.clientes?.apellido}</p>
-                      <p style={{ margin: "0 0 4px", fontSize: 12, color: "#6b7280" }}>Venta N° {nc.venta_id} · {nc.fecha?.slice(0, 10)}</p>
+                      <p style={{ margin: "0 0 4px", fontSize: 12, color: "#6b7280" }}>Presupuesto N° {nc.ventas?.nro_factura ?? nc.venta_id} · {nc.fecha?.slice(0, 10)}</p>
                       {nc.motivo && <p style={{ margin: "0 0 4px", fontSize: 12, color: "#6b7280" }}>Motivo: {nc.motivo}</p>}
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
                         {items.map((it: any, i: number) => (
@@ -1269,7 +1270,7 @@ export default function Ventas() {
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <p style={{ margin: "0 0 8px", fontWeight: 800, fontSize: 16, color: "#059669" }}>{fmt(Number(nc.total))}</p>
                       {nc.estado !== "anulada" && (
-                        <button onClick={() => { if (confirm("¿Anular esta nota de crédito? Se revertirá el stock y el saldo del cliente.")) anularNC(nc) }}
+                        <button onClick={() => { if (confirm("¿Anular esta nota de crédito? Se revertirá el stock y se restaurará el total de la venta original.")) anularNC(nc) }}
                           style={{ background: "none", border: "1px solid #fca5a5", borderRadius: 8, padding: "5px 10px", fontSize: 11, color: "#dc2626", cursor: "pointer", fontWeight: 600 }}>
                           Anular
                         </button>
@@ -1330,7 +1331,7 @@ export default function Ventas() {
                 <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <p style={{ margin: 0, fontSize: 12, color: "#15803d", fontWeight: 600 }}>Total a acreditar</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280" }}>Se suma al saldo a favor del cliente</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280" }}>Se descuenta del total de la venta original</p>
                   </div>
                   <span style={{ fontSize: 22, fontWeight: 800, color: "#059669" }}>{fmt(totalNC)}</span>
                 </div>
