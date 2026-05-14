@@ -140,8 +140,10 @@ export default function Dashboard() {
   async function abrirModal(tipo: ModalTipo) {
     setModal(tipo)
     if (tipo !== "sinVentas" && tipo !== "sinRotacion") return
-    if (tipo === "sinVentas" && alertas.sinVentas.length > 0) return
-    if (tipo === "sinRotacion" && alertas.sinRotacion.length > 0) return
+    cargarListaModal(tipo)
+  }
+
+  async function cargarListaModal(tipo: "sinVentas" | "sinRotacion") {
     setLoadingModalLista(true)
     const { data } = await supabase.rpc(tipo === "sinVentas" ? "productos_sin_ventas" : "productos_sin_rotacion")
     setAlertas((prev: any) => ({ ...prev, [tipo]: data || [] }))
@@ -453,7 +455,10 @@ export default function Dashboard() {
             {/* Sin ventas */}
             {modal === "sinVentas" && (
               <>
-                <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, marginBottom: 4 }}>🚫 Productos sin ventas</h2>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                  <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: 0 }}>🚫 Productos sin ventas</h2>
+                  <button onClick={() => cargarListaModal("sinVentas")} disabled={loadingModalLista} style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#9ca3af", fontSize: 11, padding: "4px 10px", cursor: "pointer" }}>🔄 Actualizar</button>
+                </div>
                 <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>Nunca fueron vendidos</p>
                 {loadingModalLista ? (
                   <p style={{ color: "#9ca3af", fontSize: 13 }}>Cargando...</p>
@@ -471,7 +476,10 @@ export default function Dashboard() {
             {/* Sin rotación */}
             {modal === "sinRotacion" && (
               <>
-                <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, marginBottom: 4 }}>🔄 Productos sin rotación</h2>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                  <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: 0 }}>🔄 Productos sin rotación</h2>
+                  <button onClick={() => cargarListaModal("sinRotacion")} disabled={loadingModalLista} style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#9ca3af", fontSize: 11, padding: "4px 10px", cursor: "pointer" }}>🔄 Actualizar</button>
+                </div>
                 <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>Con stock pero sin ventas en los últimos 30 días</p>
                 {loadingModalLista ? (
                   <p style={{ color: "#9ca3af", fontSize: 13 }}>Cargando...</p>

@@ -138,6 +138,10 @@ function ModalLote({
     if (!isoFecha) {
       setErr("⚠️ Fecha inválida — ingresá DD/MM/AA  (ej: 30/06/26)"); return
     }
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+    if (new Date(isoFecha) < hoy) {
+      setErr("⚠️ La fecha de vencimiento ya pasó"); return
+    }
     setErr("")
     onGuardar(Number(c), isoFecha)
   }
@@ -383,25 +387,13 @@ export default function Productos() {
     setCargando(false)
   }
 
-  // Mantener para uso en guardarLote / eliminarLote (recarga solo lotes)
-  async function cargarLotes(ids: number[]) {
-    const mapa: Record<number, any[]> = {}
-    const chunkSize = 200
-    for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunk = ids.slice(i, i + chunkSize)
-      const { data } = await supabase.from("lotes").select("*").in("producto_id", chunk).gt("cantidad", 0).order("fecha_vencimiento", { ascending: true })
-      data?.forEach((l: any) => {
-        if (!mapa[l.producto_id]) mapa[l.producto_id] = []
-        mapa[l.producto_id].push(l)
-      })
-    }
-    setLotesMap(mapa)
-  }
 
   useEffect(() => { cargar() }, [])
 
   async function agregar() {
     if (!nombre || !costo || !margen || !stock) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
+    if (Number(stock) < 0) { mostrarToast("⚠️ El stock no puede ser negativo", "error"); return }
+    if (Number(costo) < 0) { mostrarToast("⚠️ El precio neto no puede ser negativo", "error"); return }
     const costoNum = Number(costo)
     const ivaNum = Number(margen)
     const fleteNum = Number(fleteProducto) || 0
