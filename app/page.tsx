@@ -51,152 +51,133 @@ export default function Dashboard() {
 
   async function cargarDatos() {
     const hoyDate = new Date()
-    const inicioMesDate = new Date()
-    inicioMesDate.setDate(1)
+    const inicioMesDate = new Date(hoyDate.getFullYear(), hoyDate.getMonth(), 1)
     inicioMesDate.setHours(0, 0, 0, 0)
-    const inicioMesAnteriorDate = new Date(inicioMesDate)
-    inicioMesAnteriorDate.setMonth(inicioMesAnteriorDate.getMonth() - 1)
+    const inicioMesAnteriorDate = new Date(hoyDate.getFullYear(), hoyDate.getMonth() - 1, 1)
+    const hace30 = new Date(); hace30.setDate(hace30.getDate() - 30)
+    const en90Str = new Date(hoyDate.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
-    // ── Cargar todas las ventas (paginado) ──
-    let todasVentas: any[] = []
-    let desdeV = 0
-    while (true) {
-      const { data } = await supabase.from("ventas").select("*, clientes(nombre, apellido)").range(desdeV, desdeV + 999)
-      if (!data || data.length === 0) break
-      todasVentas = todasVentas.concat(data)
-      if (data.length < 1000) break
-      desdeV += 1000
-    }
-    const ventas = todasVentas
-
-    // ── Cargar todos los productos (paginado) ──
-    let todosProductos: any[] = []
-    let desdeP = 0
-    while (true) {
-      const { data } = await supabase.from("productos").select("*").range(desdeP, desdeP + 999)
-      if (!data || data.length === 0) break
-      todosProductos = todosProductos.concat(data)
-      if (data.length < 1000) break
-      desdeP += 1000
-    }
-    const productos = todosProductos
-
-    // ── Cargar todas las compras (paginado) ──
-    let todasCompras: any[] = []
-    let desdeC = 0
-    while (true) {
-      const { data } = await supabase.from("compras").select("total, fecha").range(desdeC, desdeC + 999)
-      if (!data || data.length === 0) break
-      todasCompras = todasCompras.concat(data)
-      if (data.length < 1000) break
-      desdeC += 1000
+    // Helper: fetch paginado genérico
+    async function paginar(tabla: string, select: string, filtro?: (q: any) => any): Promise<any[]> {
+      let rows: any[] = [], desde = 0
+      while (true) {
+        let q = supabase.from(tabla).select(select).range(desde, desde + 999)
+        if (filtro) q = filtro(q)
+        const { data } = await q
+        if (!data?.length) break
+        rows = rows.concat(data)
+        if (data.length < 1000) break
+        desde += 1000
+      }
+      return rows
     }
 
-    const { data: detalleVentas } = await supabase.from("detalle_ventas").select("producto_id, cantidad, venta_id")
+    // ── Fase 1: todas las queries independientes en paralelo ──────────────────
+    const [ventas, productos, todasCompras, detalleVentas, lotesCargados] = await Promise.all([
+      paginar("ventas", "id, total, cliente_id, estado, fecha, nro_factura, clientes(nombre, apellido)"),
+      paginar("productos", "id, nombre, precio_venta, stock"),
+      paginar("compras", "total, fecha"),
+      paginar("detalle_ventas", "producto_id, cantidad, precio, venta_id"),
+      supabase.from("lotes_con_stock").select("*")
+        .lte("fecha_vencimiento", en90Str)
+        .order("fecha_vencimiento", { ascending: true })
+        .then(r => r.data || [])
+    ])
 
-    // ── Filtros de período (excluye ventas anuladas) ──
-    const ventasActivas = ventas.filter(v => v.estado !== "anulada")
-    const ventasHoy = ventasActivas.filter(v => {
+    // ── Filtros de período ────────────────────────────────────────────────────
+    const ventasActivas = ventas.filter((v: any) => v.estado !== "anulada")
+    const ventasHoy = ventasActivas.filter((v: any) => {
       const f = new Date(v.fecha)
       return f.getDate() === hoyDate.getDate() && f.getMonth() === hoyDate.getMonth() && f.getFullYear() === hoyDate.getFullYear()
     })
-    const ventasMes = ventasActivas.filter(v => new Date(v.fecha) >= inicioMesDate)
-    const ventasMesAnterior = ventasActivas.filter(v => {
-      const f = new Date(v.fecha)
-      return f >= inicioMesAnteriorDate && f < inicioMesDate
+    const ventasMes = ventasActivas.filter((v: any) => new Date(v.fecha) >= inicioMesDate)
+    const ventasMesAnterior = ventasActivas.filter((v: any) => {
+      const f = new Date(v.fecha); return f >= inicioMesAnteriorDate && f < inicioMesDate
     })
+    const ccLista = ventasActivas.filter((v: any) => v.estado === "cuenta_corriente")
 
-    // ── KPIs de ventas ──
-    const totalHoy = ventasHoy.reduce((acc, v) => acc + Number(v.total), 0)
-    const totalMes = ventasMes.reduce((acc, v) => acc + Number(v.total), 0)
-    const totalAnterior = ventasMesAnterior.reduce((acc, v) => acc + Number(v.total), 0)
+    // ── KPIs de ventas ────────────────────────────────────────────────────────
+    const totalHoy = ventasHoy.reduce((acc: number, v: any) => acc + Number(v.total), 0)
+    const totalMes = ventasMes.reduce((acc: number, v: any) => acc + Number(v.total), 0)
+    const totalAnterior = ventasMesAnterior.reduce((acc: number, v: any) => acc + Number(v.total), 0)
     const crecimiento = totalAnterior ? ((totalMes - totalAnterior) / totalAnterior) * 100 : 0
     const ticketPromedio = ventasMes.length ? totalMes / ventasMes.length : 0
-
-    // ── Compras del mes ──
-    const comprasMes = todasCompras.filter(c => new Date(c.fecha) >= inicioMesDate)
-    const totalComprasMes = comprasMes.reduce((acc, c) => acc + Number(c.total), 0)
-
-    // ── Cuentas corrientes pendientes (excluye anuladas) ──
-    const ccLista = ventasActivas.filter(v => v.estado === "cuenta_corriente")
-    const totalCC = ccLista.reduce((acc, v) => acc + Number(v.total), 0)
+    const totalCC = ccLista.reduce((acc: number, v: any) => acc + Number(v.total), 0)
     setCcPendientes(ccLista)
 
-    // ── Ganancia del mes + Top productos ──
+    // ── Compras del mes ───────────────────────────────────────────────────────
+    const totalComprasMes = todasCompras
+      .filter((c: any) => new Date(c.fecha) >= inicioMesDate)
+      .reduce((acc: number, c: any) => acc + Number(c.total), 0)
+
+    // ── Ganancia + Top productos del mes ──────────────────────────────────────
+    // Costo real = precio_venta (= precio_neto + IVA + flete), NO el campo "costo"
+    const prodMap = new Map(productos.map((p: any) => [p.id, p]))
+    const ventasMesIds = new Set(ventasMes.map((v: any) => v.id))
     let ganancia = 0
-    let topProductos: any[] = []
-    const ventasMesIds = ventasMes.map(v => v.id)
-    if (ventasMesIds.length > 0) {
-      const { data: detallesMes } = await supabase
-        .from("detalle_ventas")
-        .select("producto_id, cantidad, precio")
-        .in("venta_id", ventasMesIds)
-      if (detallesMes) {
-        const conteo: Record<number, { nombre: string; cantidad: number; total: number }> = {}
-        detallesMes.forEach(d => {
-          const prod = productos.find((p: any) => p.id === d.producto_id)
-          if (prod) ganancia += (d.precio - prod.costo) * d.cantidad
-          if (!conteo[d.producto_id]) conteo[d.producto_id] = { nombre: prod?.nombre || "Producto #" + d.producto_id, cantidad: 0, total: 0 }
-          conteo[d.producto_id].cantidad += d.cantidad
-          conteo[d.producto_id].total += d.precio * d.cantidad
-        })
-        topProductos = Object.values(conteo).sort((a, b) => b.cantidad - a.cantidad).slice(0, 5)
-      }
+    const conteo: Record<number, { nombre: string; cantidad: number; total: number }> = {}
+    for (const d of detalleVentas) {
+      if (!ventasMesIds.has(d.venta_id)) continue
+      const prod: any = prodMap.get(d.producto_id)
+      ganancia += (d.precio - (prod?.precio_venta ?? 0)) * d.cantidad
+      if (!conteo[d.producto_id])
+        conteo[d.producto_id] = { nombre: prod?.nombre || "Producto #" + d.producto_id, cantidad: 0, total: 0 }
+      conteo[d.producto_id].cantidad += d.cantidad
+      conteo[d.producto_id].total += d.precio * d.cantidad
     }
-    setTopProductosMes(topProductos)
+    setTopProductosMes(Object.values(conteo).sort((a, b) => b.cantidad - a.cantidad).slice(0, 5))
 
     const margen = totalMes ? (ganancia / totalMes) * 100 : 0
-    const capitalStock = productos.reduce((acc, p) => acc + (p.costo || 0) * (p.stock || 0), 0)
+    // Capital = costo real (precio_venta) × stock
+    const capitalStock = productos.reduce((acc: number, p: any) => acc + (p.precio_venta || 0) * (p.stock || 0), 0)
 
-    // ── Alertas de stock ──
-    const sinStock = productos.filter(p => p.stock == null || p.stock === 0)
-    const stockBajo = productos.filter(p => p.stock != null && p.stock > 0 && p.stock <= 5)
+    // ── Alertas de stock ──────────────────────────────────────────────────────
+    const sinStock = productos.filter((p: any) => p.stock == null || p.stock === 0)
+    const stockBajo = productos.filter((p: any) => p.stock != null && p.stock > 0 && p.stock <= 5)
 
-    // ── Sin ventas / Sin rotación (solo ventas activas) ──
-    const idsVentasActivas = new Set(ventasActivas.map(v => v.id))
-    const detalleActivos = detalleVentas?.filter(d => idsVentasActivas.has(d.venta_id))
-    const vendidosIds = new Set(detalleActivos?.map(d => d.producto_id))
-    const sinVentas = productos.filter(p => !vendidosIds.has(p.id))
-    const hace30 = new Date(); hace30.setDate(hace30.getDate() - 30)
-    const ventasIds30d = new Set(ventasActivas.filter(v => new Date(v.fecha) >= hace30).map(v => v.id))
-    const vendidos30dIds = new Set(detalleVentas?.filter(d => ventasIds30d.has(d.venta_id)).map(d => d.producto_id))
-    const sinRotacion = productos.filter(p => (p.stock != null && p.stock > 0) && !vendidos30dIds.has(p.id))
+    // ── Sin ventas / Sin rotación ─────────────────────────────────────────────
+    const idsVentasActivas = new Set(ventasActivas.map((v: any) => v.id))
+    const vendidosIds = new Set(
+      detalleVentas.filter((d: any) => idsVentasActivas.has(d.venta_id)).map((d: any) => d.producto_id)
+    )
+    const sinVentas = productos.filter((p: any) => !vendidosIds.has(p.id))
+    const ventasIds30d = new Set(
+      ventasActivas.filter((v: any) => new Date(v.fecha) >= hace30).map((v: any) => v.id)
+    )
+    const vendidos30dIds = new Set(
+      detalleVentas.filter((d: any) => ventasIds30d.has(d.venta_id)).map((d: any) => d.producto_id)
+    )
+    const sinRotacion = productos.filter((p: any) => (p.stock != null && p.stock > 0) && !vendidos30dIds.has(p.id))
 
+    // ── Set state ─────────────────────────────────────────────────────────────
     setKpis({ totalHoy, totalMes, ganancia, margen, crecimiento, ticketPromedio, cantidadVentas: ventasMes.length, cantidadHoy: ventasHoy.length, capitalStock, totalComprasMes, totalCC, cantidadCC: ccLista.length })
     setAlertas({ sinStock, stockBajo, sinVentas, sinRotacion })
     setVentasHoyLista(ventasHoy)
     setVentasMesLista(ventasMes)
+    setLotesPorVencer(lotesCargados)
 
-    // ── Lotes por vencer ──
-    const en90 = new Date(); en90.setDate(en90.getDate() + 90)
-    const { data: lotes } = await supabase
-      .from("lotes_con_stock")
-      .select("*")
-      .lte("fecha_vencimiento", en90.toISOString().slice(0, 10))
-      .order("fecha_vencimiento", { ascending: true })
-    setLotesPorVencer(lotes || [])
-
-    // ── Gráfico 7 días (solo ventas activas) ──
+    // ── Gráfico 7 días (DD/MM) ────────────────────────────────────────────────
     const ultimos7 = [...Array(7)].map((_, i) => {
       const fecha = new Date(); fecha.setDate(fecha.getDate() - i)
       const f = fecha.toISOString().slice(0, 10)
-      const total = ventasActivas.filter(v => new Date(v.fecha).toISOString().slice(0, 10) === f)
-        .reduce((acc, v) => acc + Number(v.total), 0)
-      return { fecha: f.slice(5), total }
+      const total = ventasActivas
+        .filter((v: any) => new Date(v.fecha).toISOString().slice(0, 10) === f)
+        .reduce((acc: number, v: any) => acc + Number(v.total), 0)
+      return { fecha: f.slice(8, 10) + "/" + f.slice(5, 7), total }
     }).reverse()
     setVentasGrafico(ultimos7)
 
-    // ── Gráfico 6 meses (ventas activas + compras) ──
+    // ── Gráfico 6 meses ───────────────────────────────────────────────────────
     const ultimos6Meses = [...Array(6)].map((_, i) => {
-      const fecha = new Date()
-      fecha.setDate(1)
-      fecha.setMonth(fecha.getMonth() - i)
+      const fecha = new Date(); fecha.setDate(1); fecha.setMonth(fecha.getMonth() - i)
       const mes = fecha.toISOString().slice(0, 7)
       const label = fecha.toLocaleDateString("es-AR", { month: "short", year: "2-digit" })
-      const ventasTotal = ventasActivas.filter(v => new Date(v.fecha).toISOString().slice(0, 7) === mes)
-        .reduce((acc, v) => acc + Number(v.total), 0)
-      const comprasTotal = todasCompras.filter(c => new Date(c.fecha).toISOString().slice(0, 7) === mes)
-        .reduce((acc, c) => acc + Number(c.total), 0)
+      const ventasTotal = ventasActivas
+        .filter((v: any) => new Date(v.fecha).toISOString().slice(0, 7) === mes)
+        .reduce((acc: number, v: any) => acc + Number(v.total), 0)
+      const comprasTotal = todasCompras
+        .filter((c: any) => new Date(c.fecha).toISOString().slice(0, 7) === mes)
+        .reduce((acc: number, c: any) => acc + Number(c.total), 0)
       return { fecha: label, ventas: ventasTotal, compras: comprasTotal }
     }).reverse()
     setVentasMensual(ultimos6Meses)
