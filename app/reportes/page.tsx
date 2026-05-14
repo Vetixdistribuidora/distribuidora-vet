@@ -73,19 +73,32 @@ export default function Reportes() {
         return
       }
 
-      // 2. Get venta IDs → query detalle_ventas with productos
+      // 2. Get venta IDs → query detalle_ventas (sin join, para evitar errores de FK)
       const ventaIds = ventas.map((v: any) => v.id)
 
-      // Fetch in chunks to avoid URL length limits
       const CHUNK = 200
       let detalles: any[] = []
       for (let i = 0; i < ventaIds.length; i += CHUNK) {
         const chunk = ventaIds.slice(i, i + CHUNK)
         const { data: det } = await supabase
           .from("detalle_ventas")
-          .select("venta_id, producto_id, cantidad, precio, productos(nombre, costo)")
+          .select("venta_id, producto_id, cantidad, precio")
           .in("venta_id", chunk)
         if (det) detalles = [...detalles, ...det]
+      }
+
+      // Fetch nombres y costos de productos involucrados
+      const productoIdsUnicos = [...new Set(detalles.map((d: any) => d.producto_id))]
+      const productosMap: Record<number, { nombre: string, costo: number }> = {}
+      if (productoIdsUnicos.length > 0) {
+        for (let i = 0; i < productoIdsUnicos.length; i += CHUNK) {
+          const chunk = productoIdsUnicos.slice(i, i + CHUNK)
+          const { data: prods } = await supabase
+            .from("productos")
+            .select("id, nombre, costo")
+            .in("id", chunk)
+          prods?.forEach((p: any) => { productosMap[p.id] = { nombre: p.nombre, costo: p.costo ?? 0 } })
+        }
       }
 
       // 3. Calculate KPIs
@@ -96,18 +109,22 @@ export default function Reportes() {
 
       let ganancia = 0
       for (const d of detalles) {
-        const costo = d.productos?.costo ?? 0
+        const costo = productosMap[d.producto_id]?.costo ?? 0
         ganancia += (d.precio - costo) * d.cantidad
       }
 
       setKpis({ total: totalVendido, ganancia, ticket, clientesUnicos, cantVentas })
 
-      // 4. Group detalle_ventas by producto_id for top productos
+      // 4. Group detalle_ventas by producto_id para top productos
       const prodMap: Record<string, { producto_id: number, nombre: string, total_unidades: number }> = {}
       for (const d of detalles) {
         const pid = String(d.producto_id)
         if (!prodMap[pid]) {
-          prodMap[pid] = { producto_id: d.producto_id, nombre: d.productos?.nombre ?? "Desconocido", total_unidades: 0 }
+          prodMap[pid] = {
+            producto_id: d.producto_id,
+            nombre: productosMap[d.producto_id]?.nombre ?? "Producto #" + d.producto_id,
+            total_unidades: 0
+          }
         }
         prodMap[pid].total_unidades += d.cantidad
       }
@@ -157,7 +174,7 @@ export default function Reportes() {
       }
       const grafico = Object.entries(diasMap)
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([fecha, total]) => ({ fecha: fecha.slice(5), total: Math.round(total) })) // show MM-DD
+        .map(([fecha, total]) => ({ fecha: fecha.slice(8, 10) + "/" + fecha.slice(5, 7), total: Math.round(total) }))
       setGraficoDiario(grafico)
     } finally {
       setCargando(false)
