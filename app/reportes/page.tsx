@@ -89,15 +89,16 @@ export default function Reportes() {
 
       // Fetch nombres y costos de productos involucrados
       const productoIdsUnicos = [...new Set(detalles.map((d: any) => d.producto_id))]
-      const productosMap: Record<number, { nombre: string, costo: number }> = {}
+      // precio_venta en productos = precio_neto × (1 + IVA%) × (1 + flete%) = costo real
+      const productosMap: Record<number, { nombre: string, costoReal: number }> = {}
       if (productoIdsUnicos.length > 0) {
         for (let i = 0; i < productoIdsUnicos.length; i += CHUNK) {
           const chunk = productoIdsUnicos.slice(i, i + CHUNK)
           const { data: prods } = await supabase
             .from("productos")
-            .select("id, nombre, costo")
+            .select("id, nombre, precio_venta")
             .in("id", chunk)
-          prods?.forEach((p: any) => { productosMap[p.id] = { nombre: p.nombre, costo: p.costo ?? 0 } })
+          prods?.forEach((p: any) => { productosMap[p.id] = { nombre: p.nombre, costoReal: p.precio_venta ?? 0 } })
         }
       }
 
@@ -109,8 +110,9 @@ export default function Reportes() {
 
       let ganancia = 0
       for (const d of detalles) {
-        const costo = productosMap[d.producto_id]?.costo ?? 0
-        ganancia += (d.precio - costo) * d.cantidad
+        // d.precio = lo cobrado al cliente; costoReal = precio_neto + IVA + flete
+        const costoReal = productosMap[d.producto_id]?.costoReal ?? 0
+        ganancia += (d.precio - costoReal) * d.cantidad
       }
 
       setKpis({ total: totalVendido, ganancia, ticket, clientesUnicos, cantVentas })
@@ -122,7 +124,7 @@ export default function Reportes() {
         if (!prodMap[pid]) {
           prodMap[pid] = {
             producto_id: d.producto_id,
-            nombre: productosMap[d.producto_id]?.nombre ?? "Producto #" + d.producto_id,
+            nombre: productosMap[d.producto_id]?.nombre ?? ("Producto #" + d.producto_id),
             total_unidades: 0
           }
         }
