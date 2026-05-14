@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [ventaDetalle, setVentaDetalle] = useState<any>(null)
   const [detalleItems, setDetalleItems] = useState<any[]>([])
   const [loadingDetalle, setLoadingDetalle] = useState(false)
+  const [loadingModalLista, setLoadingModalLista] = useState(false)
 
   useEffect(() => { iniciar() }, [])
 
@@ -51,136 +52,100 @@ export default function Dashboard() {
 
   async function cargarDatos() {
     const hoyDate = new Date()
-    const inicioMesDate = new Date(hoyDate.getFullYear(), hoyDate.getMonth(), 1)
-    inicioMesDate.setHours(0, 0, 0, 0)
-    const inicioMesAnteriorDate = new Date(hoyDate.getFullYear(), hoyDate.getMonth() - 1, 1)
-    const hace30 = new Date(); hace30.setDate(hace30.getDate() - 30)
+    const hoyStr = hoyDate.toISOString().slice(0, 10)
+    const inicioMesStr = new Date(hoyDate.getFullYear(), hoyDate.getMonth(), 1).toISOString()
     const en90Str = new Date(hoyDate.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
-    // Helper: fetch paginado genérico
-    async function paginar(tabla: string, select: string, filtro?: (q: any) => any): Promise<any[]> {
-      let rows: any[] = [], desde = 0
-      while (true) {
-        let q = supabase.from(tabla).select(select).range(desde, desde + 999)
-        if (filtro) q = filtro(q)
-        const { data } = await q
-        if (!data?.length) break
-        rows = rows.concat(data)
-        if (data.length < 1000) break
-        desde += 1000
-      }
-      return rows
-    }
-
-    // ── Fase 1: todas las queries independientes en paralelo ──────────────────
-    const [ventas, productos, todasCompras, detalleVentas, lotesCargados] = await Promise.all([
-      paginar("ventas", "id, total, cliente_id, estado, fecha, nro_factura, clientes(nombre, apellido)"),
-      paginar("productos", "id, nombre, precio_venta, stock"),
-      paginar("compras", "total, fecha"),
-      paginar("detalle_ventas", "producto_id, cantidad, precio, venta_id"),
+    // ── Todo en paralelo: 1 RPC + 5 queries pequeñas ─────────────────────────
+    const [kpisRes, lotesRes, ccRes, ventasHoyRes, ventasMesRes, prodRes] = await Promise.all([
+      supabase.rpc("dashboard_kpis"),
       supabase.from("lotes_con_stock").select("*")
-        .lte("fecha_vencimiento", en90Str)
-        .order("fecha_vencimiento", { ascending: true })
-        .then(r => r.data || [])
+        .lte("fecha_vencimiento", en90Str).order("fecha_vencimiento", { ascending: true }),
+      supabase.from("ventas")
+        .select("id, total, nro_factura, fecha, clientes(nombre, apellido)")
+        .eq("estado", "cuenta_corriente").order("id", { ascending: false }),
+      supabase.from("ventas")
+        .select("id, total, nro_factura, fecha, estado, clientes(nombre, apellido)")
+        .gte("fecha", hoyStr + "T00:00:00").neq("estado", "anulada"),
+      supabase.from("ventas")
+        .select("id, total, nro_factura, fecha, estado, clientes(nombre, apellido)")
+        .gte("fecha", inicioMesStr).neq("estado", "anulada").order("id", { ascending: false }),
+      supabase.from("productos").select("id, nombre, stock"),
     ])
 
-    // ── Filtros de período ────────────────────────────────────────────────────
-    const ventasActivas = ventas.filter((v: any) => v.estado !== "anulada")
-    const ventasHoy = ventasActivas.filter((v: any) => {
-      const f = new Date(v.fecha)
-      return f.getDate() === hoyDate.getDate() && f.getMonth() === hoyDate.getMonth() && f.getFullYear() === hoyDate.getFullYear()
+    const k = kpisRes.data as any
+    if (!k) return
+
+    // ── KPIs (todos vienen calculados del servidor) ───────────────────────────
+    const crecimiento = Number(k.total_mes_ant) > 0
+      ? ((Number(k.total_mes) - Number(k.total_mes_ant)) / Number(k.total_mes_ant)) * 100 : 0
+    const margen = Number(k.total_mes) > 0 ? (Number(k.ganancia_mes) / Number(k.total_mes)) * 100 : 0
+
+    setKpis({
+      totalHoy: Number(k.total_hoy), cantidadHoy: Number(k.cant_hoy),
+      totalMes: Number(k.total_mes), cantidadVentas: Number(k.cant_mes),
+      ganancia: Number(k.ganancia_mes), margen,
+      crecimiento, ticketPromedio: Number(k.ticket_promedio),
+      capitalStock: Number(k.capital_stock),
+      totalComprasMes: Number(k.total_compras_mes),
+      totalCC: Number(k.total_cc), cantidadCC: Number(k.cant_cc),
     })
-    const ventasMes = ventasActivas.filter((v: any) => new Date(v.fecha) >= inicioMesDate)
-    const ventasMesAnterior = ventasActivas.filter((v: any) => {
-      const f = new Date(v.fecha); return f >= inicioMesAnteriorDate && f < inicioMesDate
-    })
-    const ccLista = ventasActivas.filter((v: any) => v.estado === "cuenta_corriente")
 
-    // ── KPIs de ventas ────────────────────────────────────────────────────────
-    const totalHoy = ventasHoy.reduce((acc: number, v: any) => acc + Number(v.total), 0)
-    const totalMes = ventasMes.reduce((acc: number, v: any) => acc + Number(v.total), 0)
-    const totalAnterior = ventasMesAnterior.reduce((acc: number, v: any) => acc + Number(v.total), 0)
-    const crecimiento = totalAnterior ? ((totalMes - totalAnterior) / totalAnterior) * 100 : 0
-    const ticketPromedio = ventasMes.length ? totalMes / ventasMes.length : 0
-    const totalCC = ccLista.reduce((acc: number, v: any) => acc + Number(v.total), 0)
-    setCcPendientes(ccLista)
-
-    // ── Compras del mes ───────────────────────────────────────────────────────
-    const totalComprasMes = todasCompras
-      .filter((c: any) => new Date(c.fecha) >= inicioMesDate)
-      .reduce((acc: number, c: any) => acc + Number(c.total), 0)
-
-    // ── Ganancia + Top productos del mes ──────────────────────────────────────
-    // Costo real = precio_venta (= precio_neto + IVA + flete), NO el campo "costo"
-    const prodMap = new Map(productos.map((p: any) => [p.id, p]))
-    const ventasMesIds = new Set(ventasMes.map((v: any) => v.id))
-    let ganancia = 0
-    const conteo: Record<number, { nombre: string; cantidad: number; total: number }> = {}
-    for (const d of detalleVentas) {
-      if (!ventasMesIds.has(d.venta_id)) continue
-      const prod: any = prodMap.get(d.producto_id)
-      ganancia += (d.precio - (prod?.precio_venta ?? 0)) * d.cantidad
-      if (!conteo[d.producto_id])
-        conteo[d.producto_id] = { nombre: prod?.nombre || "Producto #" + d.producto_id, cantidad: 0, total: 0 }
-      conteo[d.producto_id].cantidad += d.cantidad
-      conteo[d.producto_id].total += d.precio * d.cantidad
-    }
-    setTopProductosMes(Object.values(conteo).sort((a, b) => b.cantidad - a.cantidad).slice(0, 5))
-
-    const margen = totalMes ? (ganancia / totalMes) * 100 : 0
-    // Capital = costo real (precio_venta) × stock
-    const capitalStock = productos.reduce((acc: number, p: any) => acc + (p.precio_venta || 0) * (p.stock || 0), 0)
-
-    // ── Alertas de stock ──────────────────────────────────────────────────────
+    // ── Alertas: sinStock/stockBajo desde productos, conteos del RPC ──────────
+    const productos = prodRes.data || []
     const sinStock = productos.filter((p: any) => p.stock == null || p.stock === 0)
     const stockBajo = productos.filter((p: any) => p.stock != null && p.stock > 0 && p.stock <= 5)
+    // sinVentas y sinRotacion: count del RPC, lista se carga cuando se abre el modal
+    setAlertas({
+      sinStock, stockBajo,
+      sinVentas: [], sinRotacion: [],
+      sinVentasCount: Number(k.sin_ventas),
+      sinRotacionCount: Number(k.sin_rotacion),
+    })
 
-    // ── Sin ventas / Sin rotación ─────────────────────────────────────────────
-    const idsVentasActivas = new Set(ventasActivas.map((v: any) => v.id))
-    const vendidosIds = new Set(
-      detalleVentas.filter((d: any) => idsVentasActivas.has(d.venta_id)).map((d: any) => d.producto_id)
-    )
-    const sinVentas = productos.filter((p: any) => !vendidosIds.has(p.id))
-    const ventasIds30d = new Set(
-      ventasActivas.filter((v: any) => new Date(v.fecha) >= hace30).map((v: any) => v.id)
-    )
-    const vendidos30dIds = new Set(
-      detalleVentas.filter((d: any) => ventasIds30d.has(d.venta_id)).map((d: any) => d.producto_id)
-    )
-    const sinRotacion = productos.filter((p: any) => (p.stock != null && p.stock > 0) && !vendidos30dIds.has(p.id))
+    // ── Listas para modales ───────────────────────────────────────────────────
+    setLotesPorVencer(lotesRes.data || [])
+    setCcPendientes(ccRes.data || [])
+    setVentasHoyLista(ventasHoyRes.data || [])
+    setVentasMesLista(ventasMesRes.data || [])
 
-    // ── Set state ─────────────────────────────────────────────────────────────
-    setKpis({ totalHoy, totalMes, ganancia, margen, crecimiento, ticketPromedio, cantidadVentas: ventasMes.length, cantidadHoy: ventasHoy.length, capitalStock, totalComprasMes, totalCC, cantidadCC: ccLista.length })
-    setAlertas({ sinStock, stockBajo, sinVentas, sinRotacion })
-    setVentasHoyLista(ventasHoy)
-    setVentasMesLista(ventasMes)
-    setLotesPorVencer(lotesCargados)
+    // ── Top productos (viene del RPC) ─────────────────────────────────────────
+    setTopProductosMes(k.top_productos || [])
 
-    // ── Gráfico 7 días (DD/MM) ────────────────────────────────────────────────
+    // ── Gráfico 7 días: llena días sin ventas con 0 ───────────────────────────
+    const map7: Record<string, number> = {}
+    ;(k.grafico_7dias || []).forEach((d: any) => { map7[d.fecha] = Number(d.total) })
     const ultimos7 = [...Array(7)].map((_, i) => {
-      const fecha = new Date(); fecha.setDate(fecha.getDate() - i)
-      const f = fecha.toISOString().slice(0, 10)
-      const total = ventasActivas
-        .filter((v: any) => new Date(v.fecha).toISOString().slice(0, 10) === f)
-        .reduce((acc: number, v: any) => acc + Number(v.total), 0)
-      return { fecha: f.slice(8, 10) + "/" + f.slice(5, 7), total }
-    }).reverse()
+      const d = new Date(); d.setDate(d.getDate() - (6 - i))
+      const iso = d.toISOString().slice(0, 10)
+      return { fecha: iso.slice(8, 10) + "/" + iso.slice(5, 7), total: map7[iso] || 0 }
+    })
     setVentasGrafico(ultimos7)
 
-    // ── Gráfico 6 meses ───────────────────────────────────────────────────────
-    const ultimos6Meses = [...Array(6)].map((_, i) => {
-      const fecha = new Date(); fecha.setDate(1); fecha.setMonth(fecha.getMonth() - i)
-      const mes = fecha.toISOString().slice(0, 7)
-      const label = fecha.toLocaleDateString("es-AR", { month: "short", year: "2-digit" })
-      const ventasTotal = ventasActivas
-        .filter((v: any) => new Date(v.fecha).toISOString().slice(0, 7) === mes)
-        .reduce((acc: number, v: any) => acc + Number(v.total), 0)
-      const comprasTotal = todasCompras
-        .filter((c: any) => new Date(c.fecha).toISOString().slice(0, 7) === mes)
-        .reduce((acc: number, c: any) => acc + Number(c.total), 0)
-      return { fecha: label, ventas: ventasTotal, compras: comprasTotal }
-    }).reverse()
-    setVentasMensual(ultimos6Meses)
+    // ── Gráfico 6 meses: merge ventas + compras, llena meses vacíos con 0 ─────
+    const mapV: Record<string, number> = {}
+    const mapC: Record<string, number> = {}
+    ;(k.grafico_ventas_6m || []).forEach((d: any) => { mapV[d.mes] = Number(d.ventas) })
+    ;(k.grafico_compras_6m || []).forEach((d: any) => { mapC[d.mes] = Number(d.compras) })
+    const ultimos6 = [...Array(6)].map((_, i) => {
+      const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (5 - i))
+      const mes = d.toISOString().slice(0, 7)
+      const label = d.toLocaleDateString("es-AR", { month: "short", year: "2-digit" })
+      return { fecha: label, ventas: mapV[mes] || 0, compras: mapC[mes] || 0 }
+    })
+    setVentasMensual(ultimos6)
+  }
+
+  // ── Lazy load para modales sinVentas y sinRotacion ────────────────────────
+  async function abrirModal(tipo: ModalTipo) {
+    setModal(tipo)
+    if (tipo !== "sinVentas" && tipo !== "sinRotacion") return
+    if (tipo === "sinVentas" && alertas.sinVentas.length > 0) return
+    if (tipo === "sinRotacion" && alertas.sinRotacion.length > 0) return
+    setLoadingModalLista(true)
+    const { data } = await supabase.rpc(tipo === "sinVentas" ? "productos_sin_ventas" : "productos_sin_rotacion")
+    setAlertas((prev: any) => ({ ...prev, [tipo]: data || [] }))
+    setLoadingModalLista(false)
   }
 
   async function verDetalleVenta(venta: any) {
@@ -204,20 +169,20 @@ export default function Dashboard() {
   )
 
   const kpiCards = [
-    { titulo: "Ventas hoy", valor: fmt(kpis.totalHoy), sub: `${kpis.cantidadHoy} venta${kpis.cantidadHoy !== 1 ? "s" : ""}`, icon: "☀️", color: "#3b82f6", onClick: () => setModal("ventasHoy") },
-    { titulo: "Ventas del mes", valor: fmt(kpis.totalMes), sub: `${kpis.cantidadVentas} ventas`, icon: "📅", color: "#6366f1", onClick: () => setModal("ventasMes") },
+    { titulo: "Ventas hoy", valor: fmt(kpis.totalHoy), sub: `${kpis.cantidadHoy} venta${kpis.cantidadHoy !== 1 ? "s" : ""}`, icon: "☀️", color: "#3b82f6", onClick: () => abrirModal("ventasHoy") },
+    { titulo: "Ventas del mes", valor: fmt(kpis.totalMes), sub: `${kpis.cantidadVentas} ventas`, icon: "📅", color: "#6366f1", onClick: () => abrirModal("ventasMes") },
     { titulo: "Compras del mes", valor: fmt(kpis.totalComprasMes), sub: "Total gastado en compras", icon: "🛒", color: "#f59e0b", onClick: undefined },
     { titulo: "Ganancia", valor: fmt(kpis.ganancia), sub: `Margen ${kpis.margen?.toFixed(1)}%`, icon: "💰", color: "#22c55e", onClick: undefined },
     { titulo: "Crecimiento", valor: (kpis.crecimiento >= 0 ? "+" : "") + kpis.crecimiento?.toFixed(1) + "%", sub: "vs mes anterior", icon: "📈", color: kpis.crecimiento >= 0 ? "#22c55e" : "#ef4444", onClick: undefined },
     { titulo: "Capital en stock", valor: fmt(kpis.capitalStock), sub: "Costo × stock", icon: "📦", color: "#a78bfa", onClick: undefined },
-    { titulo: "Cuentas corrientes", valor: fmt(kpis.totalCC), sub: `${kpis.cantidadCC} venta${kpis.cantidadCC !== 1 ? "s" : ""} pendiente${kpis.cantidadCC !== 1 ? "s" : ""}`, icon: "🕐", color: "#ef4444", onClick: () => setModal("cuentasCC") },
+    { titulo: "Cuentas corrientes", valor: fmt(kpis.totalCC), sub: `${kpis.cantidadCC} venta${kpis.cantidadCC !== 1 ? "s" : ""} pendiente${kpis.cantidadCC !== 1 ? "s" : ""}`, icon: "🕐", color: "#ef4444", onClick: () => abrirModal("cuentasCC") },
   ]
 
   const alertaCards = [
     { titulo: "Sin stock", valor: alertas.sinStock.length, icon: "📭", tipo: "sinStock" as ModalTipo, sub: "0 unidades" },
     { titulo: "Stock bajo", valor: alertas.stockBajo.length, icon: "⚠️", tipo: "stockBajo" as ModalTipo, sub: "1 a 5 unidades" },
-    { titulo: "Sin ventas", valor: alertas.sinVentas.length, icon: "🚫", tipo: "sinVentas" as ModalTipo, sub: "Nunca vendidos" },
-    { titulo: "Sin rotación", valor: alertas.sinRotacion.length, icon: "🔄", tipo: "sinRotacion" as ModalTipo, sub: "Sin ventas 30 días" },
+    { titulo: "Sin ventas", valor: alertas.sinVentasCount ?? alertas.sinVentas.length, icon: "🚫", tipo: "sinVentas" as ModalTipo, sub: "Nunca vendidos" },
+    { titulo: "Sin rotación", valor: alertas.sinRotacionCount ?? alertas.sinRotacion.length, icon: "🔄", tipo: "sinRotacion" as ModalTipo, sub: "Sin ventas 30 días" },
     { titulo: "Vencen en 90d", valor: lotesPorVencer.length, icon: "📅", tipo: "lotes" as ModalTipo, sub: "Lotes próximos" },
   ]
 
@@ -263,7 +228,7 @@ export default function Dashboard() {
             const hayProblema = a.valor > 0
             return (
               <button key={a.titulo}
-                onClick={() => setModal(a.tipo)}
+                onClick={() => abrirModal(a.tipo)}
                 style={{
                   background: hayProblema ? "#0f172a" : "white",
                   border: hayProblema ? "1px solid rgba(255,255,255,0.08)" : "1px solid #e2e8f0",
@@ -384,7 +349,7 @@ export default function Dashboard() {
           <div style={{ background: "#0f172a", borderRadius: 16, padding: 24, border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 4px 16px rgba(0,0,0,0.2)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "white" }}>📅 Próximos vencimientos</h3>
-              <button onClick={() => setModal("lotes")} style={{ background: "rgba(59,130,246,0.15)", border: "none", color: "#3b82f6", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 6, cursor: "pointer" }}>
+              <button onClick={() => abrirModal("lotes")} style={{ background: "rgba(59,130,246,0.15)", border: "none", color: "#3b82f6", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 6, cursor: "pointer" }}>
                 Ver todos
               </button>
             </div>
@@ -490,7 +455,9 @@ export default function Dashboard() {
               <>
                 <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, marginBottom: 4 }}>🚫 Productos sin ventas</h2>
                 <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>Nunca fueron vendidos</p>
-                {alertas.sinVentas.length === 0 ? (
+                {loadingModalLista ? (
+                  <p style={{ color: "#9ca3af", fontSize: 13 }}>Cargando...</p>
+                ) : alertas.sinVentas.length === 0 ? (
                   <p style={{ color: "#4ade80", fontSize: 14 }}>✓ Todos los productos tienen ventas</p>
                 ) : alertas.sinVentas.map((p: any) => (
                   <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8, marginBottom: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -506,7 +473,9 @@ export default function Dashboard() {
               <>
                 <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, marginBottom: 4 }}>🔄 Productos sin rotación</h2>
                 <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 20 }}>Con stock pero sin ventas en los últimos 30 días</p>
-                {alertas.sinRotacion.length === 0 ? (
+                {loadingModalLista ? (
+                  <p style={{ color: "#9ca3af", fontSize: 13 }}>Cargando...</p>
+                ) : alertas.sinRotacion.length === 0 ? (
                   <p style={{ color: "#4ade80", fontSize: 14 }}>✓ Todos los productos rotan</p>
                 ) : alertas.sinRotacion.map((p: any) => (
                   <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8, marginBottom: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
