@@ -78,7 +78,7 @@ const responsiveStyles = `
 `
 
 export default function Ventas() {
-  const [tab, setTab] = useState<"nueva" | "historial">("nueva")
+  const [tab, setTab] = useState<"nueva" | "historial" | "borradores">("nueva")
 
   const [clientes, setClientes] = useState<any[]>([])
   const [productos, setProductos] = useState<any[]>([])
@@ -116,12 +116,29 @@ export default function Ventas() {
   const [reimprimiendo, setReimprimiendo] = useState(false)
   const [metodoCobro, setMetodoCobro] = useState("efectivo")
 
+  // ── BORRADORES ──────────────────────────────────────────────────────────────
+  const [borradores, setBorradores] = useState<any[]>([])
+  const [loadingBorradores, setLoadingBorradores] = useState(false)
+  const [borradorAbierto, setBorradorAbierto] = useState<any | null>(null)
+  const [borrTitulo, setBorrTitulo] = useState("")
+  const [borrClienteObj, setBorrClienteObj] = useState<any>(null)
+  const [borrBusqCliente, setBorrBusqCliente] = useState("")
+  const [borrDropCliente, setBorrDropCliente] = useState(false)
+  const [borrItems, setBorrItems] = useState<any[]>([])
+  const [borrNotas, setBorrNotas] = useState("")
+  const [borrBusqProducto, setBorrBusqProducto] = useState("")
+  const [borrGuardando, setBorrGuardando] = useState(false)
+  // ────────────────────────────────────────────────────────────────────────────
+
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo }); setTimeout(() => setToast(null), 3000)
   }
 
   useEffect(() => { cargar() }, [])
-  useEffect(() => { if (tab === "historial") cargarHistorial() }, [tab])
+  useEffect(() => {
+    if (tab === "historial") cargarHistorial()
+    if (tab === "borradores") cargarBorradores()
+  }, [tab])
   useEffect(() => { if (tab === "historial") cargarHistorial() }, [fechaDesde, fechaHasta])
 
   // Borrador automático en localStorage
@@ -145,6 +162,94 @@ export default function Ventas() {
       }
     } catch {}
   }, [])
+
+  // ── FUNCIONES BORRADORES ────────────────────────────────────────────────────
+  async function cargarBorradores() {
+    setLoadingBorradores(true)
+    const { data } = await supabase.from("borradores").select("*").order("updated_at", { ascending: false })
+    setBorradores(data || [])
+    setLoadingBorradores(false)
+  }
+
+  async function crearBorrador() {
+    const titulo = "Borrador " + new Date().toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    const { data, error } = await supabase.from("borradores").insert({ titulo, items: [], notas: "" }).select().single()
+    if (error || !data) return mostrarToast("❌ Error al crear borrador", "error")
+    setBorradores(prev => [data, ...prev])
+    abrirBorrador(data)
+  }
+
+  function abrirBorrador(b: any) {
+    setBorradorAbierto(b)
+    setBorrTitulo(b.titulo || "")
+    setBorrClienteObj(b.cliente_id ? clientes.find((c: any) => c.id === b.cliente_id) || null : null)
+    setBorrBusqCliente(b.cliente_nombre || "")
+    setBorrItems(b.items || [])
+    setBorrNotas(b.notas || "")
+    setBorrBusqProducto("")
+  }
+
+  function cerrarBorrador() {
+    setBorradorAbierto(null)
+    setBorrBusqCliente("")
+    setBorrBusqProducto("")
+  }
+
+  async function guardarBorrador() {
+    if (!borradorAbierto) return
+    setBorrGuardando(true)
+    const patch = {
+      titulo: borrTitulo,
+      cliente_id: borrClienteObj?.id || null,
+      cliente_nombre: borrClienteObj ? `${borrClienteObj.nombre} ${borrClienteObj.apellido || ""}`.trim() : "",
+      items: borrItems,
+      notas: borrNotas,
+      updated_at: new Date().toISOString()
+    }
+    const { error } = await supabase.from("borradores").update(patch).eq("id", borradorAbierto.id)
+    if (error) { setBorrGuardando(false); return mostrarToast("❌ " + error.message, "error") }
+    setBorradores(prev => prev.map(b => b.id === borradorAbierto.id ? { ...b, ...patch } : b))
+    setBorrGuardando(false)
+    mostrarToast("✅ Borrador guardado", "ok")
+  }
+
+  async function eliminarBorrador(id: number) {
+    await supabase.from("borradores").delete().eq("id", id)
+    setBorradores(prev => prev.filter(b => b.id !== id))
+    if (borradorAbierto?.id === id) cerrarBorrador()
+    mostrarToast("🗑️ Borrador eliminado", "ok")
+  }
+
+  function agregarProductoABorrador(prod: any) {
+    setBorrItems(prev => {
+      const existe = prev.find((i: any) => i.producto_id === prod.id)
+      if (existe) return prev.map((i: any) => i.producto_id === prod.id ? { ...i, cantidad: i.cantidad + 1 } : i)
+      return [...prev, { producto_id: prod.id, nombre: prod.nombre, precio: prod.precio_venta, cantidad: 1, bonificacion: 0 }]
+    })
+    setBorrBusqProducto("")
+  }
+
+  function pasarAVenta(b?: any) {
+    const items = b ? (b.items || []) : borrItems
+    const clienteObj = b ? (b.cliente_id ? clientes.find((c: any) => c.id === b.cliente_id) || null : null) : borrClienteObj
+    if (items.length === 0) { mostrarToast("⚠️ El borrador no tiene productos", "error"); return }
+    setCarrito(items.map((it: any) => ({
+      producto_id: it.producto_id, nombre: it.nombre,
+      precio: it.precio, cantidad: it.cantidad, bonificacion: it.bonificacion || 0,
+      subtotal: it.precio * Math.max(0, it.cantidad - (it.bonificacion || 0))
+    })))
+    if (clienteObj) {
+      setClienteSeleccionado(clienteObj)
+      setClienteId(String(clienteObj.id))
+      setBusquedaCliente(`${clienteObj.nombre} ${clienteObj.apellido || ""}`.trim())
+    } else {
+      setClienteSeleccionado(null); setClienteId(""); setBusquedaCliente("")
+    }
+    cerrarBorrador()
+    setTab("nueva")
+    mostrarToast("✅ Pedido cargado — revisá y confirmá la venta", "ok")
+  }
+  // ────────────────────────────────────────────────────────────────────────────
 
   async function cargar() {
     const { data: c } = await supabase.from("clientes").select("*").order("nombre")
@@ -402,14 +507,16 @@ export default function Ventas() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "white", padding: 4, borderRadius: 12, border: "1px solid #e2e8f0", width: "fit-content", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-        {([{ key: "nueva", label: "➕ Nueva venta" }, { key: "historial", label: "📋 Historial" }] as const).map(t => (
+        {([{ key: "nueva", label: "➕ Nueva venta" }, { key: "historial", label: "📋 Historial" }, { key: "borradores", label: "📝 Borradores" }] as const).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             padding: "8px 20px", borderRadius: 9, border: "none", cursor: "pointer",
             fontSize: 13, fontWeight: 700, transition: "all 0.15s",
             background: tab === t.key ? "#0f172a" : "transparent",
             color: tab === t.key ? "white" : "#6b7280",
             boxShadow: tab === t.key ? "0 2px 8px rgba(0,0,0,0.15)" : "none"
-          }}>{t.label}</button>
+          }}>{t.label}{t.key === "borradores" && borradores.length > 0 && tab !== "borradores" && (
+            <span style={{ marginLeft: 6, background: "#f59e0b", color: "white", borderRadius: 99, fontSize: 10, padding: "1px 6px", fontWeight: 800 }}>{borradores.length}</span>
+          )}</button>
         ))}
       </div>
 
@@ -786,6 +893,220 @@ export default function Ventas() {
                   </div>
                 )
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ TAB BORRADORES ══ */}
+      {tab === "borradores" && (
+        <div>
+          {!borradorAbierto ? (
+            /* ── LISTA DE BORRADORES ── */
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#111827" }}>📝 Borradores</h2>
+                  <p style={{ margin: "4px 0 0", fontSize: 13, color: "#6b7280" }}>Pedidos guardados que todavía no se confirmaron como ventas</p>
+                </div>
+                <button onClick={crearBorrador} style={{ padding: "10px 20px", background: "#0f172a", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                  ➕ Nuevo borrador
+                </button>
+              </div>
+
+              {loadingBorradores ? (
+                <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>Cargando...</div>
+              ) : borradores.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 60, color: "#94a3b8" }}>
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+                  <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>No hay borradores guardados</p>
+                  <p style={{ fontSize: 13 }}>Creá uno nuevo para ir armando pedidos antes de confirmarlos como ventas.</p>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {borradores.map(b => {
+                    const nItems = (b.items || []).length
+                    const totalEstimado = (b.items || []).reduce((acc: number, it: any) => acc + (it.precio || 0) * (it.cantidad || 1), 0)
+                    const fechaUpd = b.updated_at ? new Date(b.updated_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""
+                    return (
+                      <div key={b.id} style={{ background: "white", borderRadius: 14, padding: "16px 20px", border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 15, color: "#111827", marginBottom: 4 }}>{b.titulo || "Sin título"}</div>
+                          <div style={{ fontSize: 12, color: "#6b7280", display: "flex", gap: 12, flexWrap: "wrap" }}>
+                            {b.cliente_nombre && <span>👤 {b.cliente_nombre}</span>}
+                            <span>📦 {nItems} producto{nItems !== 1 ? "s" : ""}</span>
+                            {totalEstimado > 0 && <span>💰 {fmt(totalEstimado)}</span>}
+                            {fechaUpd && <span>🕐 {fechaUpd}</span>}
+                          </div>
+                          {b.notas && <div style={{ marginTop: 6, fontSize: 12, color: "#4b5563", fontStyle: "italic", background: "#f9fafb", borderRadius: 6, padding: "4px 8px", display: "inline-block" }}>📝 {b.notas.slice(0, 80)}{b.notas.length > 80 ? "…" : ""}</div>}
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+                          <button onClick={() => abrirBorrador(b)} style={{ padding: "8px 16px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}>✏️ Editar</button>
+                          <button onClick={() => pasarAVenta(b)} disabled={nItems === 0} style={{ padding: "8px 16px", background: nItems === 0 ? "#f3f4f6" : "#0f172a", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: nItems === 0 ? "not-allowed" : "pointer", color: nItems === 0 ? "#9ca3af" : "white" }}>✅ Pasar a venta</button>
+                          <button onClick={() => eliminarBorrador(b.id)} style={{ padding: "8px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#dc2626" }}>🗑️</button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ── EDITOR DE BORRADOR ── */
+            <div>
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+                <button onClick={cerrarBorrador} style={{ padding: "8px 14px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}>← Volver</button>
+                <input
+                  type="text"
+                  value={borrTitulo}
+                  onChange={e => setBorrTitulo(e.target.value)}
+                  placeholder="Título del borrador..."
+                  style={{ flex: 1, minWidth: 200, padding: "9px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 15, fontWeight: 700, color: "#111827", outline: "none" }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 20, alignItems: "start" }}>
+                {/* Columna izquierda: cliente + producto + notas */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+                  {/* Cliente */}
+                  <div style={{ background: "white", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>Cliente (opcional)</p>
+                    <div style={{ position: "relative" }}>
+                      <input
+                        type="text"
+                        placeholder="Buscar cliente..."
+                        value={borrBusqCliente}
+                        onChange={e => { setBorrBusqCliente(e.target.value); setBorrDropCliente(true); if (!e.target.value) setBorrClienteObj(null) }}
+                        onFocus={() => setBorrDropCliente(true)}
+                        onBlur={() => setTimeout(() => setBorrDropCliente(false), 150)}
+                        style={{ width: "100%", padding: "10px 36px 10px 14px", border: borrClienteObj ? "1px solid #3b82f6" : "1px solid #d1d5db", borderRadius: 10, fontSize: 14, color: "#111827", outline: "none", boxSizing: "border-box", background: borrClienteObj ? "#f0f9ff" : "white" }}
+                      />
+                      {borrClienteObj && (
+                        <button onClick={() => { setBorrClienteObj(null); setBorrBusqCliente("") }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 18, padding: 0 }}>×</button>
+                      )}
+                      {borrDropCliente && borrBusqCliente && !borrClienteObj && (() => {
+                        const filtrados = clientes.filter((c: any) => (c.nombre + " " + c.apellido).toLowerCase().includes(borrBusqCliente.trim().toLowerCase())).slice(0, 6)
+                        if (!filtrados.length) return null
+                        return (
+                          <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 20, overflow: "hidden" }}>
+                            {filtrados.map((c: any) => (
+                              <div key={c.id} onMouseDown={() => { setBorrClienteObj(c); setBorrBusqCliente(`${c.nombre} ${c.apellido || ""}`.trim()); setBorrDropCliente(false) }}
+                                style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc", display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ fontWeight: 600, color: "#111827" }}>{c.nombre} {c.apellido}</span>
+                                <span style={{ fontSize: 11, color: "#9ca3af" }}>{c.localidad || ""}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                    {borrClienteObj && (
+                      <div style={{ marginTop: 8, padding: "6px 10px", background: "#f0f9ff", borderRadius: 8, border: "1px solid #bae6fd", fontSize: 12, color: "#0369a1", display: "flex", gap: 12 }}>
+                        {borrClienteObj.localidad && <span>📍 {borrClienteObj.localidad}</span>}
+                        {borrClienteObj.telefono && <span>📞 {borrClienteObj.telefono}</span>}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Buscador de productos */}
+                  <div style={{ background: "white", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>Agregar producto</p>
+                    <div style={{ position: "relative" }}>
+                      <input
+                        type="text"
+                        placeholder="Buscar producto..."
+                        value={borrBusqProducto}
+                        onChange={e => setBorrBusqProducto(e.target.value)}
+                        style={{ width: "100%", padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, outline: "none", boxSizing: "border-box" }}
+                      />
+                      {borrBusqProducto && (() => {
+                        const termino = borrBusqProducto.trim().toLowerCase()
+                        const palabras = termino.split(" ").filter(Boolean)
+                        const filtrados = productos.filter(p => {
+                          if (!palabras.length) return false
+                          const campo = p.nombre.toLowerCase() + " " + (p.laboratorio || "").toLowerCase()
+                          return campo.includes(termino) || palabras.every((w: string) => campo.includes(w))
+                        }).slice(0, 8)
+                        if (!filtrados.length) return null
+                        return (
+                          <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 20, overflow: "hidden" }}>
+                            {filtrados.map((p: any) => (
+                              <div key={p.id} onMouseDown={() => agregarProductoABorrador(p)}
+                                style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <span style={{ fontWeight: 600, color: "#111827" }}>{p.nombre}</span>
+                                <span style={{ fontSize: 12, color: "#6b7280" }}>{fmt(p.precio_venta)} · stock: {p.stock}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Notas */}
+                  <div style={{ background: "white", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>Notas internas</p>
+                    <textarea
+                      value={borrNotas}
+                      onChange={e => setBorrNotas(e.target.value)}
+                      placeholder="Observaciones, aclaraciones del cliente, condiciones especiales..."
+                      rows={3}
+                      style={{ width: "100%", padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 13, outline: "none", boxSizing: "border-box", resize: "vertical", color: "#374151" }}
+                    />
+                  </div>
+                </div>
+
+                {/* Columna derecha: lista de items + acciones */}
+                <div style={{ position: "sticky", top: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ background: "white", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>Productos del pedido</p>
+
+                    {borrItems.length === 0 ? (
+                      <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", padding: "20px 0" }}>Buscá productos a la izquierda para agregarlos</p>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {borrItems.map((item: any, idx: number) => (
+                          <div key={item.producto_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.nombre}</div>
+                              <div style={{ fontSize: 11, color: "#6b7280" }}>{fmt(item.precio)} c/u</div>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <button onClick={() => setBorrItems(prev => prev.map((i: any, ix: number) => ix === idx ? { ...i, cantidad: Math.max(1, i.cantidad - 1) } : i))}
+                                style={{ width: 26, height: 26, border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                              <span style={{ fontSize: 13, fontWeight: 700, minWidth: 24, textAlign: "center" }}>{item.cantidad}</span>
+                              <button onClick={() => setBorrItems(prev => prev.map((i: any, ix: number) => ix === idx ? { ...i, cantidad: i.cantidad + 1 } : i))}
+                                style={{ width: 26, height: 26, border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                            </div>
+                            <button onClick={() => setBorrItems(prev => prev.filter((_: any, ix: number) => ix !== idx))}
+                              style={{ width: 26, height: 26, border: "1px solid #fecaca", borderRadius: 6, background: "#fef2f2", cursor: "pointer", fontSize: 13, color: "#dc2626", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                          </div>
+                        ))}
+                        <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 10, marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 12, color: "#6b7280" }}>Total estimado</span>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: "#111827" }}>{fmt(borrItems.reduce((acc: number, i: any) => acc + i.precio * i.cantidad, 0))}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Botones de acción */}
+                  <button onClick={guardarBorrador} disabled={borrGuardando}
+                    style={{ width: "100%", padding: "12px", background: borrGuardando ? "#94a3b8" : "#0f172a", border: "none", borderRadius: 10, color: "white", fontSize: 14, fontWeight: 700, cursor: borrGuardando ? "not-allowed" : "pointer" }}>
+                    {borrGuardando ? "Guardando..." : "💾 Guardar borrador"}
+                  </button>
+                  <button onClick={() => pasarAVenta()} disabled={borrItems.length === 0}
+                    style={{ width: "100%", padding: "12px", background: borrItems.length === 0 ? "#f3f4f6" : "#16a34a", border: "none", borderRadius: 10, color: borrItems.length === 0 ? "#9ca3af" : "white", fontSize: 14, fontWeight: 700, cursor: borrItems.length === 0 ? "not-allowed" : "pointer" }}>
+                    ✅ Pasar a venta
+                  </button>
+                  <button onClick={() => eliminarBorrador(borradorAbierto.id)}
+                    style={{ width: "100%", padding: "10px", background: "white", border: "1px solid #fecaca", borderRadius: 10, color: "#dc2626", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    🗑️ Eliminar borrador
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
