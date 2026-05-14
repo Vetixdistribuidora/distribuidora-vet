@@ -82,7 +82,7 @@ export default function Reportes() {
         const chunk = ventaIds.slice(i, i + CHUNK)
         const { data: det } = await supabase
           .from("detalle_ventas")
-          .select("venta_id, producto_id, cantidad, precio")
+          .select("venta_id, producto_id, cantidad, precio, costo_unitario")
           .in("venta_id", chunk)
         if (det) detalles = [...detalles, ...det]
       }
@@ -110,8 +110,10 @@ export default function Reportes() {
 
       let ganancia = 0
       for (const d of detalles) {
-        // d.precio = lo cobrado al cliente; costoReal = precio_neto + IVA + flete
-        const costoReal = productosMap[d.producto_id]?.costoReal ?? 0
+        // Usar costo histórico si está guardado, sino el costo actual como estimado
+        const costoReal = (d.costo_unitario && d.costo_unitario > 0)
+          ? d.costo_unitario
+          : (productosMap[d.producto_id]?.costoReal ?? 0)
         ganancia += (d.precio - costoReal) * d.cantidad
       }
 

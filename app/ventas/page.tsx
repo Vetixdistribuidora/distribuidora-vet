@@ -485,9 +485,12 @@ export default function Ventas() {
         .from("clientes").select("*").eq("id", venta.cliente_id).maybeSingle()
       const carritoReconstruido = items.map((d: any) => ({
         producto_id: d.producto_id, nombre: d.productos?.nombre || "",
-        cantidad: d.cantidad, precio: d.precio, bonificacion: 0
+        cantidad: d.cantidad, precio: d.precio, bonificacion: d.bonificacion || 0
       }))
-      const subtotalCalc = carritoReconstruido.reduce((acc: number, it: any) => acc + it.cantidad * it.precio, 0)
+      const subtotalCalc = carritoReconstruido.reduce((acc: number, it: any) => {
+        const pagan = it.cantidad - (it.bonificacion || 0)
+        return acc + Math.max(0, pagan) * it.precio
+      }, 0)
       const totalCalc = Number(venta.total)
       const ivaCalc = subtotalCalc > 0 ? Math.round((totalCalc / subtotalCalc - 1) * 100) : 21
       generarHTMLEImprimir({
@@ -590,7 +593,17 @@ export default function Ventas() {
     }).select().single()
     if (errorVenta || !venta) { mostrarToast("Error al guardar venta", "error"); setGuardando(false); return }
     const { error: errorDetalle } = await supabase.from("detalle_ventas").insert(
-      carrito.map(item => ({ venta_id: venta.id, producto_id: item.producto_id, cantidad: item.cantidad, precio: precioEfectivo(item) }))
+      carrito.map(item => {
+        const prod = productos.find(p => p.id === item.producto_id)
+        return {
+          venta_id: venta.id,
+          producto_id: item.producto_id,
+          cantidad: item.cantidad,
+          precio: precioEfectivo(item),
+          bonificacion: item.bonificacion || 0,
+          costo_unitario: prod?.precio_venta ?? 0,
+        }
+      })
     )
     if (errorDetalle) { mostrarToast("Error al guardar detalle", "error"); setGuardando(false); return }
     if (esCuentaCorriente) {
