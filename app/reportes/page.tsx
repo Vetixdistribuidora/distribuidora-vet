@@ -14,11 +14,27 @@ function fmtExacto(num: number) {
 const responsiveStyles = `
   @media (max-width: 768px) {
     .rep-kpis { grid-template-columns: repeat(2, 1fr) !important; }
+    .rep-flujo { grid-template-columns: repeat(2, 1fr) !important; }
     .rep-grids { grid-template-columns: 1fr !important; }
     .rep-filtros { flex-wrap: wrap !important; }
     .rep-presets { flex-wrap: wrap !important; }
   }
 `
+
+function CambioChip({ actual, ant }: { actual: number; ant: number }) {
+  if (ant === 0) return null
+  const diff = ((actual - ant) / ant) * 100
+  const pos = diff >= 0
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5,
+      background: pos ? "#dcfce7" : "#fee2e2",
+      color: pos ? "#16a34a" : "#dc2626", marginLeft: 6,
+    }}>
+      {pos ? "▲" : "▼"} {Math.abs(diff).toFixed(1)}%
+    </span>
+  )
+}
 
 export default function Reportes() {
   const hoy = new Date()
@@ -28,120 +44,151 @@ export default function Reportes() {
   const [desde, setDesde] = useState(primerDiaMes)
   const [hasta, setHasta] = useState(hoyStr)
   const [cargando, setCargando] = useState(false)
+  const [topTab, setTopTab] = useState<"facturacion" | "unidades" | "ganancia">("facturacion")
 
-  const [kpis, setKpis] = useState({ total: 0, ganancia: 0, ticket: 0, clientesUnicos: 0, cantVentas: 0 })
+  const [kpis, setKpis] = useState({
+    total: 0, ganancia: 0, ticket: 0, clientesUnicos: 0, cantVentas: 0,
+    margen: 0, markup: 0, promedioDiario: 0,
+    cobrado: 0, pendienteCC: 0, compras: 0, resultado: 0, diasPeriodo: 1,
+  })
+  const [anterior, setAnterior] = useState({ total: 0, ticket: 0, cantVentas: 0 })
   const [topProductos, setTopProductos] = useState<any[]>([])
   const [topClientes, setTopClientes] = useState<any[]>([])
   const [graficoDiario, setGraficoDiario] = useState<any[]>([])
 
   function applyPreset(preset: string) {
-    const hoy = new Date()
+    const h = new Date()
     if (preset === "mes") {
-      setDesde(new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().slice(0, 10))
-      setHasta(hoy.toISOString().slice(0, 10))
+      setDesde(new Date(h.getFullYear(), h.getMonth(), 1).toISOString().slice(0, 10))
+      setHasta(h.toISOString().slice(0, 10))
     } else if (preset === "mes_ant") {
-      const ini = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)
-      const fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0)
+      const ini = new Date(h.getFullYear(), h.getMonth() - 1, 1)
+      const fin = new Date(h.getFullYear(), h.getMonth(), 0)
       setDesde(ini.toISOString().slice(0, 10)); setHasta(fin.toISOString().slice(0, 10))
     } else if (preset === "3meses") {
-      const ini = new Date(hoy); ini.setMonth(ini.getMonth() - 3)
-      setDesde(ini.toISOString().slice(0, 10)); setHasta(hoy.toISOString().slice(0, 10))
+      const ini = new Date(h); ini.setMonth(ini.getMonth() - 3)
+      setDesde(ini.toISOString().slice(0, 10)); setHasta(h.toISOString().slice(0, 10))
     } else if (preset === "anio") {
-      setDesde(hoy.getFullYear() + "-01-01"); setHasta(hoy.toISOString().slice(0, 10))
+      setDesde(h.getFullYear() + "-01-01"); setHasta(h.toISOString().slice(0, 10))
     }
   }
 
   async function cargar() {
     setCargando(true)
     try {
-      // 1. Query ventas in range
-      const { data: ventas, error: ventasError } = await supabase
-        .from("ventas")
-        .select("id, total, cliente_id, fecha")
-        .gte("fecha", desde)
-        .lte("fecha", hasta + "T23:59:59")
-        .neq("estado", "anulada")
+      const desdeDate = new Date(desde)
+      const hastaDate = new Date(hasta)
+      const diasPeriodo = Math.max(1, Math.round((hastaDate.getTime() - desdeDate.getTime()) / (1000 * 60 * 60 * 24)) + 1)
 
-      if (ventasError || !ventas) { setCargando(false); return }
+      // Período anterior (misma duración, inmediatamente antes)
+      const antHastaDate = new Date(desdeDate); antHastaDate.setDate(antHastaDate.getDate() - 1)
+      const antDesdeDate = new Date(antHastaDate); antDesdeDate.setDate(antDesdeDate.getDate() - diasPeriodo + 1)
+      const antDesde = antDesdeDate.toISOString().slice(0, 10)
+      const antHasta = antHastaDate.toISOString().slice(0, 10)
+
+      // Todas las queries en paralelo
+      const [ventasRes, pagosRes, comprasRes, ventasAntRes] = await Promise.all([
+        supabase.from("ventas")
+          .select("id, total, cliente_id, fecha, estado")
+          .gte("fecha", desde).lte("fecha", hasta + "T23:59:59").neq("estado", "anulada"),
+        supabase.from("pagos_cuenta_corriente")
+          .select("monto")
+          .gte("fecha", desde + "T00:00:00").lte("fecha", hasta + "T23:59:59"),
+        supabase.from("compras")
+          .select("total")
+          .gte("fecha", desde).lte("fecha", hasta + "T23:59:59"),
+        supabase.from("ventas")
+          .select("id, total")
+          .gte("fecha", antDesde).lte("fecha", antHasta + "T23:59:59").neq("estado", "anulada"),
+      ])
+
+      const ventas = ventasRes.data || []
+
+      // Período anterior
+      const ventasAnt = ventasAntRes.data || []
+      const totalAnt = ventasAnt.reduce((s: number, v: any) => s + (v.total || 0), 0)
+      const cantAnt = ventasAnt.length
+      setAnterior({ total: totalAnt, ticket: cantAnt > 0 ? totalAnt / cantAnt : 0, cantVentas: cantAnt })
 
       if (ventas.length === 0) {
-        setKpis({ total: 0, ganancia: 0, ticket: 0, clientesUnicos: 0, cantVentas: 0 })
-        setTopProductos([])
-        setTopClientes([])
-        setGraficoDiario([])
-        setCargando(false)
+        setKpis({ total: 0, ganancia: 0, ticket: 0, clientesUnicos: 0, cantVentas: 0, margen: 0, markup: 0, promedioDiario: 0, cobrado: 0, pendienteCC: 0, compras: 0, resultado: 0, diasPeriodo })
+        setTopProductos([]); setTopClientes([]); setGraficoDiario([])
         return
       }
 
-      // 2. Get venta IDs → query detalle_ventas (sin join, para evitar errores de FK)
+      // Detalle ventas en chunks
       const ventaIds = ventas.map((v: any) => v.id)
-
       const CHUNK = 200
       let detalles: any[] = []
       for (let i = 0; i < ventaIds.length; i += CHUNK) {
-        const chunk = ventaIds.slice(i, i + CHUNK)
-        const { data: det } = await supabase
-          .from("detalle_ventas")
+        const { data: det } = await supabase.from("detalle_ventas")
           .select("venta_id, producto_id, cantidad, precio, costo_unitario, bonificacion")
-          .in("venta_id", chunk)
+          .in("venta_id", ventaIds.slice(i, i + CHUNK))
         if (det) detalles = [...detalles, ...det]
       }
 
-      // Fetch nombres y costos de productos involucrados
+      // Productos únicos involucrados
       const productoIdsUnicos = [...new Set(detalles.map((d: any) => d.producto_id))]
-      // precio_venta en productos = precio_neto × (1 + IVA%) × (1 + flete%) = costo real
-      const productosMap: Record<number, { nombre: string, costoReal: number }> = {}
-      if (productoIdsUnicos.length > 0) {
-        for (let i = 0; i < productoIdsUnicos.length; i += CHUNK) {
-          const chunk = productoIdsUnicos.slice(i, i + CHUNK)
-          const { data: prods } = await supabase
-            .from("productos")
-            .select("id, nombre, precio_venta")
-            .in("id", chunk)
-          prods?.forEach((p: any) => { productosMap[p.id] = { nombre: p.nombre, costoReal: p.precio_venta ?? 0 } })
-        }
+      const productosMap: Record<number, { nombre: string; costoReal: number }> = {}
+      for (let i = 0; i < productoIdsUnicos.length; i += CHUNK) {
+        const { data: prods } = await supabase.from("productos")
+          .select("id, nombre, precio_venta").in("id", productoIdsUnicos.slice(i, i + CHUNK))
+        prods?.forEach((p: any) => { productosMap[p.id] = { nombre: p.nombre, costoReal: p.precio_venta ?? 0 } })
       }
 
-      // 3. Calculate KPIs
-      const totalVendido = ventas.reduce((sum: number, v: any) => sum + (v.total || 0), 0)
+      // ── KPIs base ─────────────────────────────────────────────────────────────
+      const totalVendido = ventas.reduce((s: number, v: any) => s + (v.total || 0), 0)
       const cantVentas = ventas.length
       const ticket = cantVentas > 0 ? totalVendido / cantVentas : 0
       const clientesUnicos = new Set(ventas.filter((v: any) => v.cliente_id).map((v: any) => v.cliente_id)).size
+      const promedioDiario = totalVendido / diasPeriodo
 
       let ganancia = 0
+      let totalCosto = 0
       for (const d of detalles) {
-        // Usar costo histórico si está guardado, sino el costo actual como estimado
         const costoReal = (d.costo_unitario && d.costo_unitario > 0)
-          ? d.costo_unitario
-          : (productosMap[d.producto_id]?.costoReal ?? 0)
-        // Descontar bonificaciones: solo las unidades que pagaron generan ingreso
-        const bonif = (d.bonificacion && d.bonificacion > 0) ? d.bonificacion : 0
+          ? d.costo_unitario : (productosMap[d.producto_id]?.costoReal ?? 0)
+        const bonif = d.bonificacion || 0
         const pagan = Math.max(0, d.cantidad - bonif)
         ganancia += d.precio * pagan - costoReal * d.cantidad
+        totalCosto += costoReal * d.cantidad
       }
+      const margen = totalVendido > 0 ? (ganancia / totalVendido) * 100 : 0
+      const markup = totalCosto > 0 ? (ganancia / totalCosto) * 100 : 0
 
-      setKpis({ total: totalVendido, ganancia, ticket, clientesUnicos, cantVentas })
+      // ── Cobrado vs CC ─────────────────────────────────────────────────────────
+      const ventasCobradas = ventas.filter((v: any) => v.estado !== "cuenta_corriente")
+      const ventasCC = ventas.filter((v: any) => v.estado === "cuenta_corriente")
+      const cobradoVentas = ventasCobradas.reduce((s: number, v: any) => s + (v.total || 0), 0)
+      const pagosCCperiodo = (pagosRes.data || []).reduce((s: number, p: any) => s + Number(p.monto), 0)
+      const cobrado = cobradoVentas + pagosCCperiodo
+      const pendienteCC = ventasCC.reduce((s: number, v: any) => s + (v.total || 0), 0)
+      const compras = (comprasRes.data || []).reduce((s: number, c: any) => s + Number(c.total || 0), 0)
+      const resultado = cobrado - compras
 
-      // 4. Group detalle_ventas by producto_id para top productos
-      const prodMap: Record<string, { producto_id: number, nombre: string, total_unidades: number }> = {}
+      setKpis({ total: totalVendido, ganancia, ticket, clientesUnicos, cantVentas, margen, markup, promedioDiario, cobrado, pendienteCC, compras, resultado, diasPeriodo })
+
+      // ── Top productos ─────────────────────────────────────────────────────────
+      const prodMap: Record<string, any> = {}
       for (const d of detalles) {
         const pid = String(d.producto_id)
-        if (!prodMap[pid]) {
-          prodMap[pid] = {
-            producto_id: d.producto_id,
-            nombre: productosMap[d.producto_id]?.nombre ?? ("Producto #" + d.producto_id),
-            total_unidades: 0
-          }
+        const costoReal = (d.costo_unitario && d.costo_unitario > 0)
+          ? d.costo_unitario : (productosMap[d.producto_id]?.costoReal ?? 0)
+        const bonif = d.bonificacion || 0
+        const pagan = Math.max(0, d.cantidad - bonif)
+        if (!prodMap[pid]) prodMap[pid] = {
+          producto_id: d.producto_id,
+          nombre: productosMap[d.producto_id]?.nombre ?? ("Producto #" + d.producto_id),
+          total_unidades: 0, total_revenue: 0, total_ganancia: 0,
         }
         prodMap[pid].total_unidades += d.cantidad
+        prodMap[pid].total_revenue += d.precio * pagan
+        prodMap[pid].total_ganancia += d.precio * pagan - costoReal * d.cantidad
       }
-      const topProds = Object.values(prodMap)
-        .sort((a, b) => b.total_unidades - a.total_unidades)
-        .slice(0, 10)
-      setTopProductos(topProds)
+      setTopProductos(Object.values(prodMap).sort((a, b) => b.total_revenue - a.total_revenue).slice(0, 10))
 
-      // 5. Group ventas by cliente_id for top clientes
-      const clienteMap: Record<string, { cliente_id: string, total: number, cant: number }> = {}
+      // ── Top clientes ──────────────────────────────────────────────────────────
+      const clienteMap: Record<string, any> = {}
       for (const v of ventas) {
         if (!v.cliente_id) continue
         const cid = String(v.cliente_id)
@@ -149,66 +196,30 @@ export default function Reportes() {
         clienteMap[cid].total += v.total || 0
         clienteMap[cid].cant += 1
       }
-      const topClientesData = Object.values(clienteMap)
-        .sort((a, b) => b.total - a.total)
-        .slice(0, 10)
-
-      // Fetch client names
+      const topClientesData = Object.values(clienteMap).sort((a, b) => b.total - a.total).slice(0, 10)
       if (topClientesData.length > 0) {
         const clienteIds = topClientesData.map(c => c.cliente_id)
-        const { data: clientes } = await supabase
-          .from("clientes")
-          .select("id, nombre, apellido")
-          .in("id", clienteIds)
-        const clienteNombres: Record<string, string> = {}
-        clientes?.forEach((c: any) => {
-          clienteNombres[String(c.id)] = `${c.nombre || ""} ${c.apellido || ""}`.trim() || "Sin nombre"
-        })
-        const topClientesConNombre = topClientesData.map(c => ({
-          ...c,
-          nombre: clienteNombres[String(c.cliente_id)] ?? "Sin nombre",
-        }))
-        setTopClientes(topClientesConNombre)
-      } else {
-        setTopClientes([])
-      }
+        const { data: clientes } = await supabase.from("clientes").select("id, nombre, apellido").in("id", clienteIds)
+        const nom: Record<string, string> = {}
+        clientes?.forEach((c: any) => { nom[String(c.id)] = `${c.nombre || ""} ${c.apellido || ""}`.trim() || "Sin nombre" })
+        setTopClientes(topClientesData.map(c => ({ ...c, nombre: nom[String(c.cliente_id)] ?? "Sin nombre" })))
+      } else { setTopClientes([]) }
 
-      // 6. Build graficoDiario: group ventas by date string
+      // ── Gráfico diario ────────────────────────────────────────────────────────
       const diasMap: Record<string, number> = {}
       for (const v of ventas) {
         const fecha = String(v.fecha).slice(0, 10)
         diasMap[fecha] = (diasMap[fecha] || 0) + (v.total || 0)
       }
-      const grafico = Object.entries(diasMap)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([fecha, total]) => ({ fecha: fecha.slice(8, 10) + "/" + fecha.slice(5, 7), total: Math.round(total) }))
-      setGraficoDiario(grafico)
-    } finally {
-      setCargando(false)
-    }
+      setGraficoDiario(Object.entries(diasMap).sort(([a], [b]) => a.localeCompare(b))
+        .map(([fecha, total]) => ({ fecha: fecha.slice(8, 10) + "/" + fecha.slice(5, 7), total: Math.round(total) })))
+
+    } finally { setCargando(false) }
   }
 
   useEffect(() => { cargar() }, [desde, hasta])
 
-  const presetStyle = (active: boolean): React.CSSProperties => ({
-    padding: "6px 12px",
-    borderRadius: 8,
-    border: active ? "1px solid #3b82f6" : "1px solid #e2e8f0",
-    background: active ? "#eff6ff" : "white",
-    color: active ? "#2563eb" : "#6b7280",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-  })
-
-  const presets = [
-    { key: "mes", label: "Este mes" },
-    { key: "mes_ant", label: "Mes anterior" },
-    { key: "3meses", label: "Últimos 3 meses" },
-    { key: "anio", label: "Este año" },
-  ]
-
-  // Determine active preset
+  // Presets activo
   const hoyNow = new Date()
   const primerMes = new Date(hoyNow.getFullYear(), hoyNow.getMonth(), 1).toISOString().slice(0, 10)
   const hoyISO = hoyNow.toISOString().slice(0, 10)
@@ -217,7 +228,6 @@ export default function Reportes() {
   const hace3m = new Date(hoyNow); hace3m.setMonth(hace3m.getMonth() - 3)
   const hace3mISO = hace3m.toISOString().slice(0, 10)
   const inicioAnio = hoyNow.getFullYear() + "-01-01"
-
   function getActivePreset() {
     if (desde === primerMes && hasta === hoyISO) return "mes"
     if (desde === primerMesAnt && hasta === finMesAnt) return "mes_ant"
@@ -226,15 +236,82 @@ export default function Reportes() {
     return ""
   }
   const activePreset = getActivePreset()
+  const presetStyle = (active: boolean): React.CSSProperties => ({
+    padding: "6px 12px", borderRadius: 8,
+    border: active ? "1px solid #3b82f6" : "1px solid #e2e8f0",
+    background: active ? "#eff6ff" : "white",
+    color: active ? "#2563eb" : "#6b7280",
+    fontSize: 12, fontWeight: 600, cursor: "pointer",
+  })
 
-  const maxUnidades = topProductos[0]?.total_unidades || 1
+  // Top productos ordenados según tab
+  const topOrdenados = [...topProductos].sort((a, b) => {
+    if (topTab === "unidades") return b.total_unidades - a.total_unidades
+    if (topTab === "ganancia") return b.total_ganancia - a.total_ganancia
+    return b.total_revenue - a.total_revenue
+  })
+  const maxTop = topOrdenados[0]
+    ? (topTab === "unidades" ? topOrdenados[0].total_unidades : topTab === "ganancia" ? topOrdenados[0].total_ganancia : topOrdenados[0].total_revenue)
+    : 1
   const maxClienteTotal = topClientes[0]?.total || 1
+
+  const kpiCards = [
+    {
+      label: "Total vendido", value: fmtExacto(kpis.total), icon: "💰", color: "#2563eb", bg: "#eff6ff",
+      sub: `${kpis.cantVentas} venta${kpis.cantVentas !== 1 ? "s" : ""}`,
+      chip: <CambioChip actual={kpis.total} ant={anterior.total} />,
+    },
+    {
+      label: "Ganancia estimada", value: fmtExacto(kpis.ganancia), icon: "📈",
+      color: kpis.ganancia >= 0 ? "#16a34a" : "#dc2626",
+      bg: kpis.ganancia >= 0 ? "#f0fdf4" : "#fef2f2",
+      sub: "Costo histórico si disponible", chip: null,
+    },
+    {
+      label: "Margen bruto", value: kpis.margen.toFixed(1) + "%", icon: "📊", color: "#7c3aed", bg: "#f5f3ff",
+      sub: `Markup: ${kpis.markup.toFixed(1)}%`, chip: null,
+    },
+    {
+      label: "Ticket promedio", value: fmtExacto(kpis.ticket), icon: "🧾", color: "#d97706", bg: "#fffbeb",
+      sub: null, chip: <CambioChip actual={kpis.ticket} ant={anterior.ticket} />,
+    },
+    {
+      label: "Promedio diario", value: fmt(kpis.promedioDiario), icon: "📅", color: "#0891b2", bg: "#ecfeff",
+      sub: `en ${kpis.diasPeriodo} días`, chip: null,
+    },
+    {
+      label: "Clientes únicos", value: String(kpis.clientesUnicos), icon: "👤", color: "#be185d", bg: "#fdf2f8",
+      sub: kpis.clientesUnicos > 0 ? `${(kpis.cantVentas / kpis.clientesUnicos).toFixed(1)} compras/cliente` : null,
+      chip: null,
+    },
+  ]
+
+  const flujoCards = [
+    {
+      label: "Ingresos cobrados", value: fmt(kpis.cobrado), icon: "✅",
+      color: "#16a34a", bg: "#f0fdf4", sub: "Ventas cobradas + pagos CC",
+    },
+    {
+      label: "Pendiente CC", value: fmt(kpis.pendienteCC), icon: "⏳",
+      color: "#d97706", bg: "#fffbeb", sub: "En cuenta corriente sin cobrar",
+    },
+    {
+      label: "Compras del período", value: fmt(kpis.compras), icon: "🛒",
+      color: "#dc2626", bg: "#fef2f2", sub: "Total gastado en stock",
+    },
+    {
+      label: "Resultado neto", value: fmt(kpis.resultado), icon: kpis.resultado >= 0 ? "🟢" : "🔴",
+      color: kpis.resultado >= 0 ? "#16a34a" : "#dc2626",
+      bg: kpis.resultado >= 0 ? "#f0fdf4" : "#fef2f2",
+      sub: "Cobrado − compras del período",
+    },
+  ]
 
   return (
     <div>
       <style>{responsiveStyles}</style>
 
-      {/* Filtros */}
+      {/* ── Filtros ── */}
       <div style={{ background: "white", borderRadius: 14, padding: "20px 24px", marginBottom: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
         <div className="rep-filtros" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "nowrap", marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -254,43 +331,58 @@ export default function Reportes() {
           {cargando && <span style={{ fontSize: 12, color: "#9ca3af" }}>Cargando...</span>}
         </div>
         <div className="rep-presets" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {presets.map(p => (
-            <button key={p.key} onClick={() => applyPreset(p.key)} style={presetStyle(activePreset === p.key)}>
-              {p.label}
-            </button>
+          {[
+            { key: "mes", label: "Este mes" },
+            { key: "mes_ant", label: "Mes anterior" },
+            { key: "3meses", label: "Últimos 3 meses" },
+            { key: "anio", label: "Este año" },
+          ].map(p => (
+            <button key={p.key} onClick={() => applyPreset(p.key)} style={presetStyle(activePreset === p.key)}>{p.label}</button>
           ))}
+          {anterior.total > 0 && (
+            <span style={{ fontSize: 11, color: "#9ca3af", display: "flex", alignItems: "center", marginLeft: 8 }}>
+              Período anterior: {fmt(anterior.total)} · {anterior.cantVentas} ventas
+            </span>
+          )}
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="rep-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 20 }}>
-        {[
-          { label: "Total vendido", value: fmtExacto(kpis.total), icon: "💰", color: "#2563eb", bg: "#eff6ff" },
-          { label: "Ganancia", value: fmtExacto(kpis.ganancia), icon: "📈", color: "#16a34a", bg: "#f0fdf4" },
-          { label: "Ticket promedio", value: fmtExacto(kpis.ticket), icon: "🧾", color: "#7c3aed", bg: "#f5f3ff" },
-          { label: "Clientes únicos", value: String(kpis.clientesUnicos), icon: "👤", color: "#d97706", bg: "#fffbeb" },
-        ].map(kpi => (
-          <div key={kpi.label} style={{ background: "white", borderRadius: 14, padding: "20px 22px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: kpi.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
-                {kpi.icon}
-              </div>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>{kpi.label}</span>
+      {/* ── KPI Cards ── */}
+      <div className="rep-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 20 }}>
+        {kpiCards.map(kpi => (
+          <div key={kpi.label} style={{ background: "white", borderRadius: 14, padding: "18px 20px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: kpi.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{kpi.icon}</div>
+              <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>{kpi.label}</span>
             </div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: kpi.label === "Ganancia" && kpis.ganancia < 0 ? "#dc2626" : kpi.color }}>{kpi.value}</div>
-            {kpi.label === "Total vendido" && (
-              <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>{kpis.cantVentas} ventas</div>
-            )}
-            {kpi.label === "Ganancia" && (
-              <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 4 }}>Estimada con costos actuales</div>
-            )}
+            <div style={{ fontSize: 21, fontWeight: 800, color: kpi.color, display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+              {kpi.value}{kpi.chip}
+            </div>
+            {kpi.sub && <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>{kpi.sub}</div>}
           </div>
         ))}
       </div>
 
-      {/* Gráfico diario */}
+      {/* ── Resultado del período ── */}
+      <div style={{ marginBottom: 20 }}>
+        <h2 style={{ fontSize: 13, fontWeight: 700, color: "#64748b", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>💼 Resultado del período</h2>
+        <div className="rep-flujo" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+          {flujoCards.map(item => (
+            <div key={item.label} style={{ background: "white", borderRadius: 14, padding: "18px 20px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: item.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{item.icon}</div>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>{item.label}</span>
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: item.color }}>{item.value}</div>
+              <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>{item.sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Gráfico diario ── */}
       <div style={{ background: "white", borderRadius: 14, padding: "20px 24px", marginBottom: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-        <h3 style={{ fontSize: 14, fontWeight: 700, color: "#111827", margin: "0 0 16px" }}>Ventas por día</h3>
+        <h3 style={{ fontSize: 14, fontWeight: 700, color: "#111827", margin: "0 0 16px" }}>📈 Ventas por día</h3>
         {graficoDiario.length === 0 ? (
           <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: 13 }}>
             Sin datos para el período seleccionado
@@ -302,7 +394,6 @@ export default function Reportes() {
               <XAxis dataKey="fecha" tick={{ fontSize: 11, fill: "#9ca3af" }} />
               <YAxis tickFormatter={v => "$" + Math.round(v / 1000) + "k"} tick={{ fontSize: 11, fill: "#9ca3af" }} width={52} />
               <Tooltip
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 formatter={(value: any) => [fmtExacto(Number(value ?? 0)), "Total"]}
                 contentStyle={{ background: "#0f172a", border: "none", borderRadius: 8, color: "white", fontSize: 12 }}
                 labelStyle={{ color: "#9ca3af" }}
@@ -313,68 +404,86 @@ export default function Reportes() {
         )}
       </div>
 
-      {/* Top productos + Top clientes */}
+      {/* ── Top productos + Top clientes ── */}
       <div className="rep-grids" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
 
-        {/* Top 10 productos */}
+        {/* Top productos */}
         <div style={{ background: "white", borderRadius: 14, padding: "20px 24px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: "#111827", margin: "0 0 16px" }}>Top 10 productos más vendidos</h3>
-          {topProductos.length === 0 ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: "#111827", margin: 0 }}>🏆 Top 10 productos</h3>
+            <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid #e2e8f0" }}>
+              {([["facturacion", "$ Venta"], ["unidades", "Unid."], ["ganancia", "Ganancia"]] as const).map(([key, label]) => (
+                <button key={key} onClick={() => setTopTab(key)}
+                  style={{ padding: "4px 10px", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, background: topTab === key ? "#3b82f6" : "white", color: topTab === key ? "white" : "#6b7280" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {topOrdenados.length === 0 ? (
             <p style={{ color: "#9ca3af", fontSize: 13 }}>Sin datos</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {topProductos.map((item, i) => (
-                <div key={item.producto_id}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                    <span style={{
-                      width: 22, height: 22, borderRadius: 6,
-                      background: i < 3 ? "#1e40af" : "#f1f5f9",
-                      color: i < 3 ? "white" : "#6b7280",
-                      fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
-                    }}>{i + 1}</span>
-                    <span style={{ flex: 1, fontSize: 13, color: "#111827", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.nombre}</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "#374151", whiteSpace: "nowrap" }}>{item.total_unidades} u.</span>
-                  </div>
-                  <div style={{ marginLeft: 32 }}>
-                    <div style={{ height: 4, background: "#f1f5f9", borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ width: `${(item.total_unidades / maxUnidades) * 100}%`, height: 4, background: "#3b82f6", borderRadius: 4 }} />
+              {topOrdenados.map((item, i) => {
+                const valor = topTab === "unidades" ? item.total_unidades : topTab === "ganancia" ? item.total_ganancia : item.total_revenue
+                const valorStr = topTab === "unidades" ? `${item.total_unidades} u.` : fmt(valor)
+                const colorBarra = topTab === "ganancia" ? (valor >= 0 ? "#22c55e" : "#ef4444") : "#3b82f6"
+                return (
+                  <div key={item.producto_id}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                      <span style={{
+                        width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                        background: i < 3 ? "#1e40af" : "#f1f5f9",
+                        color: i < 3 ? "white" : "#6b7280",
+                        fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>{i + 1}</span>
+                      <span style={{ flex: 1, fontSize: 12, color: "#111827", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.nombre}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: topTab === "ganancia" && valor < 0 ? "#dc2626" : "#374151", whiteSpace: "nowrap" }}>{valorStr}</span>
+                    </div>
+                    <div style={{ marginLeft: 32 }}>
+                      <div style={{ height: 4, background: "#f1f5f9", borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ width: `${maxTop > 0 ? (Math.abs(valor) / Math.abs(maxTop)) * 100 : 0}%`, height: 4, background: colorBarra, borderRadius: 4 }} />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
 
-        {/* Top 10 clientes */}
+        {/* Top clientes */}
         <div style={{ background: "white", borderRadius: 14, padding: "20px 24px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: "#111827", margin: "0 0 16px" }}>Top 10 clientes</h3>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: "#111827", margin: "0 0 16px" }}>👥 Top 10 clientes</h3>
           {topClientes.length === 0 ? (
             <p style={{ color: "#9ca3af", fontSize: 13 }}>Sin datos</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {topClientes.map((item, i) => (
-                <div key={item.cliente_id}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                    <span style={{
-                      width: 22, height: 22, borderRadius: 6,
-                      background: i < 3 ? "#1e40af" : "#f1f5f9",
-                      color: i < 3 ? "white" : "#6b7280",
-                      fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
-                    }}>{i + 1}</span>
-                    <span style={{ flex: 1, fontSize: 13, color: "#111827", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.nombre}</span>
-                    <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>{fmt(item.total)}</div>
-                      <div style={{ fontSize: 11, color: "#9ca3af" }}>{item.cant} compra{item.cant !== 1 ? "s" : ""}</div>
+              {topClientes.map((item, i) => {
+                const pctTotal = kpis.total > 0 ? (item.total / kpis.total) * 100 : 0
+                return (
+                  <div key={item.cliente_id}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                      <span style={{
+                        width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                        background: i < 3 ? "#1e40af" : "#f1f5f9",
+                        color: i < 3 ? "white" : "#6b7280",
+                        fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>{i + 1}</span>
+                      <span style={{ flex: 1, fontSize: 12, color: "#111827", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.nombre}</span>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>{fmt(item.total)}</div>
+                        <div style={{ fontSize: 10, color: "#9ca3af" }}>{item.cant} compra{item.cant !== 1 ? "s" : ""} · {pctTotal.toFixed(1)}%</div>
+                      </div>
+                    </div>
+                    <div style={{ marginLeft: 32 }}>
+                      <div style={{ height: 4, background: "#f1f5f9", borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ width: `${(item.total / maxClienteTotal) * 100}%`, height: 4, background: "#a78bfa", borderRadius: 4 }} />
+                      </div>
                     </div>
                   </div>
-                  <div style={{ marginLeft: 32 }}>
-                    <div style={{ height: 4, background: "#f1f5f9", borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ width: `${(item.total / maxClienteTotal) * 100}%`, height: 4, background: "#a78bfa", borderRadius: 4 }} />
-                    </div>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
