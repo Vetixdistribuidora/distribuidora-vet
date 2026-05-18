@@ -97,29 +97,18 @@ export default function Clientes() {
   async function cargarDeudas(lista: any[]) {
     if (!lista.length) return
     const clienteIds = lista.map((c: any) => c.id)
-    // 2 queries en lugar de N×M
-    const [ventasRes, pagosRes] = await Promise.all([
-      supabase.from("ventas").select("id, total, cliente_id").in("cliente_id", clienteIds).eq("estado", "cuenta_corriente"),
-      supabase.from("cuentas_corrientes").select("cliente_id, saldo").in("cliente_id", clienteIds).order("id", { ascending: false })
-    ])
-    // Usar el último saldo de cuentas_corrientes por cliente (más eficiente)
-    const ultimoSaldoMap: Record<number, number> = {}
-    ventasRes.data?.forEach((v: any) => {
-      if (!(v.cliente_id in ultimoSaldoMap)) ultimoSaldoMap[v.cliente_id] = 0
-    })
-    pagosRes.data?.forEach((cc: any) => {
-      if (!(cc.cliente_id in ultimoSaldoMap)) ultimoSaldoMap[cc.cliente_id] = Number(cc.saldo)
-      else if (ultimoSaldoMap[cc.cliente_id] === 0 && cc.saldo > 0) ultimoSaldoMap[cc.cliente_id] = Number(cc.saldo)
-    })
-    // Fallback: calcular desde ventas si cuentas_corrientes no tiene datos
-    const ventaIds = (ventasRes.data || []).map((v: any) => v.id)
-    const { data: pagos } = ventaIds.length
-      ? await supabase.from("pagos_cuenta_corriente").select("venta_id, monto").in("venta_id", ventaIds)
-      : { data: [] }
+    // 2 queries en lugar de N×M: ventas CC + todos sus pagos
+    const { data: ventasCC } = await supabase
+      .from("ventas").select("id, total, cliente_id").in("cliente_id", clienteIds).eq("estado", "cuenta_corriente")
+    if (!ventasCC?.length) return
+    const ventaIds = ventasCC.map((v: any) => v.id)
+    const { data: pagos } = await supabase
+      .from("pagos_cuenta_corriente").select("venta_id, monto").in("venta_id", ventaIds)
     const pagosMap: Record<number, number> = {}
     pagos?.forEach((p: any) => { pagosMap[p.venta_id] = (pagosMap[p.venta_id] || 0) + Number(p.monto) })
     const mapa: Record<number, number> = {}
-    ventasRes.data?.forEach((v: any) => {
+    ventasCC.forEach((v: any) => {
+      // ventas.total ya refleja descuentos de NCs aplicadas
       const saldo = Number(v.total) - (pagosMap[v.id] || 0)
       if (saldo > 0) mapa[v.cliente_id] = (mapa[v.cliente_id] || 0) + saldo
     })
@@ -172,13 +161,23 @@ export default function Clientes() {
   async function cargarVentasCliente(clienteId: number) {
     const { data: vv } = await supabase.from("ventas").select("id, total, estado, nro_factura, fecha").eq("cliente_id", clienteId).order("id", { ascending: false })
     if (!vv) { setVentas([]); return }
-    const conDetalle = await Promise.all(vv.map(async (v) => {
-      const { data: detalles } = await supabase.from("detalle_ventas").select("cantidad, precio, productos(nombre)").eq("venta_id", v.id)
-      const { data: pagos } = await supabase.from("pagos_cuenta_corriente").select("id, monto, fecha, nota").eq("venta_id", v.id).order("fecha", { ascending: true })
-      const totalPagado = (pagos || []).reduce((s: number, p: any) => s + Number(p.monto), 0)
+    const ventaIds = vv.map((v: any) => v.id)
+    // 2 queries batch en lugar de N×2
+    const [detallesRes, pagosRes] = await Promise.all([
+      ventaIds.length ? supabase.from("detalle_ventas").select("venta_id, cantidad, precio, productos(nombre)").in("venta_id", ventaIds) : { data: [] },
+      ventaIds.length ? supabase.from("pagos_cuenta_corriente").select("id, venta_id, monto, fecha, nota").in("venta_id", ventaIds).order("fecha", { ascending: true }) : { data: [] }
+    ])
+    const detallesMap: Record<number, any[]> = {}
+    detallesRes.data?.forEach((d: any) => { if (!detallesMap[d.venta_id]) detallesMap[d.venta_id] = []; detallesMap[d.venta_id].push(d) })
+    const pagosMap: Record<number, any[]> = {}
+    pagosRes.data?.forEach((p: any) => { if (!pagosMap[p.venta_id]) pagosMap[p.venta_id] = []; pagosMap[p.venta_id].push(p) })
+    const conDetalle = vv.map((v: any) => {
+      const detalles = detallesMap[v.id] || []
+      const pagos = pagosMap[v.id] || []
+      const totalPagado = pagos.reduce((s: number, p: any) => s + Number(p.monto), 0)
       const saldo = Math.max(0, Number(v.total) - totalPagado)
-      return { ...v, detalle_ventas: detalles || [], pagos: pagos || [], totalPagado, saldo }
-    }))
+      return { ...v, detalle_ventas: detalles, pagos, totalPagado, saldo }
+    })
     setVentas(conDetalle)
     const total = conDetalle.reduce((s, v) => s + Number(v.total), 0)
     setTotalGastado(total); setCantidadCompras(conDetalle.length)
@@ -208,7 +207,13 @@ export default function Clientes() {
     if (error) { mostrarToast("Error: " + error.message, "error"); setGuardandoPago(false); return }
     // Registrar movimiento en cuentas_corrientes para mantener el saldo sincronizado
     const { data: ultimoCC } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", modalHistorial.id).order("id", { ascending: false }).limit(1).maybeSingle()
-    const nuevoSaldoCC = Math.max(0, Number(ultimoCC?.saldo || 0) - monto)
+    let saldoBase = Number(ultimoCC?.saldo || 0)
+    if (!ultimoCC) {
+      // Sin historial en CC: calcular deuda total desde ventas CC del cliente
+      const { data: vcc } = await supabase.from("ventas").select("total").eq("cliente_id", modalHistorial.id).eq("estado", "cuenta_corriente")
+      saldoBase = (vcc || []).reduce((s: number, v: any) => s + Number(v.total), 0)
+    }
+    const nuevoSaldoCC = Math.max(0, saldoBase - monto)
     await supabase.from("cuentas_corrientes").insert({ cliente_id: modalHistorial.id, tipo: "pago", monto: -monto, saldo: nuevoSaldoCC, venta_id: ventaParaPagar.id, fecha: new Date() })
     if (monto >= ventaParaPagar.saldo) {
       await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaParaPagar.id)
