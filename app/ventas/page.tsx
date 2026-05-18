@@ -615,6 +615,7 @@ export default function Ventas() {
   function cambiarBonificacion(i: number, v: number) { const n = [...carrito]; n[i].bonificacion = v; setCarrito([...n]) }
   function cambiarPrecio(i: number, v: number) { const n = [...carrito]; n[i].precio = v; setCarrito([...n]) }
   function cambiarDescuento(i: number, v: number) { const n = [...carrito]; n[i].descuento = v; setCarrito([...n]) }
+  function cambiarNombre(i: number, v: string) { const n = [...carrito]; n[i].nombre = v; setCarrito([...n]) }
   function cambiarTipoDescuento(i: number, tipo: "pesos" | "porcentaje") { const n = [...carrito]; n[i].tipoDescuento = tipo; n[i].descuento = 0; setCarrito([...n]) }
   function precioEfectivo(item: any): number {
     const desc = item.descuento || 0
@@ -895,7 +896,12 @@ export default function Ventas() {
                         {/* Fila principal */}
                         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "white" }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.nombre}</div>
+                            <input
+                              type="text"
+                              value={item.nombre}
+                              onChange={e => cambiarNombre(i, e.target.value)}
+                              style={{ fontWeight: 700, fontSize: 14, color: "#0f172a", border: "none", outline: "none", background: "transparent", width: "100%", padding: 0, fontFamily: "inherit" }}
+                            />
                             {bonif > 0 && <div style={{ fontSize: 11, color: "#d97706", fontWeight: 600, marginTop: 2 }}>{item.cantidad} u. · {bonif} bonif. · {pagan} pagan</div>}
                           </div>
                           <div style={{ textAlign: "right", flexShrink: 0 }}>
