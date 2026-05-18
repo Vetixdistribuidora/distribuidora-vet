@@ -164,7 +164,7 @@ export default function Clientes() {
     const ventaIds = vv.map((v: any) => v.id)
     // 2 queries batch en lugar de N×2
     const [detallesRes, pagosRes] = await Promise.all([
-      ventaIds.length ? supabase.from("detalle_ventas").select("venta_id, cantidad, precio, productos(nombre)").in("venta_id", ventaIds) : { data: [] },
+      ventaIds.length ? supabase.from("detalle_ventas").select("venta_id, cantidad, precio, bonificacion, productos(nombre)").in("venta_id", ventaIds) : { data: [] },
       ventaIds.length ? supabase.from("pagos_cuenta_corriente").select("id, venta_id, monto, fecha, nota").in("venta_id", ventaIds).order("fecha", { ascending: true }) : { data: [] }
     ])
     const detallesMap: Record<number, any[]> = {}

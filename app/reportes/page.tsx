@@ -82,7 +82,7 @@ export default function Reportes() {
         const chunk = ventaIds.slice(i, i + CHUNK)
         const { data: det } = await supabase
           .from("detalle_ventas")
-          .select("venta_id, producto_id, cantidad, precio, costo_unitario")
+          .select("venta_id, producto_id, cantidad, precio, costo_unitario, bonificacion")
           .in("venta_id", chunk)
         if (det) detalles = [...detalles, ...det]
       }
@@ -114,7 +114,10 @@ export default function Reportes() {
         const costoReal = (d.costo_unitario && d.costo_unitario > 0)
           ? d.costo_unitario
           : (productosMap[d.producto_id]?.costoReal ?? 0)
-        ganancia += (d.precio - costoReal) * d.cantidad
+        // Descontar bonificaciones: solo las unidades que pagaron generan ingreso
+        const bonif = (d.bonificacion && d.bonificacion > 0) ? d.bonificacion : 0
+        const pagan = Math.max(0, d.cantidad - bonif)
+        ganancia += d.precio * pagan - costoReal * d.cantidad
       }
 
       setKpis({ total: totalVendido, ganancia, ticket, clientesUnicos, cantVentas })

@@ -200,11 +200,22 @@ export default function Ventas() {
     if (!modalNC) return
     const itemsDevueltos = modalNC.items.filter((it: any) => (ncCantidades[it.producto_id] || 0) > 0)
     if (!itemsDevueltos.length) { mostrarToast("Seleccioná al menos un producto a devolver", "error"); return }
-    // Validar que no se devuelva más de lo que se vendió
+    // Validar contra NCs previas — calcular cuánto ya fue devuelto por NCs activas anteriores
+    const { data: ncsExistentes } = await supabase
+      .from("notas_credito").select("items")
+      .eq("venta_id", modalNC.venta.id).eq("estado", "activa")
+    const yaDevuelto: Record<number, number> = {}
+    ncsExistentes?.forEach((nc: any) => {
+      ;(nc.items || []).forEach((it: any) => {
+        yaDevuelto[it.producto_id] = (yaDevuelto[it.producto_id] || 0) + it.cantidad
+      })
+    })
     for (const it of itemsDevueltos) {
       const cantDev = ncCantidades[it.producto_id] || 0
-      if (cantDev > it.cantidad) {
-        mostrarToast(`❌ No podés devolver más de ${it.cantidad} u. de "${it.productos?.nombre}"`, "error")
+      const yaDev = yaDevuelto[it.producto_id] || 0
+      const maxDevolvible = it.cantidad - yaDev
+      if (cantDev > maxDevolvible) {
+        mostrarToast(`❌ Máximo ${maxDevolvible} u. disponibles de "${it.productos?.nombre}" (ya devueltas: ${yaDev})`, "error")
         return
       }
     }
@@ -431,6 +442,21 @@ export default function Ventas() {
   async function anularVenta() {
     if (!confirmAnular) return
     setAnulando(true)
+    // Revertir stock de NCs activas ANTES de restaurar el stock original
+    // (sin esto el stock queda sobre-restaurado por las cantidades ya devueltas)
+    const { data: ncsActivas } = await supabase
+      .from("notas_credito").select("nro_nota, items")
+      .eq("venta_id", confirmAnular.id).eq("estado", "activa")
+    if (ncsActivas?.length) {
+      for (const nc of ncsActivas) {
+        for (const it of (nc.items || [])) {
+          const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
+          if (prod) await supabase.from("productos").update({ stock: Math.max(0, (prod.stock || 0) - it.cantidad) }).eq("id", it.producto_id)
+        }
+        await supabase.from("lotes").delete().eq("nro_remito", "NC " + nc.nro_nota)
+      }
+      await supabase.from("notas_credito").update({ estado: "anulada" }).eq("venta_id", confirmAnular.id)
+    }
     // Restaurar stock
     const { data: detalle } = await supabase.from("detalle_ventas").select("producto_id, cantidad").eq("venta_id", confirmAnular.id)
     if (detalle) {
