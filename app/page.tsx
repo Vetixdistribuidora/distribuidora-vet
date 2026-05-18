@@ -185,9 +185,9 @@ export default function Dashboard() {
 
   const kpiCards = [
     { titulo: "Ventas hoy", valor: fmt(kpis.totalHoy), sub: `${kpis.cantidadHoy} venta${kpis.cantidadHoy !== 1 ? "s" : ""}`, icon: "☀️", color: "#3b82f6", onClick: () => abrirModal("ventasHoy") },
-    { titulo: "Efectivo hoy", valor: fmt(kpis.cobradoHoy ?? 0), sub: "Cobrado + pagos CC recibidos", icon: "💵", color: "#10b981", onClick: undefined },
+    { titulo: "Ingresos hoy", valor: fmt(kpis.cobradoHoy ?? 0), sub: "Cobrado + pagos CC recibidos", icon: "💵", color: "#10b981", onClick: undefined },
     { titulo: "Ventas del mes", valor: fmt(kpis.totalMes), sub: `${kpis.cantidadVentas} ventas`, icon: "📅", color: "#6366f1", onClick: () => abrirModal("ventasMes") },
-    { titulo: "Efectivo del mes", valor: fmt(kpis.cobradoMes ?? 0), sub: "Cobrado + pagos CC recibidos", icon: "🏦", color: "#059669", onClick: undefined },
+    { titulo: "Ingresos del mes", valor: fmt(kpis.cobradoMes ?? 0), sub: "Cobrado + pagos CC recibidos", icon: "🏦", color: "#059669", onClick: undefined },
     { titulo: "Compras del mes", valor: fmt(kpis.totalComprasMes), sub: "Total gastado en compras", icon: "🛒", color: "#f59e0b", onClick: undefined },
     { titulo: "Ganancia", valor: fmt(kpis.ganancia), sub: `Margen ${kpis.margen?.toFixed(1)}%`, icon: "💰", color: "#22c55e", onClick: undefined },
     { titulo: "Crecimiento", valor: (kpis.crecimiento >= 0 ? "+" : "") + kpis.crecimiento?.toFixed(1) + "%", sub: "vs mes anterior", icon: "📈", color: kpis.crecimiento >= 0 ? "#22c55e" : "#ef4444", onClick: undefined },
