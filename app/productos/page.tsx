@@ -345,7 +345,7 @@ export default function Productos() {
     const data = productos.filter(p => p.stock > 0).map(p => ({
       "Producto": p.nombre,
       "Precio Vet. ($)": Math.round(p.precio_venta * 1.30 * 100) / 100,
-      "Precio Prod. ($)": Math.round(p.precio_venta * 1.56 * 100) / 100,
+      "Precio Prod. ($)": Math.round(p.precio_venta * 1.58 * 100) / 100,
     }))
     const ws = XLSX.utils.json_to_sheet(data)
     ws["!cols"] = [{ wch: 45 }, { wch: 16 }, { wch: 16 }]
@@ -1012,7 +1012,7 @@ export default function Productos() {
                           🏥 Vet. <b style={{ color: "#1d4ed8" }}>{formatearPrecio(Math.round(p.precio_venta * 1.30 * 100) / 100)}</b>
                         </span>
                         <span style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, padding: "2px 8px" }}>
-                          🌾 Prod. <b style={{ color: "#15803d" }}>{formatearPrecio(Math.round(p.precio_venta * 1.56 * 100) / 100)}</b>
+                          🌾 Prod. <b style={{ color: "#15803d" }}>{formatearPrecio(Math.round(p.precio_venta * 1.58 * 100) / 100)}</b>
                         </span>
                         <span style={{ color: "#d1d5db" }}>·</span>
                         <span>Stock: <b style={{ color: p.stock === 0 ? "#dc2626" : p.stock <= 5 ? "#92400e" : "#374151" }}>{p.stock}</b></span>
