@@ -736,7 +736,7 @@ export default function Ventas() {
         </div>
       )}
       {tab === "nueva" && (
-        <div className="ventas-grid" style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 20, alignItems: "start" }}>
+        <div className="ventas-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
             {/* Cliente + Factura */}
@@ -1173,7 +1173,7 @@ export default function Ventas() {
                 />
               </div>
 
-              <div className="ventas-borrador-grid" style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 20, alignItems: "start" }}>
+              <div className="ventas-borrador-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
                 {/* Columna izquierda: cliente + producto + notas */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
