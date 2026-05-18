@@ -32,15 +32,18 @@ export default function Deudores() {
       .eq("estado", "cuenta_corriente")
       .order("id", { ascending: false })
     if (!ventas) { setDeudores([]); setCargando(false); return }
-    const conSaldo = await Promise.all(
-      ventas.map(async (v) => {
-        const { data: pagos } = await supabase
-          .from("pagos_cuenta_corriente").select("monto").eq("venta_id", v.id)
-        const pagado = (pagos || []).reduce((acc, p) => acc + Number(p.monto), 0)
-        const saldo = Number(v.total) - pagado
-        return { ...v, saldo: saldo > 0 ? saldo : 0 }
-      })
-    )
+    const ventaIds = ventas.map(v => v.id)
+    const { data: todosPagos } = await supabase
+      .from("pagos_cuenta_corriente").select("venta_id, monto").in("venta_id", ventaIds)
+    const pagosPorVenta: Record<number, number> = {}
+    ;(todosPagos || []).forEach((p: any) => {
+      pagosPorVenta[p.venta_id] = (pagosPorVenta[p.venta_id] || 0) + Number(p.monto)
+    })
+    const conSaldo = ventas.map(v => {
+      const pagado = pagosPorVenta[v.id] || 0
+      const saldo = Number(v.total) - pagado
+      return { ...v, saldo: saldo > 0 ? saldo : 0 }
+    })
     const conDeuda = conSaldo.filter(v => v.saldo > 0)
     const mapaClientes: Record<number, any> = {}
     for (const v of conDeuda) {

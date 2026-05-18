@@ -374,11 +374,19 @@ export default function Ventas() {
     const items = b ? (b.items || []) : borrItems
     const clienteObj = b ? (b.cliente_id ? clientes.find((c: any) => c.id === b.cliente_id) || null : null) : borrClienteObj
     if (items.length === 0) { mostrarToast("⚠️ El borrador no tiene productos", "error"); return }
-    setCarrito(items.map((it: any) => ({
-      producto_id: it.producto_id, nombre: it.nombre,
-      precio: it.precio, cantidad: it.cantidad, bonificacion: it.bonificacion || 0,
-      subtotal: it.precio * Math.max(0, it.cantidad - (it.bonificacion || 0))
-    })))
+    const porcentajeCliente = clienteObj?.porcentaje || 0
+    setCarrito(items.map((it: any) => {
+      const prod = productos.find((p: any) => p.id === it.producto_id)
+      const precioFinal = porcentajeCliente > 0
+        ? Math.round((it.precio * (1 + porcentajeCliente / 100)) * 100) / 100
+        : it.precio
+      return {
+        producto_id: it.producto_id, nombre: it.nombre,
+        precio: precioFinal, cantidad: it.cantidad, bonificacion: it.bonificacion || 0,
+        subtotal: precioFinal * Math.max(0, it.cantidad - (it.bonificacion || 0)),
+        stockDisponible: prod?.stock ?? 0
+      }
+    }))
     if (clienteObj) {
       setClienteSeleccionado(clienteObj)
       setClienteId(String(clienteObj.id))
@@ -501,6 +509,8 @@ export default function Ventas() {
       }
       await supabase.from("notas_credito").update({ estado: "anulada" }).eq("venta_id", confirmEliminarVenta.id)
     }
+    await supabase.from("pagos_cuenta_corriente").delete().eq("venta_id", confirmEliminarVenta.id)
+    await supabase.from("cuentas_corrientes").delete().eq("venta_id", confirmEliminarVenta.id)
     await supabase.from("detalle_ventas").delete().eq("venta_id", confirmEliminarVenta.id)
     await supabase.from("facturas_impresion").delete().eq("venta_id", confirmEliminarVenta.id)
     await supabase.from("ventas").delete().eq("id", confirmEliminarVenta.id)
