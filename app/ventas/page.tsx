@@ -65,6 +65,7 @@ const ESTADO_VENTA: Record<string, { label: string, color: string, bg: string }>
 const responsiveStyles = `
   @media (max-width: 768px) {
     .ventas-grid { grid-template-columns: 1fr !important; }
+    .ventas-borrador-grid { grid-template-columns: 1fr !important; }
     .ventas-resumen-sticky { position: static !important; }
     .ventas-agregar-grid { grid-template-columns: 1fr !important; }
     .ventas-datos-grid { grid-template-columns: 1fr !important; }
@@ -735,7 +736,7 @@ export default function Ventas() {
         </div>
       )}
       {tab === "nueva" && (
-        <div className="ventas-grid" style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20, alignItems: "start" }}>
+        <div className="ventas-grid" style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 20, alignItems: "start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
             {/* Cliente + Factura */}
@@ -1172,7 +1173,7 @@ export default function Ventas() {
                 />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 20, alignItems: "start" }}>
+              <div className="ventas-borrador-grid" style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 20, alignItems: "start" }}>
                 {/* Columna izquierda: cliente + producto + notas */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
@@ -1276,8 +1277,8 @@ export default function Ventas() {
                         {borrItems.map((item: any, idx: number) => (
                           <div key={item.producto_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.nombre}</div>
-                              <div style={{ fontSize: 11, color: "#6b7280" }}>{fmt(item.precio)} c/u</div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.nombre}</div>
+                              <div style={{ fontSize: 12, color: "#6b7280" }}>{fmt(item.precio)} c/u</div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                               <button onClick={() => setBorrItems(prev => prev.map((i: any, ix: number) => ix === idx ? { ...i, cantidad: Math.max(1, i.cantidad - 1) } : i))}
