@@ -56,8 +56,8 @@ export default function Dashboard() {
     const inicioMesStr = new Date(hoyDate.getFullYear(), hoyDate.getMonth(), 1).toISOString()
     const en90Str = new Date(hoyDate.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
-    // ── Todo en paralelo: 1 RPC + 5 queries pequeñas ─────────────────────────
-    const [kpisRes, lotesRes, ccRes, ventasHoyRes, ventasMesRes, prodRes] = await Promise.all([
+    // ── Todo en paralelo: 1 RPC + 7 queries pequeñas ─────────────────────────
+    const [kpisRes, lotesRes, ccRes, ventasHoyRes, ventasMesRes, prodRes, pagosHoyRes, pagosMesRes] = await Promise.all([
       supabase.rpc("dashboard_kpis"),
       supabase.from("lotes_con_stock").select("*")
         .lte("fecha_vencimiento", en90Str).order("fecha_vencimiento", { ascending: true }),
@@ -71,6 +71,8 @@ export default function Dashboard() {
         .select("id, total, nro_factura, fecha, estado, clientes(nombre, apellido)")
         .gte("fecha", inicioMesStr).neq("estado", "anulada").order("id", { ascending: false }),
       supabase.from("productos").select("id, nombre, stock"),
+      supabase.from("pagos_cuenta_corriente").select("monto").gte("fecha", hoyStr + "T00:00:00"),
+      supabase.from("pagos_cuenta_corriente").select("monto").gte("fecha", inicioMesStr),
     ])
 
     const k = kpisRes.data as any
@@ -81,6 +83,16 @@ export default function Dashboard() {
       ? ((Number(k.total_mes) - Number(k.total_mes_ant)) / Number(k.total_mes_ant)) * 100 : 0
     const margen = Number(k.total_mes) > 0 ? (Number(k.ganancia_mes) / Number(k.total_mes)) * 100 : 0
 
+    // ── Efectivo real ingresado (ventas cobradas + pagos CC recibidos) ────────
+    const ventasHoyData = ventasHoyRes.data || []
+    const ventasMesData = ventasMesRes.data || []
+    const cobradoHoy =
+      ventasHoyData.filter((v: any) => v.estado !== "cuenta_corriente").reduce((s: number, v: any) => s + Number(v.total), 0) +
+      (pagosHoyRes.data || []).reduce((s: number, p: any) => s + Number(p.monto), 0)
+    const cobradoMes =
+      ventasMesData.filter((v: any) => v.estado !== "cuenta_corriente").reduce((s: number, v: any) => s + Number(v.total), 0) +
+      (pagosMesRes.data || []).reduce((s: number, p: any) => s + Number(p.monto), 0)
+
     setKpis({
       totalHoy: Number(k.total_hoy), cantidadHoy: Number(k.cant_hoy),
       totalMes: Number(k.total_mes), cantidadVentas: Number(k.cant_mes),
@@ -89,6 +101,7 @@ export default function Dashboard() {
       capitalStock: Number(k.capital_stock),
       totalComprasMes: Number(k.total_compras_mes),
       totalCC: Number(k.total_cc), cantidadCC: Number(k.cant_cc),
+      cobradoHoy, cobradoMes,
     })
 
     // ── Alertas: sinStock/stockBajo desde productos, conteos del RPC ──────────
@@ -106,8 +119,8 @@ export default function Dashboard() {
     // ── Listas para modales ───────────────────────────────────────────────────
     setLotesPorVencer(lotesRes.data || [])
     setCcPendientes(ccRes.data || [])
-    setVentasHoyLista(ventasHoyRes.data || [])
-    setVentasMesLista(ventasMesRes.data || [])
+    setVentasHoyLista(ventasHoyData)
+    setVentasMesLista(ventasMesData)
 
     // ── Top productos (viene del RPC) ─────────────────────────────────────────
     setTopProductosMes(k.top_productos || [])
@@ -172,7 +185,9 @@ export default function Dashboard() {
 
   const kpiCards = [
     { titulo: "Ventas hoy", valor: fmt(kpis.totalHoy), sub: `${kpis.cantidadHoy} venta${kpis.cantidadHoy !== 1 ? "s" : ""}`, icon: "☀️", color: "#3b82f6", onClick: () => abrirModal("ventasHoy") },
+    { titulo: "Efectivo hoy", valor: fmt(kpis.cobradoHoy ?? 0), sub: "Cobrado + pagos CC recibidos", icon: "💵", color: "#10b981", onClick: undefined },
     { titulo: "Ventas del mes", valor: fmt(kpis.totalMes), sub: `${kpis.cantidadVentas} ventas`, icon: "📅", color: "#6366f1", onClick: () => abrirModal("ventasMes") },
+    { titulo: "Efectivo del mes", valor: fmt(kpis.cobradoMes ?? 0), sub: "Cobrado + pagos CC recibidos", icon: "🏦", color: "#059669", onClick: undefined },
     { titulo: "Compras del mes", valor: fmt(kpis.totalComprasMes), sub: "Total gastado en compras", icon: "🛒", color: "#f59e0b", onClick: undefined },
     { titulo: "Ganancia", valor: fmt(kpis.ganancia), sub: `Margen ${kpis.margen?.toFixed(1)}%`, icon: "💰", color: "#22c55e", onClick: undefined },
     { titulo: "Crecimiento", valor: (kpis.crecimiento >= 0 ? "+" : "") + kpis.crecimiento?.toFixed(1) + "%", sub: "vs mes anterior", icon: "📈", color: kpis.crecimiento >= 0 ? "#22c55e" : "#ef4444", onClick: undefined },
