@@ -250,8 +250,10 @@ export default function ComprasPage() {
     // Corregir campos que el RPC no maneja correctamente
     const pagoInicial = parseFloat(form.pago_inicial) || 0;
     if (pctDesc > 0 || pagoInicial === 0) {
+      const hace5seg = new Date(Date.now() - 5000).toISOString()
       const { data: compraCreada } = await supabase
         .from("compras").select("id").eq("proveedor_id", Number(form.proveedor_id))
+        .gte("created_at", hace5seg)
         .order("id", { ascending: false }).limit(1).single();
       if (compraCreada) {
         const patch: Record<string, any> = {};
@@ -270,11 +272,12 @@ export default function ComprasPage() {
         const subtotalItem = precioUnit * cantidad
         const proporcion = subtotalTotal > 0 ? subtotalItem / subtotalTotal : 0
         const fleteUnitario = montoFlete > 0 ? (montoFlete * proporcion) / cantidad : 0
-        const { data: prodActual } = await supabase.from("productos").select("margen").eq("id", item.producto_id).single()
-        const margen = prodActual?.margen ?? 30
+        const { data: prodActual } = await supabase.from("productos").select("margen, flete").eq("id", item.producto_id).single()
+        const margen = prodActual?.margen ?? 0
+        const fleteProducto = prodActual?.flete ?? 0
         await supabase.from("productos").update({
           costo: Math.round(precioUnit * 100) / 100,
-          precio_venta: Math.round((precioUnit + fleteUnitario) * (1 + margen / 100) * 100) / 100,
+          precio_venta: Math.round(precioUnit * (1 + margen / 100) * (1 + fleteProducto / 100) * 100) / 100,
         }).eq("id", item.producto_id)
       }))
     }
@@ -359,11 +362,12 @@ export default function ComprasPage() {
       const proporcion = subtotalBase > 0 ? (d.cantidad * d.precio_unitario) / subtotalBase : 0;
       const fleteItem = compraVer.monto_flete > 0 ? Math.round(compraVer.monto_flete * proporcion * 100) / 100 : 0;
       const fleteUnitario = d.cantidad > 0 ? fleteItem / d.cantidad : 0;
-      const { data: prodActual } = await supabase.from("productos").select("margen").eq("id", d.producto_id).single();
-      const margen = prodActual?.margen ?? 30;
+      const { data: prodActual } = await supabase.from("productos").select("margen, flete").eq("id", d.producto_id).single();
+      const margen = prodActual?.margen ?? 0;
+      const fleteProducto = prodActual?.flete ?? 0;
       await supabase.from("productos").update({
         costo: Math.round(d.precio_unitario * 100) / 100,
-        precio_venta: Math.round((d.precio_unitario + fleteUnitario) * (1 + margen / 100) * 100) / 100,
+        precio_venta: Math.round(d.precio_unitario * (1 + margen / 100) * (1 + fleteProducto / 100) * 100) / 100,
       }).eq("id", d.producto_id);
     }));
     setReaplicando(false);

@@ -69,18 +69,28 @@ export default function CuentasCorrientes() {
 
   async function calcularResumen(lista: any[]) {
     const mapa: Record<number, { deuda: number; ventasPendientes: number }> = {}
-    await Promise.all(lista.map(async (c) => {
-      const { data: vv } = await supabase.from("ventas").select("id, total").eq("cliente_id", c.id).eq("estado", "cuenta_corriente")
-      if (!vv?.length) return
-      let deuda = 0; let pendientes = 0
-      await Promise.all(vv.map(async (v) => {
-        const { data: pp } = await supabase.from("pagos_cuenta_corriente").select("monto").eq("venta_id", v.id)
-        const pagado = (pp || []).reduce((s: number, p: any) => s + Number(p.monto), 0)
-        const saldo = Number(v.total) - pagado
-        if (saldo > 0) { deuda += saldo; pendientes++ }
-      }))
-      if (deuda > 0) mapa[c.id] = { deuda, ventasPendientes: pendientes }
-    }))
+    const clienteIds = lista.map(c => c.id)
+    if (!clienteIds.length) { setResumen({}); return }
+    const { data: todasVentas } = await supabase
+      .from("ventas").select("id, total, cliente_id")
+      .in("cliente_id", clienteIds).eq("estado", "cuenta_corriente")
+    if (!todasVentas?.length) { setResumen({}); return }
+    const ventaIds = todasVentas.map(v => v.id)
+    const { data: todosPagos } = await supabase
+      .from("pagos_cuenta_corriente").select("venta_id, monto").in("venta_id", ventaIds)
+    const pagosPorVenta: Record<number, number> = {}
+    ;(todosPagos || []).forEach((p: any) => {
+      pagosPorVenta[p.venta_id] = (pagosPorVenta[p.venta_id] || 0) + Number(p.monto)
+    })
+    for (const v of todasVentas) {
+      const pagado = pagosPorVenta[v.id] || 0
+      const saldo = Number(v.total) - pagado
+      if (saldo > 0) {
+        if (!mapa[v.cliente_id]) mapa[v.cliente_id] = { deuda: 0, ventasPendientes: 0 }
+        mapa[v.cliente_id].deuda += saldo
+        mapa[v.cliente_id].ventasPendientes++
+      }
+    }
     setResumen(mapa)
   }
 
@@ -96,13 +106,28 @@ export default function CuentasCorrientes() {
   async function cargarVentas(clienteId: number) {
     const { data: vv } = await supabase.from("ventas").select("id, total, estado, nro_factura, fecha").eq("cliente_id", clienteId).order("id", { ascending: false })
     if (!vv) { setVentas([]); return }
-    const conDetalle = await Promise.all(vv.map(async (v) => {
-      const { data: detalles } = await supabase.from("detalle_ventas").select("cantidad, precio, productos(nombre)").eq("venta_id", v.id)
-      const { data: pagos } = await supabase.from("pagos_cuenta_corriente").select("id, monto, fecha, nota").eq("venta_id", v.id).order("fecha", { ascending: true })
-      const totalPagado = (pagos || []).reduce((s: number, p: any) => s + Number(p.monto), 0)
+    const ventaIds = vv.map(v => v.id)
+    const [{ data: todosDetalles }, { data: todosPagos }] = await Promise.all([
+      supabase.from("detalle_ventas").select("venta_id, cantidad, precio, productos(nombre)").in("venta_id", ventaIds),
+      supabase.from("pagos_cuenta_corriente").select("id, venta_id, monto, fecha, nota").in("venta_id", ventaIds).order("fecha", { ascending: true })
+    ])
+    const detallesPorVenta: Record<number, any[]> = {}
+    ;(todosDetalles || []).forEach((d: any) => {
+      if (!detallesPorVenta[d.venta_id]) detallesPorVenta[d.venta_id] = []
+      detallesPorVenta[d.venta_id].push(d)
+    })
+    const pagosPorVenta: Record<number, any[]> = {}
+    ;(todosPagos || []).forEach((p: any) => {
+      if (!pagosPorVenta[p.venta_id]) pagosPorVenta[p.venta_id] = []
+      pagosPorVenta[p.venta_id].push(p)
+    })
+    const conDetalle = vv.map(v => {
+      const detalles = detallesPorVenta[v.id] || []
+      const pagos = pagosPorVenta[v.id] || []
+      const totalPagado = pagos.reduce((s: number, p: any) => s + Number(p.monto), 0)
       const saldo = Math.max(0, Number(v.total) - totalPagado)
-      return { ...v, total: Number(v.total), detalle_ventas: detalles || [], pagos: pagos || [], totalPagado, saldo }
-    }))
+      return { ...v, total: Number(v.total), detalle_ventas: detalles, pagos, totalPagado, saldo }
+    })
     setVentas(conDetalle)
   }
 
