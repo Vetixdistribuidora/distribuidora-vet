@@ -38,13 +38,13 @@ function generarHTMLEImprimir(datos: DatosImpresion, tipo: "presupuesto" | "remi
     const bonif = item.bonificacion || 0
     const unidadesPagas = item.cantidad - bonif > 0 ? item.cantidad - bonif : 0
     if (esRemito) {
-      return "<tr><td>" + item.cantidad + "</td><td style='text-align:left;'>" + item.nombre + "</td><td>" + bonif + "</td><td style='width:60px'>&nbsp;</td></tr>"
+      return "<tr><td>" + item.cantidad + "</td><td style='text-align:left;'>" + item.nombre + "</td><td>" + bonif + "</td><td>&nbsp;</td></tr>"
     }
     return "<tr><td>" + item.cantidad + "</td><td style='text-align:left;'>" + item.nombre + "</td><td>" + f(item.precio) + "</td><td>" + bonif + "</td><td>" + f(unidadesPagas * item.precio) + "</td></tr>"
   }).join("")
   const theadCols = esRemito
-    ? "<tr><th>Cant.</th><th style='width:50%'>Descripcion</th><th>Bonif.</th><th>Recibido</th></tr>"
-    : "<tr><th>Cant.</th><th style='width:40%'>Descripcion</th><th>Precio U.</th><th>Bonif.</th><th>Total</th></tr>"
+    ? "<tr><th style='width:7%'>Cant.</th><th style='width:65%;text-align:left'>Descripcion</th><th style='width:10%'>Bonif.</th><th style='width:18%'>Recibido</th></tr>"
+    : "<tr><th style='width:6%'>Cant.</th><th style='width:54%;text-align:left'>Descripcion</th><th style='width:16%'>Precio U.</th><th style='width:8%'>Bonif.</th><th style='width:16%'>Total</th></tr>"
   const badgeCC = esCuentaCorriente && !esRemito ? "<div style='background:#e67700;color:white;padding:6px 14px;border-radius:6px;font-weight:bold;display:inline-block;margin-top:8px;'>CUENTA CORRIENTE - PENDIENTE DE PAGO</div>" : ""
   const metodoStr = metodoCobro && metodoCobro !== "sin_especificar" && !esRemito && !esCuentaCorriente ? "<p style='margin:6px 0'><b>Método de cobro:</b> " + metodoCobro.replace("_", " ").toUpperCase() + "</p>" : ""
   const totalesHTML = esRemito
