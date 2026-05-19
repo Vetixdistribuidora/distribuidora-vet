@@ -1,52 +1,46 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { useRouter, usePathname } from "next/navigation"
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const [verificado, setVerificado] = useState(false)
-  const yaVerificado = useRef(false)
+  const [listo, setListo] = useState(false)
   const router = useRouter()
-  const pathname = usePathname()
 
   useEffect(() => {
-    // Si ya verificamos, no volver a bloquear en cada navegación
-    if (yaVerificado.current) {
-      setVerificado(true)
-      return
-    }
-
-    async function check() {
-      const { data } = await supabase.auth.getUser()
-      const user = data?.user
-
-      if (!user) {
+    // getSession() lee de localStorage — sin llamada a red, instantáneo
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
         router.replace("/login")
         return
       }
+      // Mostrar contenido inmediatamente
+      setListo(true)
 
-      // Verificar org con query directa (más simple que RPC)
-      const { data: orgData, error } = await supabase
+      // Verificar org en segundo plano (sin bloquear la UI)
+      supabase
         .from("org_usuarios")
         .select("organizacion_id")
-        .eq("user_id", user.id)
+        .eq("user_id", session.user.id)
         .maybeSingle()
+        .then(({ data }) => {
+          if (!data) router.replace("/onboarding")
+        })
+    })
 
-      if (error || !orgData) {
-        // Sin org → onboarding
-        router.replace("/onboarding")
-        return
+    // Escuchar cierre de sesión
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT" || !session) {
+        setListo(false)
+        router.replace("/login")
       }
+    })
 
-      yaVerificado.current = true
-      setVerificado(true)
-    }
+    return () => subscription.unsubscribe()
+  }, []) // Solo una vez al montar — no re-verificar en cada navegación
 
-    check()
-  }, [pathname])
-
-  if (!verificado) {
+  if (!listo) {
     return (
       <div style={{
         flex: 1,
@@ -57,7 +51,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         fontSize: "13px",
         fontFamily: "Segoe UI"
       }}>
-        Verificando sesión...
+        Cargando...
       </div>
     )
   }
