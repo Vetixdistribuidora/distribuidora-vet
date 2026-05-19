@@ -152,7 +152,7 @@ export default function Ventas() {
   useEffect(() => { cargar() }, [])
   useEffect(() => {
     if (!loadingHistorial) return
-    const w = setTimeout(() => supabase.auth.signOut(), 10000)
+    const w = setTimeout(() => supabase.auth.signOut(), 60000)
     return () => clearTimeout(w)
   }, [loadingHistorial])
   useEffect(() => {

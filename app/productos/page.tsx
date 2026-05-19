@@ -394,7 +394,7 @@ export default function Productos() {
   useEffect(() => { cargar() }, [])
   useEffect(() => {
     if (!cargando) return
-    const w = setTimeout(() => supabase.auth.signOut(), 10000)
+    const w = setTimeout(() => supabase.auth.signOut(), 60000)
     return () => clearTimeout(w)
   }, [cargando])
 
@@ -408,7 +408,7 @@ export default function Productos() {
     const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * 100) / 100
     const { data, error } = await supabase.from("productos").insert([{ nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(stock), categoria: categoria.trim(), laboratorio: laboratorio.trim() }]).select()
     if (error) return mostrarToast("❌ " + error.message, "error")
-    await supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 })
+    supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 }) // fire-and-forget
     mostrarToast("✅ Producto agregado", "ok")
     setNombre(""); setCosto(""); setMargen(""); setFleteProducto(""); setStock(""); setCategoria(""); setLaboratorio("")
     setMostrarAgregar(false); cargar()
@@ -422,7 +422,7 @@ export default function Productos() {
     const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * 100) / 100
     const { error } = await supabase.from("productos").update({ nombre: editando.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(editando.stock), categoria: editando.categoria || "", laboratorio: editando.laboratorio || "" }).eq("id", editando.id)
     if (error) return mostrarToast("❌ " + error.message, "error")
-    await supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id })
+    supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id }) // fire-and-forget
     mostrarToast("✅ Producto actualizado", "ok")
     setEditando(null); cargar()
   }
@@ -431,7 +431,7 @@ export default function Productos() {
     if (!confirmEliminar) return
     const { error } = await supabase.from("productos").delete().eq("id", confirmEliminar.id)
     if (error) { mostrarToast("❌ " + error.message, "error"); setConfirmEliminar(null); return }
-    await supabase.rpc("registrar_auditoria", { accion: "eliminar", tabla: "productos", registro_id: confirmEliminar.id })
+    supabase.rpc("registrar_auditoria", { accion: "eliminar", tabla: "productos", registro_id: confirmEliminar.id }) // fire-and-forget
     mostrarToast("🗑️ Producto eliminado", "ok")
     setConfirmEliminar(null); cargar()
   }

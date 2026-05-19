@@ -37,7 +37,7 @@ export default function ConfiguracionPage() {
   useEffect(() => { cargar() }, [])
   useEffect(() => {
     if (!loading) return
-    const w = setTimeout(() => supabase.auth.signOut(), 10000)
+    const w = setTimeout(() => supabase.auth.signOut(), 60000)
     return () => clearTimeout(w)
   }, [loading])
 

@@ -59,7 +59,7 @@ export default function CuentasCorrientes() {
   useEffect(() => { inicializar() }, [])
   useEffect(() => {
     if (!cargando) return
-    const w = setTimeout(() => supabase.auth.signOut(), 10000)
+    const w = setTimeout(() => supabase.auth.signOut(), 60000)
     return () => clearTimeout(w)
   }, [cargando])
 

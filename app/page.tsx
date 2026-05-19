@@ -49,7 +49,7 @@ export default function Dashboard() {
   // Watchdog: si loading queda trabado >10s, la sesión está rota → forzar re-login
   useEffect(() => {
     if (!loading) return
-    const w = setTimeout(() => supabase.auth.signOut(), 10000)
+    const w = setTimeout(() => supabase.auth.signOut(), 60000)
     return () => clearTimeout(w)
   }, [loading])
 
