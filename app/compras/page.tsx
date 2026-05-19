@@ -142,6 +142,8 @@ export default function ComprasPage() {
   const [formNuevoProd, setFormNuevoProd] = useState({ nombre: "", laboratorio: "", costo: "", margen: "30" });
   const [guardandoNuevoProd, setGuardandoNuevoProd] = useState(false);
 
+  const [loadingProductos, setLoadingProductos] = useState(false);
+
   useEffect(() => { cargarTodo(); }, []);
 
   async function cargarTodo() {
@@ -153,11 +155,26 @@ export default function ComprasPage() {
       ]);
       if (c) setCompras(c);
       if (p) setProveedores(p);
+    } catch (e) {
+      console.error("Error cargando compras:", e)
+    } finally {
+      setLoading(false);
+    }
+  }
 
+  async function cargarProductos() {
+    if (productos.length > 0) return; // ya cargados
+    setLoadingProductos(true);
+    try {
       let todosProductos: Producto[] = [];
       let desde = 0;
+      // Lanzar primera página y determinar si hay más en paralelo
       while (true) {
-        const { data: pr } = await supabase.from("productos").select("id, nombre, stock, laboratorio").order("nombre").range(desde, desde + 999);
+        const { data: pr } = await supabase
+          .from("productos")
+          .select("id, nombre, stock, laboratorio")
+          .order("nombre")
+          .range(desde, desde + 999);
         if (!pr || pr.length === 0) break;
         todosProductos = [...todosProductos, ...pr];
         if (pr.length < 1000) break;
@@ -165,9 +182,9 @@ export default function ComprasPage() {
       }
       setProductos(todosProductos);
     } catch (e) {
-      console.error("Error cargando compras:", e)
+      console.error("Error cargando productos:", e);
     } finally {
-      setLoading(false);
+      setLoadingProductos(false);
     }
   }
 
@@ -179,7 +196,9 @@ export default function ComprasPage() {
       incluye_flete: false, tipo_flete: "pesos", valor_flete: "",
       incluye_descuento: false, porcentaje_descuento: "",
     });
-    setItems([]); setBusquedaProducto(""); setErrorForm(null); setMostrarFormNuevoProd(false); setModalNueva(true);
+    setItems([]); setBusquedaProducto(""); setErrorForm(null); setMostrarFormNuevoProd(false);
+    cargarProductos(); // carga lazy solo cuando se abre el modal
+    setModalNueva(true);
   }
 
   function agregarItem(prod: Producto) {
@@ -593,7 +612,10 @@ export default function ComprasPage() {
                       else if (e.key === "Escape") { setProductoDropdown(false); setProductoIndiceCompras(-1) }
                     }}
                     style={inputDarkStyle} />
-                  {productoDropdown && busquedaProducto && (
+                  {loadingProductos && (
+                    <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4, marginBottom: 2 }}>Cargando productos…</div>
+                  )}
+                  {productoDropdown && busquedaProducto && !loadingProductos && (
                     <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, zIndex: 10, maxHeight: 260, overflowY: "auto", marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
                       {productosFiltradosDropdown.length === 0 ? (
                         <div style={{ padding: "10px 14px", fontSize: 13, color: "#6b7280", textAlign: "center" }}>Sin resultados</div>
