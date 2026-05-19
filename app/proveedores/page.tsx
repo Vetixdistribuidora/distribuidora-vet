@@ -78,6 +78,11 @@ export default function ProveedoresPage() {
   const [exito, setExito] = useState<string | null>(null);
 
   useEffect(() => { cargarProveedores(); }, []);
+  useEffect(() => {
+    if (!loading) return
+    const w = setTimeout(() => supabase.auth.signOut(), 10000)
+    return () => clearTimeout(w)
+  }, [loading])
 
   async function cargarProveedores() {
     setLoading(true);

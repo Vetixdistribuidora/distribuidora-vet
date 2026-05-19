@@ -392,6 +392,11 @@ export default function Productos() {
 
 
   useEffect(() => { cargar() }, [])
+  useEffect(() => {
+    if (!cargando) return
+    const w = setTimeout(() => supabase.auth.signOut(), 10000)
+    return () => clearTimeout(w)
+  }, [cargando])
 
   async function agregar() {
     if (!nombre || !costo || !margen || !stock) { mostrarToast("⚠️ Completá todos los campos", "error"); return }

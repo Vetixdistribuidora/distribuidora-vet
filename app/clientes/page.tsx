@@ -122,6 +122,11 @@ export default function Clientes() {
   }
 
   useEffect(() => { cargar() }, [])
+  useEffect(() => {
+    if (!cargando) return
+    const w = setTimeout(() => supabase.auth.signOut(), 10000)
+    return () => clearTimeout(w)
+  }, [cargando])
 
   async function agregarCliente() {
     if (!formNuevo.nombre.trim() || !formNuevo.apellido.trim()) { mostrarToast("Nombre y apellido obligatorios", "error"); return }

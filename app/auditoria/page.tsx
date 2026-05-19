@@ -36,6 +36,11 @@ export default function Auditoria() {
   const [filtroTabla, setFiltroTabla] = useState("todas")
 
   useEffect(() => { cargar() }, [])
+  useEffect(() => {
+    if (!loading) return
+    const w = setTimeout(() => supabase.auth.signOut(), 10000)
+    return () => clearTimeout(w)
+  }, [loading])
 
   async function cargar() {
     setLoading(true)

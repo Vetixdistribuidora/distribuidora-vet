@@ -145,6 +145,11 @@ export default function ComprasPage() {
   const [loadingProductos, setLoadingProductos] = useState(false);
 
   useEffect(() => { cargarTodo(); }, []);
+  useEffect(() => {
+    if (!loading) return
+    const w = setTimeout(() => supabase.auth.signOut(), 10000)
+    return () => clearTimeout(w)
+  }, [loading])
 
   async function cargarTodo() {
     setLoading(true);
