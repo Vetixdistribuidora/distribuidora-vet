@@ -187,9 +187,14 @@ export default function Ventas() {
   // ── FUNCIONES NOTAS DE CRÉDITO ───────────────────────────────────────────────
   async function cargarNotasCredito() {
     setLoadingNC(true)
-    const { data } = await supabase.from("notas_credito").select("*, clientes(nombre, apellido), ventas(nro_factura)").order("id", { ascending: false }).limit(200)
-    setNotasCredito(data || [])
-    setLoadingNC(false)
+    try {
+      const { data } = await supabase.from("notas_credito").select("*, clientes(nombre, apellido), ventas(nro_factura)").order("id", { ascending: false }).limit(200)
+      setNotasCredito(data || [])
+    } catch (e) {
+      console.error("Error cargando notas de crédito:", e)
+    } finally {
+      setLoadingNC(false)
+    }
   }
 
   async function abrirModalNC(venta: any) {
@@ -318,9 +323,14 @@ export default function Ventas() {
   // ── FUNCIONES BORRADORES ────────────────────────────────────────────────────
   async function cargarBorradores() {
     setLoadingBorradores(true)
-    const { data } = await supabase.from("borradores").select("*").order("updated_at", { ascending: false })
-    setBorradores(data || [])
-    setLoadingBorradores(false)
+    try {
+      const { data } = await supabase.from("borradores").select("*").order("updated_at", { ascending: false })
+      setBorradores(data || [])
+    } catch (e) {
+      console.error("Error cargando borradores:", e)
+    } finally {
+      setLoadingBorradores(false)
+    }
   }
 
   async function crearBorrador() {
@@ -412,22 +422,26 @@ export default function Ventas() {
   // ────────────────────────────────────────────────────────────────────────────
 
   async function cargar() {
-    const { data: c } = await supabase.from("clientes").select("*").order("nombre")
-    let todosProductos: any[] = []
-    let desde = 0
-    while (true) {
-      const { data: p } = await supabase.from("productos").select("*").order("nombre").range(desde, desde + 999)
-      if (!p || p.length === 0) break
-      todosProductos = [...todosProductos, ...p]
-      if (p.length < 1000) break
-      desde += 1000
+    try {
+      const { data: c } = await supabase.from("clientes").select("*").order("nombre")
+      let todosProductos: any[] = []
+      let desde = 0
+      while (true) {
+        const { data: p } = await supabase.from("productos").select("*").order("nombre").range(desde, desde + 999)
+        if (!p || p.length === 0) break
+        todosProductos = [...todosProductos, ...p]
+        if (p.length < 1000) break
+        desde += 1000
+      }
+      setClientes(c || []); setProductos(todosProductos)
+      const { data: ultima } = await supabase.from("ventas").select("nro_factura").order("id", { ascending: false }).limit(1).maybeSingle()
+      if (ultima?.nro_factura) {
+        const num = parseInt(ultima.nro_factura, 10)
+        if (!isNaN(num)) setNroFactura(String(num + 1).padStart(5, "0"))
+      } else { setNroFactura("10047") }
+    } catch (e) {
+      console.error("Error cargando datos de venta:", e)
     }
-    setClientes(c || []); setProductos(todosProductos)
-    const { data: ultima } = await supabase.from("ventas").select("nro_factura").order("id", { ascending: false }).limit(1).maybeSingle()
-    if (ultima?.nro_factura) {
-      const num = parseInt(ultima.nro_factura, 10)
-      if (!isNaN(num)) setNroFactura(String(num + 1).padStart(5, "0"))
-    } else { setNroFactura("10047") }
   }
 
   async function cargarHistorial() {

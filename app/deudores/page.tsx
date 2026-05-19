@@ -49,45 +49,50 @@ export default function Deudores() {
 
   async function cargarDeudores() {
     setCargando(true)
-    const { data: ventas } = await supabase
-      .from("ventas")
-      .select("id, total, nro_factura, fecha, cliente_id, clientes(nombre, apellido, telefono, localidad)")
-      .eq("estado", "cuenta_corriente")
-      .order("id", { ascending: true })   // ascendente: más antigua primero
-    if (!ventas) { setDeudores([]); setCargando(false); return }
-    const ventaIds = ventas.map(v => v.id)
-    const { data: todosPagos } = await supabase
-      .from("pagos_cuenta_corriente").select("venta_id, monto").in("venta_id", ventaIds)
-    const pagosPorVenta: Record<number, number> = {}
-    ;(todosPagos || []).forEach((p: any) => {
-      pagosPorVenta[p.venta_id] = (pagosPorVenta[p.venta_id] || 0) + Number(p.monto)
-    })
-    const conSaldo = ventas.map(v => {
-      const pagado = pagosPorVenta[v.id] || 0
-      const saldo = Number(v.total) - pagado
-      return { ...v, saldo: saldo > 0 ? saldo : 0 }
-    })
-    const conDeuda = conSaldo.filter(v => v.saldo > 0)
-    const mapaClientes: Record<number, any> = {}
-    for (const v of conDeuda) {
-      const cid = v.cliente_id
-      if (!mapaClientes[cid]) {
-        mapaClientes[cid] = {
-          cliente_id: cid,
-          nombre: (v.clientes as any)?.nombre || "",
-          apellido: (v.clientes as any)?.apellido || "",
-          telefono: (v.clientes as any)?.telefono || "",
-          localidad: (v.clientes as any)?.localidad || "",
-          totalDeuda: 0,
-          facturas: []
+    try {
+      const { data: ventas } = await supabase
+        .from("ventas")
+        .select("id, total, nro_factura, fecha, cliente_id, clientes(nombre, apellido, telefono, localidad)")
+        .eq("estado", "cuenta_corriente")
+        .order("id", { ascending: true })   // ascendente: más antigua primero
+      if (!ventas) { setDeudores([]); return }
+      const ventaIds = ventas.map(v => v.id)
+      const { data: todosPagos } = await supabase
+        .from("pagos_cuenta_corriente").select("venta_id, monto").in("venta_id", ventaIds)
+      const pagosPorVenta: Record<number, number> = {}
+      ;(todosPagos || []).forEach((p: any) => {
+        pagosPorVenta[p.venta_id] = (pagosPorVenta[p.venta_id] || 0) + Number(p.monto)
+      })
+      const conSaldo = ventas.map(v => {
+        const pagado = pagosPorVenta[v.id] || 0
+        const saldo = Number(v.total) - pagado
+        return { ...v, saldo: saldo > 0 ? saldo : 0 }
+      })
+      const conDeuda = conSaldo.filter(v => v.saldo > 0)
+      const mapaClientes: Record<number, any> = {}
+      for (const v of conDeuda) {
+        const cid = v.cliente_id
+        if (!mapaClientes[cid]) {
+          mapaClientes[cid] = {
+            cliente_id: cid,
+            nombre: (v.clientes as any)?.nombre || "",
+            apellido: (v.clientes as any)?.apellido || "",
+            telefono: (v.clientes as any)?.telefono || "",
+            localidad: (v.clientes as any)?.localidad || "",
+            totalDeuda: 0,
+            facturas: []
+          }
         }
+        mapaClientes[cid].totalDeuda += v.saldo
+        mapaClientes[cid].facturas.push(v)   // ya vienen ordenadas ASC por id
       }
-      mapaClientes[cid].totalDeuda += v.saldo
-      mapaClientes[cid].facturas.push(v)   // ya vienen ordenadas ASC por id
+      const lista = Object.values(mapaClientes).sort((a: any, b: any) => b.totalDeuda - a.totalDeuda)
+      setDeudores(lista)
+    } catch (e) {
+      console.error("Error cargando deudores:", e)
+    } finally {
+      setCargando(false)
     }
-    const lista = Object.values(mapaClientes).sort((a: any, b: any) => b.totalDeuda - a.totalDeuda)
-    setDeudores(lista)
-    setCargando(false)
   }
 
   // ── Cobro masivo ────────────────────────────────────────────────────────────
