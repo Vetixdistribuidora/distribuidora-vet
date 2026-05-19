@@ -14,12 +14,17 @@ export default function LoginPage() {
   async function handleLogin() {
     setLoading(true)
     setError("")
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      setError("Email o contraseña incorrectos")
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) {
+        setError("Email o contraseña incorrectos")
+      } else {
+        router.push("/")
+      }
+    } catch (e) {
+      setError("Error de conexión. Intentá de nuevo.")
+    } finally {
       setLoading(false)
-    } else {
-      router.push("/")
     }
   }
 
