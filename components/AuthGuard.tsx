@@ -29,9 +29,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         })
     })
 
-    // Escuchar cierre de sesión
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_OUT" || !session) {
+    // Escuchar SOLO cierre de sesión explícito
+    // No reaccionar a TOKEN_REFRESHED ni a !session transitorio
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
         setListo(false)
         router.replace("/login")
       }

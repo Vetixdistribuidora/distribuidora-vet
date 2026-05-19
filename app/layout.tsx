@@ -16,9 +16,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const router = useRouter()
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!session) { setUsuario(null); router.replace("/login") }
-      else {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_OUT") {
+        setUsuario(null)
+        router.replace("/login")
+      } else if (session) {
         setUsuario(session.user)
         // Cargar nombre del negocio
         const { data: org } = await supabase.from("organizaciones").select("nombre").single()
