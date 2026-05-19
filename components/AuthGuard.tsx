@@ -1,15 +1,22 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [verificado, setVerificado] = useState(false)
+  const yaVerificado = useRef(false)   // persiste entre renders sin causar re-render
   const router = useRouter()
   const pathname = usePathname()
 
   useEffect(() => {
+    // Si ya verificamos en esta sesión de layout, no volver a bloquear
+    if (yaVerificado.current) {
+      setVerificado(true)
+      return
+    }
+
     async function check() {
       const { data } = await supabase.auth.getUser()
       const user = data?.user
@@ -19,19 +26,16 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         return
       }
 
-      // Verificar que el usuario tenga una organización vinculada
-      const { data: orgData } = await supabase
-        .from("org_usuarios")
-        .select("organizacion_id")
-        .eq("user_id", user.id)
-        .maybeSingle()
+      // Usar el RPC SECURITY DEFINER — evita depender del RLS de org_usuarios
+      const { data: orgId } = await supabase.rpc("get_my_org_id")
 
-      if (!orgData) {
-        // Usuario autenticado pero sin org → onboarding
+      if (!orgId) {
+        // Usuario autenticado pero sin organización → onboarding
         router.replace("/onboarding")
         return
       }
 
+      yaVerificado.current = true
       setVerificado(true)
     }
 
