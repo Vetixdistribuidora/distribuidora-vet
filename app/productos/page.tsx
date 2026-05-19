@@ -355,6 +355,7 @@ export default function Productos() {
   }
 
   async function cargar() {
+    setCargando(true)
     try {
       // Productos y lotes en paralelo
       const [productosData, lotesData] = await Promise.all([

@@ -88,6 +88,7 @@ export default function Clientes() {
   }
 
   async function cargar() {
+    setCargando(true)
     try {
       const { data } = await supabase.from("clientes").select("*").order("nombre")
       setClientes(data || [])
