@@ -17,6 +17,7 @@ interface Proveedor {
 }
 
 const EMPTY_FORM = { nombre: "", cuit: "", telefono: "", email: "", direccion: "", notas: "" };
+const METODOS_PAGO = ["Transferencia", "Efectivo", "Cheque", "Tarjeta", "Otro"];
 
 const responsiveStyles = `
   @media (max-width: 768px) {
@@ -64,6 +65,17 @@ export default function ProveedoresPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmEliminar, setConfirmEliminar] = useState<Proveedor | null>(null);
   const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
+
+  // ── Modal pago masivo ──────────────────────────────────────────────────────
+  const [modalPago, setModalPago] = useState<Proveedor | null>(null);
+  const [comprasPendientes, setComprasPendientes] = useState<any[]>([]);
+  const [loadingCompras, setLoadingCompras] = useState(false);
+  const [montoPago, setMontoPago] = useState("");
+  const [metodoPago, setMetodoPago] = useState("Transferencia");
+  const [notaPago, setNotaPago] = useState("");
+  const [procesandoPago, setProcesandoPago] = useState(false);
+  const [errorPago, setErrorPago] = useState<string | null>(null);
+  const [exito, setExito] = useState<string | null>(null);
 
   useEffect(() => { cargarProveedores(); }, []);
 
@@ -114,6 +126,84 @@ export default function ProveedoresPage() {
         : "No se pudo eliminar: " + error.message);
     } else {
       setConfirmEliminar(null); setErrorEliminar(null); cargarProveedores();
+    }
+  }
+
+  // ── Funciones pago masivo ──────────────────────────────────────────────────
+  async function abrirPago(p: Proveedor) {
+    setModalPago(p);
+    setMontoPago("");
+    setMetodoPago("Transferencia");
+    setNotaPago("");
+    setErrorPago(null);
+    setExito(null);
+    setLoadingCompras(true);
+    const { data } = await supabase
+      .from("compras")
+      .select("id, total, total_pagado, numero_remito, fecha")
+      .eq("proveedor_id", p.id)
+      .in("estado", ["pendiente", "parcial"])
+      .order("id", { ascending: true });
+    setComprasPendientes(data || []);
+    setLoadingCompras(false);
+  }
+
+  function cerrarPago() {
+    setModalPago(null);
+    setComprasPendientes([]);
+    setMontoPago("");
+    setErrorPago(null);
+    setExito(null);
+  }
+
+  function calcularPreview() {
+    const monto = parseFloat(montoPago.replace(",", ".")) || 0;
+    if (monto <= 0 || comprasPendientes.length === 0) return [];
+    let restante = monto;
+    return comprasPendientes.map(c => {
+      const saldo = Math.round((c.total - c.total_pagado) * 100) / 100;
+      if (restante <= 0) return { ...c, saldo, pago: 0, resultado: "sin_cambio" };
+      const pago = Math.min(restante, saldo);
+      restante = Math.round((restante - pago) * 100) / 100;
+      return { ...c, saldo, pago: Math.round(pago * 100) / 100, resultado: pago >= saldo ? "pagado" : "parcial" };
+    });
+  }
+
+  async function confirmarPago() {
+    const monto = parseFloat(montoPago.replace(",", ".")) || 0;
+    if (monto <= 0) { setErrorPago("Ingresá un monto válido."); return; }
+    if (!modalPago) return;
+    setProcesandoPago(true);
+    setErrorPago(null);
+    const preview = calcularPreview();
+    const afectadas = preview.filter(c => c.pago > 0);
+    try {
+      for (const c of afectadas) {
+        const { error } = await supabase.rpc("registrar_pago_compra", {
+          p_compra_id: c.id,
+          p_monto: c.pago,
+          p_metodo_pago: metodoPago,
+          p_notas: notaPago.trim() || null,
+        });
+        if (error) throw new Error("Error en factura " + (c.numero_remito || c.id) + ": " + error.message);
+      }
+      const totalPagado = afectadas.reduce((s: number, c: any) => s + c.pago, 0);
+      const facturasPagadas = afectadas.filter((c: any) => c.resultado === "pagado").length;
+      setExito(`✅ Pago de ${fmt(totalPagado)} aplicado. ${facturasPagadas} factura${facturasPagadas !== 1 ? "s" : ""} saldada${facturasPagadas !== 1 ? "s" : ""}.`);
+      await cargarProveedores();
+      // Refrescar compras pendientes
+      const { data } = await supabase
+        .from("compras")
+        .select("id, total, total_pagado, numero_remito, fecha")
+        .eq("proveedor_id", modalPago.id)
+        .in("estado", ["pendiente", "parcial"])
+        .order("id", { ascending: true });
+      setComprasPendientes(data || []);
+      setMontoPago("");
+    } catch (e: any) {
+      setErrorPago(e.message || "Error al procesar el pago.");
+    } finally {
+      setProcesandoPago(false);
     }
   }
 
@@ -203,6 +293,13 @@ export default function ProveedoresPage() {
                   }}>✓ Sin deuda</span>
                 )}
                 <div style={{ display: "flex", gap: 8 }}>
+                  {p.saldo_pendiente > 0 && (
+                    <button onClick={() => abrirPago(p)} style={{
+                      background: "linear-gradient(135deg, #16a34a, #22c55e)", color: "white",
+                      border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      boxShadow: "0 2px 6px rgba(34,197,94,0.3)"
+                    }}>💳 Pagar</button>
+                  )}
                   <button onClick={() => abrirEditar(p)} style={{
                     background: "#f1f5f9", color: "#374151", border: "1px solid #e2e8f0",
                     borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer"
@@ -284,6 +381,174 @@ export default function ProveedoresPage() {
                 opacity: guardando ? 0.5 : 1
               }}>
                 {guardando ? "Guardando..." : editando ? "Guardar cambios" : "Crear proveedor"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal pago masivo ── */}
+      {modalPago && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
+          onClick={cerrarPago}>
+          <div style={{
+            background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 520,
+            maxHeight: "88vh", overflow: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.6)"
+          }} onClick={e => e.stopPropagation()}>
+
+            {/* Título */}
+            <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "0 0 4px" }}>
+              💳 Registrar pago
+            </h2>
+            <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 20px" }}>
+              {modalPago.nombre} · Deuda total:{" "}
+              <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(modalPago.saldo_pendiente)}</span>
+            </p>
+
+            {/* Mensaje éxito */}
+            {exito && (
+              <div style={{ background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", color: "#4ade80", fontSize: 13, padding: "10px 14px", borderRadius: 8, marginBottom: 16 }}>
+                {exito}
+              </div>
+            )}
+
+            {/* Inputs */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
+              <div>
+                <label style={labelStyle}>Monto a pagar</label>
+                <input
+                  type="number" min="0" step="0.01"
+                  value={montoPago}
+                  onChange={e => { setMontoPago(e.target.value); setErrorPago(null); setExito(null); }}
+                  placeholder="Ej: 2000000"
+                  style={inputStyle}
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div>
+                  <label style={labelStyle}>Método de pago</label>
+                  <select value={metodoPago} onChange={e => setMetodoPago(e.target.value)}
+                    style={{ width: "100%", padding: "10px 14px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "white", fontSize: 14, outline: "none", boxSizing: "border-box" as const, cursor: "pointer" }}>
+                    {METODOS_PAGO.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Nota (opcional)</label>
+                  <input type="text" value={notaPago} onChange={e => setNotaPago(e.target.value)}
+                    placeholder="Ej: Pago mayo" style={inputStyle} />
+                </div>
+              </div>
+            </div>
+
+            {/* Preview de facturas */}
+            {loadingCompras ? (
+              <div style={{ color: "#6b7280", fontSize: 13, textAlign: "center", padding: "16px 0" }}>Cargando facturas...</div>
+            ) : comprasPendientes.length === 0 ? (
+              <div style={{ color: "#4ade80", fontSize: 13, textAlign: "center", padding: "16px 0" }}>✓ Sin facturas pendientes</div>
+            ) : (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>
+                  Facturas pendientes — se aplica de la más antigua a la más nueva
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+                  {(() => {
+                    const preview = calcularPreview();
+                    const lista = preview.length > 0 ? preview : comprasPendientes.map(c => ({ ...c, saldo: c.total - c.total_pagado, pago: 0, resultado: "sin_cambio" }));
+                    return lista.map((c: any) => {
+                      const colorMap: Record<string, { bg: string; color: string; label: string }> = {
+                        pagado:    { bg: "rgba(34,197,94,0.12)",  color: "#4ade80",  label: "✓ Saldada" },
+                        parcial:   { bg: "rgba(251,191,36,0.12)", color: "#fbbf24",  label: "~ Parcial" },
+                        sin_cambio:{ bg: "rgba(255,255,255,0.03)", color: "#6b7280", label: "Sin cambio" },
+                      };
+                      const est = colorMap[c.resultado] ?? colorMap.sin_cambio;
+                      return (
+                        <div key={c.id} style={{
+                          display: "flex", justifyContent: "space-between", alignItems: "center",
+                          padding: "8px 12px", background: est.bg,
+                          border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8,
+                        }}>
+                          <div>
+                            <div style={{ color: "white", fontSize: 12, fontWeight: 600 }}>
+                              {c.numero_remito ? `Remito ${c.numero_remito}` : `Compra #${c.id}`}
+                            </div>
+                            <div style={{ color: "#6b7280", fontSize: 11, marginTop: 1 }}>
+                              {c.fecha?.slice(0, 10)} · Saldo: {fmt(c.saldo)}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            {c.pago > 0 && (
+                              <div style={{ color: est.color, fontWeight: 700, fontSize: 13 }}>−{fmt(c.pago)}</div>
+                            )}
+                            <div style={{ color: est.color, fontSize: 10, fontWeight: 600 }}>{est.label}</div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+
+                {/* Resumen del preview */}
+                {(() => {
+                  const monto = parseFloat(montoPago.replace(",", ".")) || 0;
+                  if (monto <= 0) return null;
+                  const preview = calcularPreview();
+                  const totalAplicado = preview.reduce((s: number, c: any) => s + c.pago, 0);
+                  const vuelto = Math.max(0, monto - totalAplicado);
+                  const saldadas = preview.filter((c: any) => c.resultado === "pagado").length;
+                  const parciales = preview.filter((c: any) => c.resultado === "parcial").length;
+                  return (
+                    <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", fontSize: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
+                        <span>Facturas a saldar:</span>
+                        <span style={{ color: "#4ade80", fontWeight: 700 }}>{saldadas}</span>
+                      </div>
+                      {parciales > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
+                          <span>Facturas parciales:</span>
+                          <span style={{ color: "#fbbf24", fontWeight: 700 }}>{parciales}</span>
+                        </div>
+                      )}
+                      <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
+                        <span>Total aplicado:</span>
+                        <span style={{ color: "white", fontWeight: 700 }}>{fmt(totalAplicado)}</span>
+                      </div>
+                      {vuelto > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af" }}>
+                          <span>Excedente (no se aplica):</span>
+                          <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(vuelto)}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {errorPago && (
+              <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 13, padding: "10px 14px", borderRadius: 8, marginBottom: 16 }}>
+                ⚠️ {errorPago}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={cerrarPago} style={{
+                flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10,
+                color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600
+              }}>Cerrar</button>
+              <button
+                onClick={confirmarPago}
+                disabled={procesandoPago || (parseFloat(montoPago.replace(",", ".")) || 0) <= 0 || comprasPendientes.length === 0}
+                style={{
+                  flex: 2, padding: "11px",
+                  background: "linear-gradient(135deg, #16a34a, #22c55e)",
+                  border: "none", borderRadius: 10, color: "white",
+                  fontSize: 13, fontWeight: 700, cursor: "pointer",
+                  opacity: procesandoPago || (parseFloat(montoPago.replace(",", ".")) || 0) <= 0 ? 0.5 : 1,
+                }}>
+                {procesandoPago ? "Procesando..." : `Confirmar pago${montoPago ? " de " + fmt(parseFloat(montoPago.replace(",", ".")) || 0) : ""}`}
               </button>
             </div>
           </div>
