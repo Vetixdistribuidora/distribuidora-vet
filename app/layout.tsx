@@ -99,9 +99,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {})
-      // NO forzar reload en controllerchange — causaba que todas las pestañas
-      // se recargaran simultáneamente en cada deploy y quedaban en "Cargando..."
     }
+  }, [])
+
+  // Cuando el usuario vuelve a la pestaña después de inactividad, el browser
+  // pausó el timer de auto-refresh de Supabase (throttling de background tabs).
+  // Esto fuerza un refresh del token proactivamente antes de que el usuario
+  // intente hacer algo, evitando el "Cargando..." al volver.
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === "visible") {
+        await supabase.auth.getSession()
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
   }, [])
 
   if (isLoginPage || isOnboarding) {
