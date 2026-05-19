@@ -146,24 +146,29 @@ export default function ComprasPage() {
 
   async function cargarTodo() {
     setLoading(true);
-    const [{ data: c }, { data: p }] = await Promise.all([
-      supabase.from("compras").select("*, proveedores(nombre)").order("fecha", { ascending: false }),
-      supabase.from("proveedores").select("id, nombre").order("nombre"),
-    ]);
-    if (c) setCompras(c);
-    if (p) setProveedores(p);
+    try {
+      const [{ data: c }, { data: p }] = await Promise.all([
+        supabase.from("compras").select("*, proveedores(nombre)").order("fecha", { ascending: false }),
+        supabase.from("proveedores").select("id, nombre").order("nombre"),
+      ]);
+      if (c) setCompras(c);
+      if (p) setProveedores(p);
 
-    let todosProductos: Producto[] = [];
-    let desde = 0;
-    while (true) {
-      const { data: pr } = await supabase.from("productos").select("id, nombre, stock, laboratorio").order("nombre").range(desde, desde + 999);
-      if (!pr || pr.length === 0) break;
-      todosProductos = [...todosProductos, ...pr];
-      if (pr.length < 1000) break;
-      desde += 1000;
+      let todosProductos: Producto[] = [];
+      let desde = 0;
+      while (true) {
+        const { data: pr } = await supabase.from("productos").select("id, nombre, stock, laboratorio").order("nombre").range(desde, desde + 999);
+        if (!pr || pr.length === 0) break;
+        todosProductos = [...todosProductos, ...pr];
+        if (pr.length < 1000) break;
+        desde += 1000;
+      }
+      setProductos(todosProductos);
+    } catch (e) {
+      console.error("Error cargando compras:", e)
+    } finally {
+      setLoading(false);
     }
-    setProductos(todosProductos);
-    setLoading(false);
   }
 
   function abrirNueva() {

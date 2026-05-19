@@ -427,27 +427,31 @@ export default function Ventas() {
 
   async function cargarHistorial() {
     setLoadingHistorial(true)
-    // Convertir fechas locales a UTC para queries correctas en zona Argentina
-    const desdeUTC = fechaDesde ? new Date(fechaDesde + "T00:00:00").toISOString() : null
-    const hastaUTC = fechaHasta ? new Date(fechaHasta + "T23:59:59").toISOString() : null
-    let query = supabase.from("ventas").select("*, clientes(nombre, apellido)").order("id", { ascending: false })
-    if (desdeUTC) query = query.gte("fecha", desdeUTC)
-    if (hastaUTC) query = query.lte("fecha", hastaUTC)
-    if (!fechaDesde && !fechaHasta) query = query.limit(200)
-    const { data } = await query
-    if (!data || data.some((v: any) => v.clientes === undefined)) {
-      let q2 = supabase.from("ventas").select("*").order("id", { ascending: false })
-      if (desdeUTC) q2 = q2.gte("fecha", desdeUTC)
-      if (hastaUTC) q2 = q2.lte("fecha", hastaUTC)
-      if (!fechaDesde && !fechaHasta) q2 = q2.limit(200)
-      const { data: ventasSolas } = await q2
-      const clienteIds = [...new Set(ventasSolas?.map((v: any) => v.cliente_id) || [])]
-      const { data: clientesData } = await supabase.from("clientes").select("id, nombre, apellido").in("id", clienteIds)
-      const clientesMap: Record<number, any> = {}
-      clientesData?.forEach((c: any) => { clientesMap[c.id] = c })
-      setVentas(ventasSolas?.map((v: any) => ({ ...v, clientes: clientesMap[v.cliente_id] || null })) || [])
-    } else { setVentas(data || []) }
-    setLoadingHistorial(false)
+    try {
+      const desdeUTC = fechaDesde ? new Date(fechaDesde + "T00:00:00").toISOString() : null
+      const hastaUTC = fechaHasta ? new Date(fechaHasta + "T23:59:59").toISOString() : null
+      let query = supabase.from("ventas").select("*, clientes(nombre, apellido)").order("id", { ascending: false })
+      if (desdeUTC) query = query.gte("fecha", desdeUTC)
+      if (hastaUTC) query = query.lte("fecha", hastaUTC)
+      if (!fechaDesde && !fechaHasta) query = query.limit(200)
+      const { data } = await query
+      if (!data || data.some((v: any) => v.clientes === undefined)) {
+        let q2 = supabase.from("ventas").select("*").order("id", { ascending: false })
+        if (desdeUTC) q2 = q2.gte("fecha", desdeUTC)
+        if (hastaUTC) q2 = q2.lte("fecha", hastaUTC)
+        if (!fechaDesde && !fechaHasta) q2 = q2.limit(200)
+        const { data: ventasSolas } = await q2
+        const clienteIds = [...new Set(ventasSolas?.map((v: any) => v.cliente_id) || [])]
+        const { data: clientesData } = await supabase.from("clientes").select("id, nombre, apellido").in("id", clienteIds)
+        const clientesMap: Record<number, any> = {}
+        clientesData?.forEach((c: any) => { clientesMap[c.id] = c })
+        setVentas(ventasSolas?.map((v: any) => ({ ...v, clientes: clientesMap[v.cliente_id] || null })) || [])
+      } else { setVentas(data || []) }
+    } catch (e) {
+      console.error("Error cargando historial:", e)
+    } finally {
+      setLoadingHistorial(false)
+    }
   }
 
   async function verDetalle(v: any) {

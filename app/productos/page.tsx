@@ -355,36 +355,38 @@ export default function Productos() {
   }
 
   async function cargar() {
-    // Productos y lotes en paralelo
-    const [productosData, lotesData] = await Promise.all([
-      // Productos: paginado por si hay más de 1000
-      (async () => {
-        let todos: any[] = [], desde = 0
-        while (true) {
-          const { data } = await supabase.from("productos").select("*").order("nombre").range(desde, desde + 999)
-          if (!data?.length) break
-          todos = [...todos, ...data]
-          if (data.length < 1000) break
-          desde += 1000
-        }
-        return todos
-      })(),
-      // Lotes: una sola query sin filtrar por producto_id
-      supabase.from("lotes").select("*").gt("cantidad", 0)
-        .order("fecha_vencimiento", { ascending: true })
-        .then(r => r.data || [])
-    ])
+    try {
+      // Productos y lotes en paralelo
+      const [productosData, lotesData] = await Promise.all([
+        (async () => {
+          let todos: any[] = [], desde = 0
+          while (true) {
+            const { data } = await supabase.from("productos").select("*").order("nombre").range(desde, desde + 999)
+            if (!data?.length) break
+            todos = [...todos, ...data]
+            if (data.length < 1000) break
+            desde += 1000
+          }
+          return todos
+        })(),
+        supabase.from("lotes").select("*").gt("cantidad", 0)
+          .order("fecha_vencimiento", { ascending: true })
+          .then(r => r.data || [])
+      ])
 
-    // Armar mapa de lotes por producto
-    const mapa: Record<number, any[]> = {}
-    for (const l of lotesData) {
-      if (!mapa[l.producto_id]) mapa[l.producto_id] = []
-      mapa[l.producto_id].push(l)
+      const mapa: Record<number, any[]> = {}
+      for (const l of lotesData) {
+        if (!mapa[l.producto_id]) mapa[l.producto_id] = []
+        mapa[l.producto_id].push(l)
+      }
+
+      setProductos(productosData)
+      setLotesMap(mapa)
+    } catch (e) {
+      console.error("Error cargando productos:", e)
+    } finally {
+      setCargando(false)
     }
-
-    setProductos(productosData)
-    setLotesMap(mapa)
-    setCargando(false)
   }
 
 

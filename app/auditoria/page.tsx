@@ -39,13 +39,18 @@ export default function Auditoria() {
 
   async function cargar() {
     setLoading(true)
-    const { data } = await supabase
-      .from("auditoria")
-      .select("*")
-      .order("fecha", { ascending: false })
-      .limit(500)
-    setDatos(data || [])
-    setLoading(false)
+    try {
+      const { data } = await supabase
+        .from("auditoria")
+        .select("*")
+        .order("fecha", { ascending: false })
+        .limit(500)
+      setDatos(data || [])
+    } catch (e) {
+      console.error("Error cargando auditoria:", e)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const tablas = [...new Set(datos.map(d => d.tabla).filter(Boolean))]

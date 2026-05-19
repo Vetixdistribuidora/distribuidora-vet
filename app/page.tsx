@@ -48,10 +48,13 @@ export default function Dashboard() {
   useEffect(() => { iniciar() }, [])
 
   async function iniciar() {
-    const { data } = await supabase.auth.getSession()
-    if (!data.session) { router.push("/login"); return }
-    await cargarDatos()
-    setLoading(false)
+    try {
+      await cargarDatos()
+    } catch (e) {
+      console.error("Error cargando dashboard:", e)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function cargarDatos() {

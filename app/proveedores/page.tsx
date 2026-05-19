@@ -81,9 +81,14 @@ export default function ProveedoresPage() {
 
   async function cargarProveedores() {
     setLoading(true);
-    const { data, error } = await supabase.from("proveedores_con_saldo").select("*").order("nombre");
-    if (!error && data) setProveedores(data);
-    setLoading(false);
+    try {
+      const { data, error } = await supabase.from("proveedores_con_saldo").select("*").order("nombre");
+      if (!error && data) setProveedores(data);
+    } catch (e) {
+      console.error("Error cargando proveedores:", e)
+    } finally {
+      setLoading(false);
+    }
   }
 
   function abrirCrear() {
