@@ -103,7 +103,7 @@ export default function ComprasPage() {
   const [compras, setCompras] = useState<Compra[]>([]);
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [busquedaProducto, setBusquedaProducto] = useState("");

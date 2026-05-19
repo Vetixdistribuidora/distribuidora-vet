@@ -38,7 +38,7 @@ export default function CuentasCorrientes() {
   const [resumen, setResumen] = useState<Record<number, { deuda: number; ventasPendientes: number }>>({})
   const [clienteActivo, setClienteActivo] = useState<any | null>(null)
   const [ventas, setVentas] = useState<any[]>([])
-  const [cargando, setCargando] = useState(true)
+  const [cargando, setCargando] = useState(false)
   const [cargandoVentas, setCargandoVentas] = useState(false)
   const [busqueda, setBusqueda] = useState("")
   const [filtro, setFiltro] = useState<"deudores" | "todos">("deudores")
@@ -60,11 +60,16 @@ export default function CuentasCorrientes() {
 
   async function inicializar() {
     setCargando(true)
-    const { data } = await supabase.from("clientes").select("*").order("nombre")
-    const lista = data || []
-    setClientes(lista)
-    await calcularResumen(lista)
-    setCargando(false)
+    try {
+      const { data } = await supabase.from("clientes").select("*").order("nombre")
+      const lista = data || []
+      setClientes(lista)
+      await calcularResumen(lista)
+    } catch (e) {
+      console.error("Error cargando cuentas:", e)
+    } finally {
+      setCargando(false)
+    }
   }
 
   async function calcularResumen(lista: any[]) {

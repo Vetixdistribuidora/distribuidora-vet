@@ -222,7 +222,7 @@ function ModalLote({
 
 export default function Productos() {
   const [productos, setProductos] = useState<any[]>([])
-  const [cargando, setCargando] = useState(true)
+  const [cargando, setCargando] = useState(false)
   const [toast, setToast] = useState<any>(null)
   const [busqueda, setBusqueda] = useState("")
   const [filtroCategoria, setFiltroCategoria] = useState("")

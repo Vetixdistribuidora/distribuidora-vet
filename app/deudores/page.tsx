@@ -28,7 +28,7 @@ const responsiveStyles = `
 
 export default function Deudores() {
   const [deudores, setDeudores] = useState<any[]>([])
-  const [cargando, setCargando] = useState(true)
+  const [cargando, setCargando] = useState(false)
   const [busqueda, setBusqueda] = useState("")
   const [expandidos, setExpandidos] = useState<Set<number>>(new Set())
 

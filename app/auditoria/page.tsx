@@ -30,7 +30,7 @@ const responsiveStyles = `
 
 export default function Auditoria() {
   const [datos, setDatos] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [busqueda, setBusqueda] = useState("")
   const [filtroAccion, setFiltroAccion] = useState("todos")
   const [filtroTabla, setFiltroTabla] = useState("todas")

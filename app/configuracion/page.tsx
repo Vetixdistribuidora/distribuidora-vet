@@ -29,7 +29,7 @@ export default function ConfiguracionPage() {
   const [form, setForm] = useState<OrgForm>(EMPTY)
   const [orgId, setOrgId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState("")
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [exito, setExito] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -38,24 +38,29 @@ export default function ConfiguracionPage() {
 
   async function cargar() {
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) setUserEmail(user.email ?? "")
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) setUserEmail(user.email ?? "")
 
-    const { data: org } = await supabase
-      .from("organizaciones")
-      .select("*")
-      .single()
+      const { data: org } = await supabase
+        .from("organizaciones")
+        .select("*")
+        .single()
 
-    if (org) {
-      setOrgId(org.id)
-      setForm({
-        nombre:    org.nombre    ?? "",
-        telefono:  org.telefono  ?? "",
-        email:     org.email     ?? "",
-        direccion: org.direccion ?? "",
-      })
+      if (org) {
+        setOrgId(org.id)
+        setForm({
+          nombre:    org.nombre    ?? "",
+          telefono:  org.telefono  ?? "",
+          email:     org.email     ?? "",
+          direccion: org.direccion ?? "",
+        })
+      }
+    } catch (e) {
+      console.error("Error cargando configuracion:", e)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   function set(field: keyof OrgForm, value: string) {

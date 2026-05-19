@@ -58,7 +58,7 @@ const responsiveStyles = `
 
 export default function Clientes() {
   const [clientes, setClientes] = useState<any[]>([])
-  const [cargando, setCargando] = useState(true)
+  const [cargando, setCargando] = useState(false)
   const [toast, setToast] = useState<any>(null)
   const [busqueda, setBusqueda] = useState("")
   const [modalNuevo, setModalNuevo] = useState(false)
@@ -88,10 +88,15 @@ export default function Clientes() {
   }
 
   async function cargar() {
-    const { data } = await supabase.from("clientes").select("*").order("nombre")
-    setClientes(data || [])
-    setCargando(false)
-    await cargarDeudas(data || [])
+    try {
+      const { data } = await supabase.from("clientes").select("*").order("nombre")
+      setClientes(data || [])
+      await cargarDeudas(data || [])
+    } catch (e) {
+      console.error("Error cargando clientes:", e)
+    } finally {
+      setCargando(false)
+    }
   }
 
   async function cargarDeudas(lista: any[]) {

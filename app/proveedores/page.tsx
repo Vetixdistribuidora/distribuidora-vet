@@ -56,7 +56,7 @@ const inputLightStyle: React.CSSProperties = {
 
 export default function ProveedoresPage() {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [modalAbierto, setModalAbierto] = useState(false);
   const [editando, setEditando] = useState<Proveedor | null>(null);

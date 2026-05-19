@@ -99,10 +99,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {})
-      // Cuando un nuevo SW toma el control (nueva versión deployada), recargar para aplicar cambios
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        window.location.reload()
-      })
+      // NO forzar reload en controllerchange — causaba que todas las pestañas
+      // se recargaran simultáneamente en cada deploy y quedaban en "Cargando..."
     }
   }, [])
 
