@@ -20,9 +20,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       if (event === "SIGNED_OUT") {
         setUsuario(null)
         router.replace("/login")
-      } else if (session) {
+      } else if (event === "SIGNED_IN" && session) {
+        // Solo actualizar en SIGNED_IN, no en TOKEN_REFRESHED
+        // TOKEN_REFRESHED causaba re-renders innecesarios del layout
         setUsuario(session.user)
-        // Cargar nombre del negocio
+        const { data: org } = await supabase.from("organizaciones").select("nombre").single()
+        if (org) setOrgNombre(org.nombre)
+      } else if (event === "INITIAL_SESSION" && session) {
+        setUsuario(session.user)
         const { data: org } = await supabase.from("organizaciones").select("nombre").single()
         if (org) setOrgNombre(org.nombre)
       }

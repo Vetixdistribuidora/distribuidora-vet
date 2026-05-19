@@ -28,7 +28,7 @@ type ModalTipo = "stockBajo" | "sinStock" | "sinVentas" | "sinRotacion" | "lotes
 
 export default function Dashboard() {
   const router = useRouter()
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [kpis, setKpis] = useState<any>({})
   const [alertas, setAlertas] = useState<any>({ sinStock: [], stockBajo: [], sinVentas: [], sinRotacion: [] })
   const [ventasGrafico, setVentasGrafico] = useState<any[]>([])
@@ -48,6 +48,7 @@ export default function Dashboard() {
   useEffect(() => { iniciar() }, [])
 
   async function iniciar() {
+    setLoading(true)
     try {
       await cargarDatos()
     } catch (e) {

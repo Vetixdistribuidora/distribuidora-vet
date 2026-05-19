@@ -8,21 +8,22 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter()
 
   useEffect(() => {
-    // Verificar sesión al montar (lee localStorage, sin red)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) router.replace("/login")
+    // Solo reaccionar a SIGNED_OUT explícito.
+    // NO llamar getSession() aquí — puede devolver null durante el token refresh
+    // y causar un redirect incorrecto que desmonta todo el árbol de componentes.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        router.replace("/login")
+      }
+      // INITIAL_SESSION sin sesión = usuario no autenticado
+      if (event === "INITIAL_SESSION" && !session) {
+        router.replace("/login")
+      }
     })
-
-    // Redirigir solo si el usuario cierra sesión explícitamente
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") router.replace("/login")
-    })
-
     return () => subscription.unsubscribe()
   }, [])
 
-  // Sin estado de carga — mostrar contenido siempre.
-  // Si no hay sesión, la redirección ocurre en < 100ms.
-  // El RLS de Supabase protege todos los datos de usuarios no autenticados.
+  // Sin loading state — nunca bloquea la UI.
+  // RLS de Supabase protege todos los datos.
   return <>{children}</>
 }
