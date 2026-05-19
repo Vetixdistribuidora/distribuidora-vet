@@ -27,6 +27,10 @@ interface PagoCompra {
 }
 
 const METODOS = ["Efectivo", "Transferencia", "Cheque", "Tarjeta", "Otro"];
+function fechaLocal(f: string | null | undefined): string {
+  if (!f) return ""
+  return new Date(f).toLocaleDateString("es-AR")
+}
 const METODO_COLOR: Record<string, { bg: string; color: string }> = {
   Efectivo:      { bg: "rgba(74,222,128,0.15)",  color: "#4ade80" },
   Transferencia: { bg: "rgba(96,165,250,0.15)",  color: "#60a5fa" },
@@ -108,7 +112,7 @@ export default function ComprasPage() {
 
   const [modalNueva, setModalNueva] = useState(false);
   const [form, setForm] = useState({
-    proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
+    proveedor_id: "", fecha: new Date().toLocaleDateString("sv-SE"),
     numero_remito: "", fecha_vencimiento: "", metodo_pago: "",
     notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
     incluye_flete: false, tipo_flete: "pesos" as "pct" | "pesos", valor_flete: "",
@@ -164,7 +168,7 @@ export default function ComprasPage() {
 
   function abrirNueva() {
     setForm({
-      proveedor_id: "", fecha: new Date().toISOString().slice(0, 10),
+      proveedor_id: "", fecha: new Date().toLocaleDateString("sv-SE"),
       numero_remito: "", fecha_vencimiento: "", metodo_pago: "",
       notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
       incluye_flete: false, tipo_flete: "pesos", valor_flete: "",
@@ -973,7 +977,7 @@ export default function ComprasPage() {
                           return (
                             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.06)", flexWrap: "wrap" }}>
                               <span style={{ fontSize: 11, color: "#4b5563", fontWeight: 700, flexShrink: 0 }}>#{idx + 1}</span>
-                              <span style={{ fontSize: 12, color: "#9ca3af", flexShrink: 0 }}>📅 {p.fecha}</span>
+                              <span style={{ fontSize: 12, color: "#9ca3af", flexShrink: 0 }}>📅 {fechaLocal(p.fecha)}</span>
                               {p.metodo_pago
                                 ? <span style={{ background: mc.bg, color: mc.color, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, flexShrink: 0 }}>💳 {p.metodo_pago}</span>
                                 : <span style={{ color: "#4b5563", fontSize: 11 }}>—</span>

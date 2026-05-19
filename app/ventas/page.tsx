@@ -20,6 +20,11 @@ function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
 function fmt(num: number) {
   return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
+// Convierte timestamp de Supabase (UTC) a fecha local YYYY-MM-DD
+function fechaLocal(f: string | null | undefined): string {
+  if (!f) return ""
+  return new Date(f).toLocaleDateString("sv-SE")
+}
 
 interface DatosImpresion {
   nroFactura: string; clienteSeleccionado: any; carrito: any[]
@@ -422,15 +427,18 @@ export default function Ventas() {
 
   async function cargarHistorial() {
     setLoadingHistorial(true)
+    // Convertir fechas locales a UTC para queries correctas en zona Argentina
+    const desdeUTC = fechaDesde ? new Date(fechaDesde + "T00:00:00").toISOString() : null
+    const hastaUTC = fechaHasta ? new Date(fechaHasta + "T23:59:59").toISOString() : null
     let query = supabase.from("ventas").select("*, clientes(nombre, apellido)").order("id", { ascending: false })
-    if (fechaDesde) query = query.gte("fecha", fechaDesde)
-    if (fechaHasta) query = query.lte("fecha", fechaHasta + "T23:59:59")
+    if (desdeUTC) query = query.gte("fecha", desdeUTC)
+    if (hastaUTC) query = query.lte("fecha", hastaUTC)
     if (!fechaDesde && !fechaHasta) query = query.limit(200)
     const { data } = await query
     if (!data || data.some((v: any) => v.clientes === undefined)) {
       let q2 = supabase.from("ventas").select("*").order("id", { ascending: false })
-      if (fechaDesde) q2 = q2.gte("fecha", fechaDesde)
-      if (fechaHasta) q2 = q2.lte("fecha", fechaHasta + "T23:59:59")
+      if (desdeUTC) q2 = q2.gte("fecha", desdeUTC)
+      if (hastaUTC) q2 = q2.lte("fecha", hastaUTC)
       if (!fechaDesde && !fechaHasta) q2 = q2.limit(200)
       const { data: ventasSolas } = await q2
       const clienteIds = [...new Set(ventasSolas?.map((v: any) => v.cliente_id) || [])]
@@ -562,7 +570,7 @@ export default function Ventas() {
   function exportarVentas() {
     const datos = ventasFiltradas.map(v => ({
       "N° Presupuesto": v.nro_factura,
-      "Fecha": v.fecha?.slice(0, 10) || "",
+      "Fecha": fechaLocal(v.fecha),
       "Cliente": (v.clientes?.nombre || "") + " " + (v.clientes?.apellido || ""),
       "Estado": ESTADO_VENTA[v.estado]?.label || v.estado,
       "Método de cobro": v.metodo_cobro || "",
@@ -654,7 +662,7 @@ export default function Ventas() {
           cantidad: item.cantidad,
           precio: precioEfectivo(item),
           bonificacion: item.bonificacion || 0,
-          costo_unitario: prod?.precio_venta ?? 0,
+          costo_unitario: prod?.costo ?? 0,
         }
       })
     )
@@ -1090,7 +1098,7 @@ export default function Ventas() {
                         <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{v.clientes?.nombre} {v.clientes?.apellido}</span>
                         <span style={{ background: est.bg, color: est.color, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>{est.label}</span>
                       </div>
-                      <div style={{ fontSize: 12, color: "#6b7280" }}>📅 {v.fecha?.slice(0, 10)} · N° {v.nro_factura}</div>
+                      <div style={{ fontSize: 12, color: "#6b7280" }}>📅 {fechaLocal(v.fecha)} · N° {v.nro_factura}</div>
                     </div>
                     <div className="acciones" style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                       <span style={{ fontSize: 16, fontWeight: 800, color: "#111827" }}>{fmt(Number(v.total))}</span>
@@ -1355,7 +1363,7 @@ export default function Ventas() {
                         <span style={{ background: estadoColor.bg, color: estadoColor.color, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>{nc.estado === "anulada" ? "Anulada" : "Activa"}</span>
                       </div>
                       <p style={{ margin: "0 0 4px", fontSize: 13, color: "#374151", fontWeight: 600 }}>{nc.clientes?.nombre} {nc.clientes?.apellido}</p>
-                      <p style={{ margin: "0 0 4px", fontSize: 12, color: "#6b7280" }}>Presupuesto N° {nc.ventas?.nro_factura ?? nc.venta_id} · {nc.fecha?.slice(0, 10)}</p>
+                      <p style={{ margin: "0 0 4px", fontSize: 12, color: "#6b7280" }}>Presupuesto N° {nc.ventas?.nro_factura ?? nc.venta_id} · {fechaLocal(nc.fecha)}</p>
                       {nc.motivo && <p style={{ margin: "0 0 4px", fontSize: 12, color: "#6b7280" }}>Motivo: {nc.motivo}</p>}
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
                         {items.map((it: any, i: number) => (
@@ -1455,7 +1463,7 @@ export default function Ventas() {
                 <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: 0 }}>{ventaDetalle.clientes?.nombre} {ventaDetalle.clientes?.apellido}</h2>
                 {(() => { const est = ESTADO_VENTA[ventaDetalle.estado] ?? ESTADO_VENTA.cobrada; return <span style={{ background: est.bg, color: est.color, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 6 }}>{est.label}</span> })()}
               </div>
-              <p style={{ color: "#6b7280", fontSize: 12, margin: "6px 0 0" }}>N° {ventaDetalle.nro_factura} · {ventaDetalle.fecha?.slice(0, 10)}</p>
+              <p style={{ color: "#6b7280", fontSize: 12, margin: "6px 0 0" }}>N° {ventaDetalle.nro_factura} · {fechaLocal(ventaDetalle.fecha)}</p>
             </div>
             {loadingDetalle ? <p style={{ color: "#6b7280", fontSize: 13 }}>Cargando...</p> : (
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
@@ -1509,7 +1517,7 @@ export default function Ventas() {
             <div style={{ fontSize: 32, marginBottom: 8 }}>🗑️</div>
             <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "0 0 8px" }}>¿Eliminar venta anulada?</h2>
             <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 8 }}>Cliente: <span style={{ color: "white", fontWeight: 600 }}>{confirmEliminarVenta.clientes?.nombre} {confirmEliminarVenta.clientes?.apellido}</span></p>
-            <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 16 }}>N° {confirmEliminarVenta.nro_factura} · {confirmEliminarVenta.fecha?.slice(0, 10)}</p>
+            <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 16 }}>N° {confirmEliminarVenta.nro_factura} · {fechaLocal(confirmEliminarVenta.fecha)}</p>
             <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "10px 12px", marginBottom: 24 }}>
               <p style={{ color: "#f87171", fontSize: 12, margin: 0 }}>Se elimina el registro definitivamente. El stock ya fue restaurado al anularla.</p>
             </div>

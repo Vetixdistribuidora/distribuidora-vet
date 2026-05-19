@@ -38,8 +38,8 @@ function CambioChip({ actual, ant }: { actual: number; ant: number }) {
 
 export default function Reportes() {
   const hoy = new Date()
-  const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().slice(0, 10)
-  const hoyStr = hoy.toISOString().slice(0, 10)
+  const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toLocaleDateString("sv-SE")
+  const hoyStr = hoy.toLocaleDateString("sv-SE")
 
   const [desde, setDesde] = useState(primerDiaMes)
   const [hasta, setHasta] = useState(hoyStr)
@@ -59,47 +59,54 @@ export default function Reportes() {
   function applyPreset(preset: string) {
     const h = new Date()
     if (preset === "mes") {
-      setDesde(new Date(h.getFullYear(), h.getMonth(), 1).toISOString().slice(0, 10))
-      setHasta(h.toISOString().slice(0, 10))
+      setDesde(new Date(h.getFullYear(), h.getMonth(), 1).toLocaleDateString("sv-SE"))
+      setHasta(h.toLocaleDateString("sv-SE"))
     } else if (preset === "mes_ant") {
       const ini = new Date(h.getFullYear(), h.getMonth() - 1, 1)
       const fin = new Date(h.getFullYear(), h.getMonth(), 0)
-      setDesde(ini.toISOString().slice(0, 10)); setHasta(fin.toISOString().slice(0, 10))
+      setDesde(ini.toLocaleDateString("sv-SE")); setHasta(fin.toLocaleDateString("sv-SE"))
     } else if (preset === "3meses") {
       const ini = new Date(h); ini.setMonth(ini.getMonth() - 3)
-      setDesde(ini.toISOString().slice(0, 10)); setHasta(h.toISOString().slice(0, 10))
+      setDesde(ini.toLocaleDateString("sv-SE")); setHasta(h.toLocaleDateString("sv-SE"))
     } else if (preset === "anio") {
-      setDesde(h.getFullYear() + "-01-01"); setHasta(h.toISOString().slice(0, 10))
+      setDesde(h.getFullYear() + "-01-01"); setHasta(h.toLocaleDateString("sv-SE"))
     }
   }
 
   async function cargar() {
     setCargando(true)
     try {
-      const desdeDate = new Date(desde)
-      const hastaDate = new Date(hasta)
+      // "T00:00:00" sin zona → se interpreta en hora local (Argentina), no UTC
+      const desdeDate = new Date(desde + "T00:00:00")
+      const hastaDate = new Date(hasta + "T00:00:00")
       const diasPeriodo = Math.max(1, Math.round((hastaDate.getTime() - desdeDate.getTime()) / (1000 * 60 * 60 * 24)) + 1)
 
       // Período anterior (misma duración, inmediatamente antes)
       const antHastaDate = new Date(desdeDate); antHastaDate.setDate(antHastaDate.getDate() - 1)
       const antDesdeDate = new Date(antHastaDate); antDesdeDate.setDate(antDesdeDate.getDate() - diasPeriodo + 1)
-      const antDesde = antDesdeDate.toISOString().slice(0, 10)
-      const antHasta = antHastaDate.toISOString().slice(0, 10)
+      const antDesde = antDesdeDate.toLocaleDateString("sv-SE")
+      const antHasta = antHastaDate.toLocaleDateString("sv-SE")
+
+      // Convertir fechas locales a UTC para queries
+      const desdeUTC = new Date(desde + "T00:00:00").toISOString()
+      const hastaUTC = new Date(hasta + "T23:59:59").toISOString()
+      const antDesdeUTC = new Date(antDesde + "T00:00:00").toISOString()
+      const antHastaUTC = new Date(antHasta + "T23:59:59").toISOString()
 
       // Todas las queries en paralelo
       const [ventasRes, pagosRes, comprasRes, ventasAntRes] = await Promise.all([
         supabase.from("ventas")
           .select("id, total, cliente_id, fecha, estado")
-          .gte("fecha", desde).lte("fecha", hasta + "T23:59:59").neq("estado", "anulada"),
+          .gte("fecha", desdeUTC).lte("fecha", hastaUTC).neq("estado", "anulada"),
         supabase.from("pagos_cuenta_corriente")
           .select("monto")
-          .gte("fecha", desde + "T00:00:00").lte("fecha", hasta + "T23:59:59"),
+          .gte("fecha", desdeUTC).lte("fecha", hastaUTC),
         supabase.from("compras")
           .select("total")
-          .gte("fecha", desde).lte("fecha", hasta + "T23:59:59"),
+          .gte("fecha", desdeUTC).lte("fecha", hastaUTC),
         supabase.from("ventas")
           .select("id, total")
-          .gte("fecha", antDesde).lte("fecha", antHasta + "T23:59:59").neq("estado", "anulada"),
+          .gte("fecha", antDesdeUTC).lte("fecha", antHastaUTC).neq("estado", "anulada"),
       ])
 
       const ventas = ventasRes.data || []
@@ -132,8 +139,8 @@ export default function Reportes() {
       const productosMap: Record<number, { nombre: string; costoReal: number }> = {}
       for (let i = 0; i < productoIdsUnicos.length; i += CHUNK) {
         const { data: prods } = await supabase.from("productos")
-          .select("id, nombre, precio_venta").in("id", productoIdsUnicos.slice(i, i + CHUNK))
-        prods?.forEach((p: any) => { productosMap[p.id] = { nombre: p.nombre, costoReal: p.precio_venta ?? 0 } })
+          .select("id, nombre, costo").in("id", productoIdsUnicos.slice(i, i + CHUNK))
+        prods?.forEach((p: any) => { productosMap[p.id] = { nombre: p.nombre, costoReal: p.costo ?? 0 } })
       }
 
       // ── KPIs base ─────────────────────────────────────────────────────────────
@@ -208,7 +215,7 @@ export default function Reportes() {
       // ── Gráfico diario ────────────────────────────────────────────────────────
       const diasMap: Record<string, number> = {}
       for (const v of ventas) {
-        const fecha = String(v.fecha).slice(0, 10)
+        const fecha = new Date(v.fecha).toLocaleDateString("sv-SE")
         diasMap[fecha] = (diasMap[fecha] || 0) + (v.total || 0)
       }
       setGraficoDiario(Object.entries(diasMap).sort(([a], [b]) => a.localeCompare(b))
@@ -221,12 +228,12 @@ export default function Reportes() {
 
   // Presets activo
   const hoyNow = new Date()
-  const primerMes = new Date(hoyNow.getFullYear(), hoyNow.getMonth(), 1).toISOString().slice(0, 10)
-  const hoyISO = hoyNow.toISOString().slice(0, 10)
-  const primerMesAnt = new Date(hoyNow.getFullYear(), hoyNow.getMonth() - 1, 1).toISOString().slice(0, 10)
-  const finMesAnt = new Date(hoyNow.getFullYear(), hoyNow.getMonth(), 0).toISOString().slice(0, 10)
+  const primerMes = new Date(hoyNow.getFullYear(), hoyNow.getMonth(), 1).toLocaleDateString("sv-SE")
+  const hoyISO = hoyNow.toLocaleDateString("sv-SE")
+  const primerMesAnt = new Date(hoyNow.getFullYear(), hoyNow.getMonth() - 1, 1).toLocaleDateString("sv-SE")
+  const finMesAnt = new Date(hoyNow.getFullYear(), hoyNow.getMonth(), 0).toLocaleDateString("sv-SE")
   const hace3m = new Date(hoyNow); hace3m.setMonth(hace3m.getMonth() - 3)
-  const hace3mISO = hace3m.toISOString().slice(0, 10)
+  const hace3mISO = hace3m.toLocaleDateString("sv-SE")
   const inicioAnio = hoyNow.getFullYear() + "-01-01"
   function getActivePreset() {
     if (desde === primerMes && hasta === hoyISO) return "mes"

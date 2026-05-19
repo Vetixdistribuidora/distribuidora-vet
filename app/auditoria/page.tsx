@@ -49,7 +49,7 @@ export default function Auditoria() {
   }
 
   const tablas = [...new Set(datos.map(d => d.tabla).filter(Boolean))]
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = new Date().toLocaleDateString("sv-SE")
 
   const filtrados = datos.filter(d => {
     const textoOk = !busqueda || [d.usuario, d.tabla, d.accion, String(d.registro_id || "")].join(" ").toLowerCase().includes(busqueda.toLowerCase())
@@ -58,7 +58,7 @@ export default function Auditoria() {
     return textoOk && accionOk && tablaOk
   })
 
-  const hoy_count = datos.filter(d => d.fecha?.slice(0, 10) === hoy).length
+  const hoy_count = datos.filter(d => d.fecha && new Date(d.fecha).toLocaleDateString("sv-SE") === hoy).length
   const inserts = datos.filter(d => d.accion === "insert").length
   const updates = datos.filter(d => d.accion === "update").length
   const deletes = datos.filter(d => d.accion === "delete").length

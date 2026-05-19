@@ -8,6 +8,10 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 function fmt(num: number) {
   return "$" + Math.round(num).toLocaleString("es-AR")
 }
+function fechaLocal(f: string | null | undefined): string {
+  if (!f) return ""
+  return new Date(f).toLocaleDateString("sv-SE")
+}
 
 function fmtExacto(num: number) {
   return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -52,9 +56,18 @@ export default function Dashboard() {
 
   async function cargarDatos() {
     const hoyDate = new Date()
-    const hoyStr = hoyDate.toISOString().slice(0, 10)
+
+    // ── Fechas en hora LOCAL (Argentina = UTC-3) ──────────────────────────────
+    // toLocaleDateString("sv-SE") devuelve YYYY-MM-DD usando la hora del navegador
+    const hoyStr = hoyDate.toLocaleDateString("sv-SE")
+    // Medianoche local convertida a UTC para queries Supabase (timestamptz)
+    // Ej. Argentina: "2026-05-20T00:00:00" local → "2026-05-20T03:00:00.000Z" UTC
+    const inicioHoyUTC = new Date(hoyStr + "T00:00:00").toISOString()
+    // Inicio de mes: new Date(y, m, 1) ya usa hora local → toISOString() es correcto
     const inicioMesStr = new Date(hoyDate.getFullYear(), hoyDate.getMonth(), 1).toISOString()
-    const en90Str = new Date(hoyDate.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    // 90 días usando fecha local
+    const d90 = new Date(hoyDate); d90.setDate(d90.getDate() + 90)
+    const en90Str = d90.toLocaleDateString("sv-SE")
 
     // ── Todo en paralelo: 1 RPC + 7 queries pequeñas ─────────────────────────
     const [kpisRes, lotesRes, ccRes, ventasHoyRes, ventasMesRes, prodRes, pagosHoyRes, pagosMesRes] = await Promise.all([
@@ -66,12 +79,12 @@ export default function Dashboard() {
         .eq("estado", "cuenta_corriente").order("id", { ascending: false }),
       supabase.from("ventas")
         .select("id, total, nro_factura, fecha, estado, clientes(nombre, apellido)")
-        .gte("fecha", hoyStr + "T00:00:00").neq("estado", "anulada"),
+        .gte("fecha", inicioHoyUTC).neq("estado", "anulada"),
       supabase.from("ventas")
         .select("id, total, nro_factura, fecha, estado, clientes(nombre, apellido)")
         .gte("fecha", inicioMesStr).neq("estado", "anulada").order("id", { ascending: false }),
       supabase.from("productos").select("id, nombre, stock"),
-      supabase.from("pagos_cuenta_corriente").select("monto").gte("fecha", hoyStr + "T00:00:00"),
+      supabase.from("pagos_cuenta_corriente").select("monto").gte("fecha", inicioHoyUTC),
       supabase.from("pagos_cuenta_corriente").select("monto").gte("fecha", inicioMesStr),
     ])
 
@@ -130,7 +143,7 @@ export default function Dashboard() {
     ;(k.grafico_7dias || []).forEach((d: any) => { map7[d.fecha] = Number(d.total) })
     const ultimos7 = [...Array(7)].map((_, i) => {
       const d = new Date(); d.setDate(d.getDate() - (6 - i))
-      const iso = d.toISOString().slice(0, 10)
+      const iso = d.toLocaleDateString("sv-SE")   // fecha LOCAL, no UTC
       return { fecha: iso.slice(8, 10) + "/" + iso.slice(5, 7), total: map7[iso] || 0 }
     })
     setVentasGrafico(ultimos7)
@@ -142,7 +155,7 @@ export default function Dashboard() {
     ;(k.grafico_compras_6m || []).forEach((d: any) => { mapC[d.mes] = Number(d.compras) })
     const ultimos6 = [...Array(6)].map((_, i) => {
       const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (5 - i))
-      const mes = d.toISOString().slice(0, 7)
+      const mes = d.toLocaleDateString("sv-SE").slice(0, 7)   // mes LOCAL, no UTC
       const label = d.toLocaleDateString("es-AR", { month: "short", year: "2-digit" })
       return { fecha: label, ventas: mapV[mes] || 0, compras: mapC[mes] || 0 }
     })
@@ -419,7 +432,7 @@ export default function Dashboard() {
                         {v.clientes?.nombre} {v.clientes?.apellido}
                       </div>
                       <div style={{ color: "#6b7280", fontSize: 11, marginTop: 2 }}>
-                        {v.fecha?.slice(0, 10)} · N° {v.nro_factura}
+                        {fechaLocal(v.fecha)} · N° {v.nro_factura}
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -587,7 +600,7 @@ export default function Dashboard() {
                         {v.clientes?.nombre} {v.clientes?.apellido}
                       </div>
                       <div style={{ color: "#6b7280", fontSize: 11, marginTop: 2 }}>
-                        {v.fecha?.slice(0, 10)} · N° {v.nro_factura} · {v.estado === "cuenta_corriente" ? "⏳ CC" : "✅ Cobrada"}
+                        {fechaLocal(v.fecha)} · N° {v.nro_factura} · {v.estado === "cuenta_corriente" ? "⏳ CC" : "✅ Cobrada"}
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -617,7 +630,7 @@ export default function Dashboard() {
                 {ventaDetalle.clientes?.nombre} {ventaDetalle.clientes?.apellido}
               </h2>
               <p style={{ color: "#6b7280", fontSize: 12, margin: 0 }}>
-                N° {ventaDetalle.nro_factura} · {ventaDetalle.fecha?.slice(0, 10)} · {ventaDetalle.estado === "cuenta_corriente" ? "⏳ Cuenta corriente" : "✅ Cobrada"}
+                N° {ventaDetalle.nro_factura} · {fechaLocal(ventaDetalle.fecha)} · {ventaDetalle.estado === "cuenta_corriente" ? "⏳ Cuenta corriente" : "✅ Cobrada"}
               </p>
             </div>
 

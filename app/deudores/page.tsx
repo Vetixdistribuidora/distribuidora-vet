@@ -155,20 +155,8 @@ export default function Deudores() {
       )
       setMontoCobro("")
 
-      // Recargar lista completa (actualiza deudores, cuentas y dashboard por igual)
+      // Recargar lista completa — el useEffect([deudores]) maneja el cierre del modal
       await cargarDeudores()
-
-      // Si el cliente ya no tiene deuda, cerrar el modal
-      const deudorActualizado = deudores.find((d: any) => d.cliente_id === modalCobro.cliente_id)
-      if (!deudorActualizado) {
-        setTimeout(cerrarCobro, 1800)
-      } else {
-        // Actualizar facturas del modal con los datos frescos
-        setModalCobro((prev: any) => {
-          const actualizado = deudores.find((d: any) => d.cliente_id === prev?.cliente_id)
-          return actualizado ? { ...actualizado } : prev
-        })
-      }
     } catch (e: any) {
       setErrorCobro(e.message || "Error al registrar el cobro.")
     } finally {
@@ -176,12 +164,15 @@ export default function Deudores() {
     }
   }
 
-  // Después de recargar deudores, actualizar el deudor del modal si sigue en la lista
+  // Después de recargar deudores: actualizar datos del modal o cerrarlo si el cliente saldó todo
   useEffect(() => {
     if (!modalCobro) return
     const actualizado = deudores.find((d: any) => d.cliente_id === modalCobro.cliente_id)
     if (actualizado) {
       setModalCobro((prev: any) => prev ? { ...actualizado } : prev)
+    } else {
+      // Cliente ya no tiene deuda — cerrar automáticamente
+      setTimeout(cerrarCobro, 1800)
     }
   }, [deudores])
 
