@@ -19,10 +19,16 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         return
       }
 
-      const permitidos = ["clauforte@gmail.com", "santiagozabalegui@gmail.com"]
-      if (!permitidos.includes(user.email ?? "")) {
-        await supabase.auth.signOut()
-        router.replace("/login")
+      // Verificar que el usuario tenga una organización vinculada
+      const { data: orgData } = await supabase
+        .from("org_usuarios")
+        .select("organizacion_id")
+        .eq("user_id", user.id)
+        .maybeSingle()
+
+      if (!orgData) {
+        // Usuario autenticado pero sin org → onboarding
+        router.replace("/onboarding")
         return
       }
 
@@ -30,7 +36,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     check()
-  }, [pathname]) // se re-ejecuta en cada cambio de ruta
+  }, [pathname])
 
   if (!verificado) {
     return (

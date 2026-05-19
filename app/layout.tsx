@@ -11,13 +11,19 @@ import AuthGuard from "@/components/AuthGuard"
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [usuario, setUsuario] = useState<any>(null)
+  const [orgNombre, setOrgNombre] = useState<string>("VETIX")
   const [sidebarAbierto, setSidebarAbierto] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!session) { setUsuario(null); router.replace("/login") }
-      else setUsuario(session.user)
+      else {
+        setUsuario(session.user)
+        // Cargar nombre del negocio
+        const { data: org } = await supabase.from("organizaciones").select("nombre").single()
+        if (org) setOrgNombre(org.nombre)
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -26,6 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   useEffect(() => { setSidebarAbierto(false) }, [pathname])
 
   const isLoginPage = pathname === "/login"
+  const isOnboarding = pathname === "/onboarding"
 
   const getItemStyle = (path: string) => {
     const active = path === "/" ? pathname === "/" : pathname.startsWith(path)
@@ -61,6 +68,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/cuentas")) return "Cuenta Corriente"
     if (pathname.startsWith("/reportes")) return "Reportes"
     if (pathname.startsWith("/deudores")) return "Deudores"
+    if (pathname.startsWith("/configuracion")) return "Configuración"
     return ""
   }
 
@@ -74,6 +82,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/cuentas")) return "📄"
     if (pathname.startsWith("/reportes")) return "📊"
     if (pathname.startsWith("/deudores")) return "⚠️"
+    if (pathname.startsWith("/configuracion")) return "⚙️"
     return ""
   }
 
@@ -90,7 +99,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     }
   }, [])
 
-  if (isLoginPage) {
+  if (isLoginPage || isOnboarding) {
     return (
       <html lang="es">
         <head>
@@ -129,9 +138,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <circle cx="12" cy="4" r="1.3" fill="#93c5fd" />
             </svg>
           </div>
-          <div>
-            <div style={{ fontWeight: "800", fontSize: "17px", letterSpacing: "2px", color: "white", lineHeight: 1 }}>VETIX</div>
-            <div style={{ fontSize: "9px", color: "#3b82f6", letterSpacing: "2.5px", marginTop: "3px", textTransform: "uppercase", fontWeight: "600" }}>Distribuidora</div>
+          <div style={{ overflow: "hidden" }}>
+            <div style={{ fontWeight: "800", fontSize: "15px", letterSpacing: "1px", color: "white", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>{orgNombre}</div>
+            <div style={{ fontSize: "9px", color: "#3b82f6", letterSpacing: "2px", marginTop: "3px", textTransform: "uppercase", fontWeight: "600" }}>Distribuidora</div>
           </div>
         </div>
 
@@ -196,6 +205,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <line x1="21" y1="3" x2="17" y2="7" />
             </svg>
             Deudores
+          </Link>
+          <Link href="/configuracion" style={getItemStyle("/configuracion")} onClick={() => setSidebarAbierto(false)}>
+            <svg style={iconStyle("#94a3b8", pathname.startsWith("/configuracion"))} fill="none" strokeWidth="2" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            Configuración
           </Link>
         </nav>
       </div>
@@ -308,7 +324,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
               <div>
                 <div style={{ fontWeight: "800", fontSize: "16px", color: "#0f172a", lineHeight: 1.2 }}>{getTitle()}</div>
-                <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "1px", fontWeight: 500 }}>VETIX Distribuidora</div>
+                <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "1px", fontWeight: 500 }}>{orgNombre}</div>
               </div>
             </div>
             <div className="header-date" style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 500 }}>

@@ -266,6 +266,13 @@ export default function LoginPage() {
             {loading ? "Ingresando..." : "Ingresar"}
           </button>
 
+          <div style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: "#6b7280" }}>
+            ¿No tenés cuenta?{" "}
+            <a href="/registro" style={{ color: "#60a5fa", textDecoration: "none", fontWeight: 600 }}>
+              Registrarse
+            </a>
+          </div>
+
         </div>
       </div>
     </>
