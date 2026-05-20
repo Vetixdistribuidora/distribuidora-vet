@@ -236,61 +236,60 @@ export default function Ventas() {
       }
     }
     setGuardandoNC(true)
-
-    // Generar número de NC
-    const { data: ultima } = await supabase.from("notas_credito").select("nro_nota").order("id", { ascending: false }).limit(1).maybeSingle()
-    let nextNum = 1
-    if (ultima?.nro_nota) { const m = ultima.nro_nota.match(/(\d+)$/); if (m) nextNum = parseInt(m[1], 10) + 1 }
-    const nroNota = "NC-" + String(nextNum).padStart(5, "0")
-
-    const totalNC = itemsDevueltos.reduce((acc: number, it: any) => acc + it.precio * (ncCantidades[it.producto_id] || 0), 0)
-    const ncItemsData = itemsDevueltos.map((it: any) => ({
-      producto_id: it.producto_id,
-      nombre: it.productos?.nombre || "",
-      cantidad: ncCantidades[it.producto_id] || 0,
-      precio: it.precio
-    }))
-
-    const { error } = await supabase.from("notas_credito").insert({
-      nro_nota: nroNota,
-      venta_id: modalNC.venta.id,
-      cliente_id: modalNC.venta.cliente_id,
-      items: ncItemsData,
-      total: totalNC,
-      motivo: ncMotivo || null,
-      estado: "activa"
-    })
-    if (error) { setGuardandoNC(false); return mostrarToast("❌ " + error.message, "error") }
-
-    // Devolver stock
     try {
+      // Generar número de NC
+      const { data: ultima } = await supabase.from("notas_credito").select("nro_nota").order("id", { ascending: false }).limit(1).maybeSingle()
+      let nextNum = 1
+      if (ultima?.nro_nota) { const m = ultima.nro_nota.match(/(\d+)$/); if (m) nextNum = parseInt(m[1], 10) + 1 }
+      const nroNota = "NC-" + String(nextNum).padStart(5, "0")
+
+      const totalNC = itemsDevueltos.reduce((acc: number, it: any) => acc + it.precio * (ncCantidades[it.producto_id] || 0), 0)
+      const ncItemsData = itemsDevueltos.map((it: any) => ({
+        producto_id: it.producto_id,
+        nombre: it.productos?.nombre || "",
+        cantidad: ncCantidades[it.producto_id] || 0,
+        precio: it.precio
+      }))
+
+      const { error } = await supabase.from("notas_credito").insert({
+        nro_nota: nroNota,
+        venta_id: modalNC.venta.id,
+        cliente_id: modalNC.venta.cliente_id,
+        items: ncItemsData,
+        total: totalNC,
+        motivo: ncMotivo || null,
+        estado: "activa"
+      })
+      if (error) { mostrarToast("❌ " + error.message, "error"); return }
+
+      // Devolver stock
       for (const it of itemsDevueltos) {
         const qty = ncCantidades[it.producto_id] || 0
         const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
         if (prod) await supabase.from("productos").update({ stock: (prod.stock || 0) + qty }).eq("id", it.producto_id)
         await supabase.from("lotes").insert({ producto_id: it.producto_id, cantidad: qty, fecha_vencimiento: null, nro_remito: "NC " + nroNota })
       }
-    } catch (e) {
-      setGuardandoNC(false)
-      return mostrarToast("❌ Error al devolver stock", "error")
-    }
 
-    // Descontar de la venta original
-    const nuevoTotalVenta = Math.max(0, Number(modalNC.venta.total) - totalNC)
-    await supabase.from("ventas").update({ total: nuevoTotalVenta }).eq("id", modalNC.venta.id)
-    // Si era cuenta corriente, actualizar el movimiento de CC
-    if (modalNC.venta.estado === "cuenta_corriente") {
-      const { data: ultimo } = await supabase.from("cuentas_corrientes").select("id, saldo").eq("cliente_id", modalNC.venta.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
-      if (ultimo) {
-        const nuevoSaldoCC = Math.max(0, Number(ultimo.saldo) - totalNC)
-        await supabase.from("cuentas_corrientes").insert({ cliente_id: modalNC.venta.cliente_id, tipo: "nota_credito", monto: -totalNC, saldo: nuevoSaldoCC, venta_id: modalNC.venta.id, fecha: new Date() })
+      // Descontar de la venta original
+      const nuevoTotalVenta = Math.max(0, Number(modalNC.venta.total) - totalNC)
+      await supabase.from("ventas").update({ total: nuevoTotalVenta }).eq("id", modalNC.venta.id)
+      // Si era cuenta corriente, actualizar el movimiento de CC
+      if (modalNC.venta.estado === "cuenta_corriente") {
+        const { data: ultimo } = await supabase.from("cuentas_corrientes").select("id, saldo").eq("cliente_id", modalNC.venta.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
+        if (ultimo) {
+          const nuevoSaldoCC = Math.max(0, Number(ultimo.saldo) - totalNC)
+          await supabase.from("cuentas_corrientes").insert({ cliente_id: modalNC.venta.cliente_id, tipo: "nota_credito", monto: -totalNC, saldo: nuevoSaldoCC, venta_id: modalNC.venta.id, fecha: new Date() })
+        }
       }
-    }
 
-    setGuardandoNC(false)
-    setModalNC(null)
-    mostrarToast("✅ Nota de crédito " + nroNota + " creada — total de la venta actualizado", "ok")
-    if (tab === "notascredito") cargarNotasCredito()
+      setModalNC(null)
+      mostrarToast("✅ Nota de crédito " + nroNota + " creada — total de la venta actualizado", "ok")
+      if (tab === "notascredito") cargarNotasCredito()
+    } catch (e: any) {
+      mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setGuardandoNC(false)
+    }
   }
 
   async function anularNC(nc: any) {
@@ -482,75 +481,86 @@ export default function Ventas() {
   async function anularVenta() {
     if (!confirmAnular) return
     setAnulando(true)
-    // Revertir stock de NCs activas ANTES de restaurar el stock original
-    // (sin esto el stock queda sobre-restaurado por las cantidades ya devueltas)
-    const { data: ncsActivas } = await supabase
-      .from("notas_credito").select("nro_nota, items")
-      .eq("venta_id", confirmAnular.id).eq("estado", "activa")
-    if (ncsActivas?.length) {
-      for (const nc of ncsActivas) {
-        for (const it of (nc.items || [])) {
-          const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
-          if (prod) await supabase.from("productos").update({ stock: Math.max(0, (prod.stock || 0) - it.cantidad) }).eq("id", it.producto_id)
+    try {
+      // Revertir stock de NCs activas ANTES de restaurar el stock original
+      // (sin esto el stock queda sobre-restaurado por las cantidades ya devueltas)
+      const { data: ncsActivas } = await supabase
+        .from("notas_credito").select("nro_nota, items")
+        .eq("venta_id", confirmAnular.id).eq("estado", "activa")
+      if (ncsActivas?.length) {
+        for (const nc of ncsActivas) {
+          for (const it of (nc.items || [])) {
+            const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
+            if (prod) await supabase.from("productos").update({ stock: Math.max(0, (prod.stock || 0) - it.cantidad) }).eq("id", it.producto_id)
+          }
+          await supabase.from("lotes").delete().eq("nro_remito", "NC " + nc.nro_nota)
         }
-        await supabase.from("lotes").delete().eq("nro_remito", "NC " + nc.nro_nota)
+        await supabase.from("notas_credito").update({ estado: "anulada" }).eq("venta_id", confirmAnular.id)
       }
-      await supabase.from("notas_credito").update({ estado: "anulada" }).eq("venta_id", confirmAnular.id)
-    }
-    // Restaurar stock
-    const { data: detalle } = await supabase.from("detalle_ventas").select("producto_id, cantidad").eq("venta_id", confirmAnular.id)
-    if (detalle) {
-      for (const d of detalle) {
-        const { data: prod } = await supabase.from("productos").select("stock").eq("id", d.producto_id).single()
-        if (prod) await supabase.from("productos").update({ stock: prod.stock + d.cantidad }).eq("id", d.producto_id)
+      // Restaurar stock
+      const { data: detalle } = await supabase.from("detalle_ventas").select("producto_id, cantidad").eq("venta_id", confirmAnular.id)
+      if (detalle) {
+        for (const d of detalle) {
+          const { data: prod } = await supabase.from("productos").select("stock").eq("id", d.producto_id).single()
+          if (prod) await supabase.from("productos").update({ stock: prod.stock + d.cantidad }).eq("id", d.producto_id)
+        }
       }
-    }
-    // Si era cuenta corriente, registrar el crédito real pendiente (descontando pagos ya hechos)
-    if (confirmAnular.estado === "cuenta_corriente") {
-      const { data: pagosVenta } = await supabase.from("pagos_cuenta_corriente").select("monto").eq("venta_id", confirmAnular.id)
-      const yaPageado = (pagosVenta || []).reduce((s: number, p: any) => s + Number(p.monto), 0)
-      const saldoPendiente = Math.max(0, Number(confirmAnular.total) - yaPageado)
-      if (saldoPendiente > 0) {
-        const { data: ultimo } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", confirmAnular.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
-        const saldoActualCC = Number(ultimo?.saldo || 0)
-        const nuevoSaldo = Math.max(0, saldoActualCC - saldoPendiente)
-        await supabase.from("cuentas_corrientes").insert({ cliente_id: confirmAnular.cliente_id, tipo: "anulacion", monto: -saldoPendiente, saldo: nuevoSaldo, venta_id: confirmAnular.id, fecha: new Date() })
+      // Si era cuenta corriente, registrar el crédito real pendiente (descontando pagos ya hechos)
+      if (confirmAnular.estado === "cuenta_corriente") {
+        const { data: pagosVenta } = await supabase.from("pagos_cuenta_corriente").select("monto").eq("venta_id", confirmAnular.id)
+        const yaPageado = (pagosVenta || []).reduce((s: number, p: any) => s + Number(p.monto), 0)
+        const saldoPendiente = Math.max(0, Number(confirmAnular.total) - yaPageado)
+        if (saldoPendiente > 0) {
+          const { data: ultimo } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", confirmAnular.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
+          const saldoActualCC = Number(ultimo?.saldo || 0)
+          const nuevoSaldo = Math.max(0, saldoActualCC - saldoPendiente)
+          await supabase.from("cuentas_corrientes").insert({ cliente_id: confirmAnular.cliente_id, tipo: "anulacion", monto: -saldoPendiente, saldo: nuevoSaldo, venta_id: confirmAnular.id, fecha: new Date() })
+        }
       }
+      await supabase.from("ventas").update({ estado: "anulada" }).eq("id", confirmAnular.id)
+      setConfirmAnular(null)
+      if (ventaDetalle?.id === confirmAnular.id) setVentaDetalle({ ...ventaDetalle, estado: "anulada" })
+      mostrarToast("🗑️ Venta anulada y stock restaurado", "ok")
+      cargarHistorial()
+    } catch (e: any) {
+      mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setAnulando(false)
     }
-    await supabase.from("ventas").update({ estado: "anulada" }).eq("id", confirmAnular.id)
-    setAnulando(false); setConfirmAnular(null)
-    if (ventaDetalle?.id === confirmAnular.id) setVentaDetalle({ ...ventaDetalle, estado: "anulada" })
-    mostrarToast("🗑️ Venta anulada y stock restaurado", "ok")
-    cargarHistorial()
   }
 
   async function eliminarVenta() {
     if (!confirmEliminarVenta) return
     setEliminandoVenta(true)
-    // Eliminar lotes de devolución y revertir stock de NCs activas asociadas
-    const { data: ncsAsociadas } = await supabase.from("notas_credito").select("nro_nota, items").eq("venta_id", confirmEliminarVenta.id).eq("estado", "activa")
-    if (ncsAsociadas?.length) {
-      for (const nc of ncsAsociadas) {
-        // Revertir stock de cada item de la NC
-        const items: any[] = nc.items || []
-        for (const it of items) {
-          const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
-          if (prod) await supabase.from("productos").update({ stock: Math.max(0, (prod.stock || 0) - it.cantidad) }).eq("id", it.producto_id)
+    try {
+      // Eliminar lotes de devolución y revertir stock de NCs activas asociadas
+      const { data: ncsAsociadas } = await supabase.from("notas_credito").select("nro_nota, items").eq("venta_id", confirmEliminarVenta.id).eq("estado", "activa")
+      if (ncsAsociadas?.length) {
+        for (const nc of ncsAsociadas) {
+          // Revertir stock de cada item de la NC
+          const items: any[] = nc.items || []
+          for (const it of items) {
+            const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
+            if (prod) await supabase.from("productos").update({ stock: Math.max(0, (prod.stock || 0) - it.cantidad) }).eq("id", it.producto_id)
+          }
+          await supabase.from("lotes").delete().eq("nro_remito", "NC " + nc.nro_nota)
         }
-        await supabase.from("lotes").delete().eq("nro_remito", "NC " + nc.nro_nota)
+        await supabase.from("notas_credito").update({ estado: "anulada" }).eq("venta_id", confirmEliminarVenta.id)
       }
-      await supabase.from("notas_credito").update({ estado: "anulada" }).eq("venta_id", confirmEliminarVenta.id)
+      await supabase.from("pagos_cuenta_corriente").delete().eq("venta_id", confirmEliminarVenta.id)
+      await supabase.from("cuentas_corrientes").delete().eq("venta_id", confirmEliminarVenta.id)
+      await supabase.from("detalle_ventas").delete().eq("venta_id", confirmEliminarVenta.id)
+      await supabase.from("facturas_impresion").delete().eq("venta_id", confirmEliminarVenta.id)
+      await supabase.from("ventas").delete().eq("id", confirmEliminarVenta.id)
+      setConfirmEliminarVenta(null)
+      if (ventaDetalle?.id === confirmEliminarVenta.id) setVentaDetalle(null)
+      mostrarToast("🗑️ Venta eliminada", "ok")
+      cargarHistorial()
+    } catch (e: any) {
+      mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setEliminandoVenta(false)
     }
-    await supabase.from("pagos_cuenta_corriente").delete().eq("venta_id", confirmEliminarVenta.id)
-    await supabase.from("cuentas_corrientes").delete().eq("venta_id", confirmEliminarVenta.id)
-    await supabase.from("detalle_ventas").delete().eq("venta_id", confirmEliminarVenta.id)
-    await supabase.from("facturas_impresion").delete().eq("venta_id", confirmEliminarVenta.id)
-    await supabase.from("ventas").delete().eq("id", confirmEliminarVenta.id)
-    setEliminandoVenta(false)
-    setConfirmEliminarVenta(null)
-    if (ventaDetalle?.id === confirmEliminarVenta.id) setVentaDetalle(null)
-    mostrarToast("🗑️ Venta eliminada", "ok")
-    cargarHistorial()
   }
 
   async function reimprimir(venta: any, itemsCargados?: any[], tipo: "presupuesto" | "remito" = "presupuesto") {
@@ -681,6 +691,7 @@ export default function Ventas() {
       if (producto && item.cantidad > producto.stock) { mostrarToast("Sin stock para: " + item.nombre, "error"); return }
     }
     setGuardando(true)
+    try {
     // Asegurar que nroFactura esté disponible — si cargar() todavía no terminó, buscar en el momento
     let nroFacturaSave = nroFactura
     if (!nroFacturaSave || nroFacturaSave === "00000") {
@@ -701,49 +712,54 @@ export default function Ventas() {
       estado: esCuentaCorriente ? "cuenta_corriente" : "cobrada", nro_factura: nroFacturaSave,
       metodo_cobro: esCuentaCorriente ? null : metodoCobro
     }).select().single()
-    if (errorVenta || !venta) { mostrarToast("Error al guardar venta", "error"); setGuardando(false); return }
-    const { error: errorDetalle } = await supabase.from("detalle_ventas").insert(
-      carrito.map(item => {
-        const prod = productos.find(p => p.id === item.producto_id)
-        return {
-          venta_id: venta.id,
-          producto_id: item.producto_id,
-          cantidad: item.cantidad,
-          precio: precioEfectivo(item),
-          bonificacion: item.bonificacion || 0,
-          costo_unitario: prod?.costo ?? 0,
-        }
-      })
-    )
-    if (errorDetalle) { mostrarToast("Error al guardar detalle", "error"); setGuardando(false); return }
-    if (esCuentaCorriente) {
-      const { data: ultimo } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", Number(clienteId)).order("id", { ascending: false }).limit(1).maybeSingle()
-      const nuevoSaldo = (ultimo?.saldo || 0) + total
-      await supabase.from("cuentas_corrientes").insert({ cliente_id: Number(clienteId), tipo: "venta", monto: total, saldo: nuevoSaldo, venta_id: venta.id, fecha: new Date() })
-    }
-    for (const item of carrito) {
-      const producto = productos.find(p => p.id === item.producto_id)
-      if (!producto) continue
-      await supabase.from("productos").update({ stock: producto.stock - item.cantidad }).eq("id", item.producto_id)
-      let cantidadRestante = item.cantidad
-      const { data: lotes } = await supabase.from("lotes").select("id, cantidad").eq("producto_id", item.producto_id).gt("cantidad", 0).order("fecha_vencimiento", { ascending: true })
-      if (lotes) {
-        for (const lote of lotes) {
-          if (cantidadRestante <= 0) break
-          const descontar = lote.cantidad >= cantidadRestante ? cantidadRestante : lote.cantidad
-          await supabase.from("lotes").update({ cantidad: lote.cantidad - descontar }).eq("id", lote.id)
-          cantidadRestante -= descontar
+    if (errorVenta || !venta) { mostrarToast("Error al guardar venta", "error"); return }
+      const { error: errorDetalle } = await supabase.from("detalle_ventas").insert(
+        carrito.map(item => {
+          const prod = productos.find(p => p.id === item.producto_id)
+          return {
+            venta_id: venta.id,
+            producto_id: item.producto_id,
+            cantidad: item.cantidad,
+            precio: precioEfectivo(item),
+            bonificacion: item.bonificacion || 0,
+            costo_unitario: prod?.costo ?? 0,
+          }
+        })
+      )
+      if (errorDetalle) { mostrarToast("Error al guardar detalle", "error"); return }
+      if (esCuentaCorriente) {
+        const { data: ultimo } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", Number(clienteId)).order("id", { ascending: false }).limit(1).maybeSingle()
+        const nuevoSaldo = (ultimo?.saldo || 0) + total
+        await supabase.from("cuentas_corrientes").insert({ cliente_id: Number(clienteId), tipo: "venta", monto: total, saldo: nuevoSaldo, venta_id: venta.id, fecha: new Date() })
+      }
+      for (const item of carrito) {
+        const producto = productos.find(p => p.id === item.producto_id)
+        if (!producto) continue
+        await supabase.from("productos").update({ stock: producto.stock - item.cantidad }).eq("id", item.producto_id)
+        let cantidadRestante = item.cantidad
+        const { data: lotes } = await supabase.from("lotes").select("id, cantidad").eq("producto_id", item.producto_id).gt("cantidad", 0).order("fecha_vencimiento", { ascending: true })
+        if (lotes) {
+          for (const lote of lotes) {
+            if (cantidadRestante <= 0) break
+            const descontar = lote.cantidad >= cantidadRestante ? cantidadRestante : lote.cantidad
+            await supabase.from("lotes").update({ cantidad: lote.cantidad - descontar }).eq("id", lote.id)
+            cantidadRestante -= descontar
+          }
         }
       }
+      const carritoEfectivo = carrito.map(item => ({ ...item, precio: precioEfectivo(item) }))
+      // nroFacturaSave ya está normalizado (5 dígitos con ceros), lo usamos directo
+      const { error: errorFI } = await supabase.from("facturas_impresion").insert([{ nro_factura: nroFacturaSave, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura: nroFacturaSave, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? null : metodoCobro } }])
+      if (errorFI) console.error("Error guardando factura_impresion:", errorFI)
+      mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : "✅ Venta confirmada", "ok")
+      setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false)
+      localStorage.removeItem("vetix_borrador")
+      cargar()
+    } catch (e: any) {
+      mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setGuardando(false)
     }
-    const carritoEfectivo = carrito.map(item => ({ ...item, precio: precioEfectivo(item) }))
-    // nroFacturaSave ya está normalizado (5 dígitos con ceros), lo usamos directo
-    const { error: errorFI } = await supabase.from("facturas_impresion").insert([{ nro_factura: nroFacturaSave, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura: nroFacturaSave, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? null : metodoCobro } }])
-    if (errorFI) console.error("Error guardando factura_impresion:", errorFI)
-    mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : "✅ Venta confirmada", "ok")
-    setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false)
-    localStorage.removeItem("vetix_borrador")
-    setGuardando(false); cargar()
   }
 
   function imprimirTicket(tipo: "presupuesto" | "remito" = "presupuesto") {

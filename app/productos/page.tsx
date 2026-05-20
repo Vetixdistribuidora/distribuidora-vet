@@ -597,32 +597,36 @@ export default function Productos() {
     if (!modalLote) return
     const productoId = modalLote.productoId
     setGuardandoLote(true)
+    try {
+      // Insertar lote y obtener el registro creado (con su ID real)
+      const { data: nuevoLote, error } = await supabase
+        .from("lotes").insert({ producto_id: productoId, cantidad, fecha_vencimiento }).select().single()
+      if (error) { mostrarToast("❌ " + error.message, "error"); return }
 
-    // Insertar lote y obtener el registro creado (con su ID real)
-    const { data: nuevoLote, error } = await supabase
-      .from("lotes").insert({ producto_id: productoId, cantidad, fecha_vencimiento }).select().single()
-    if (error) { setGuardandoLote(false); return mostrarToast("❌ " + error.message, "error") }
+      // Auditoría sin bloquear (fire-and-forget)
+      supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "lotes", registro_id: productoId })
 
-    // Auditoría sin bloquear (fire-and-forget)
-    supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "lotes", registro_id: productoId })
+      // Leer stock fresco de la BD y actualizar
+      const { data: prodActual } = await supabase.from("productos").select("stock").eq("id", productoId).single()
+      const nuevoStock = (prodActual?.stock ?? 0) + cantidad
+      await supabase.from("productos").update({ stock: nuevoStock }).eq("id", productoId)
 
-    // Leer stock fresco de la BD y actualizar
-    const { data: prodActual } = await supabase.from("productos").select("stock").eq("id", productoId).single()
-    const nuevoStock = (prodActual?.stock ?? 0) + cantidad
-    await supabase.from("productos").update({ stock: nuevoStock }).eq("id", productoId)
+      // Actualizar estado local inmediatamente (sin recargar todo)
+      setProductos(prev => prev.map(p => p.id === productoId ? { ...p, stock: nuevoStock } : p))
+      setLotesMap(prev => {
+        const existing = prev[productoId] || []
+        const merged = [...existing, nuevoLote]
+          .sort((a: any, b: any) => (a.fecha_vencimiento || "9999").localeCompare(b.fecha_vencimiento || "9999"))
+        return { ...prev, [productoId]: merged }
+      })
 
-    // Actualizar estado local inmediatamente (sin recargar todo)
-    setProductos(prev => prev.map(p => p.id === productoId ? { ...p, stock: nuevoStock } : p))
-    setLotesMap(prev => {
-      const existing = prev[productoId] || []
-      const merged = [...existing, nuevoLote]
-        .sort((a: any, b: any) => (a.fecha_vencimiento || "9999").localeCompare(b.fecha_vencimiento || "9999"))
-      return { ...prev, [productoId]: merged }
-    })
-
-    setGuardandoLote(false)
-    mostrarToast("✅ Lote agregado", "ok")
-    setModalLote(null)
+      mostrarToast("✅ Lote agregado", "ok")
+      setModalLote(null)
+    } catch (e: any) {
+      mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setGuardandoLote(false)
+    }
   }
 
   async function eliminarLote() {

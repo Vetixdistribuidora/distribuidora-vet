@@ -408,37 +408,41 @@ export default function ComprasPage() {
   async function eliminarCompra() {
     if (!confirmEliminarCompra) return;
     setEliminandoCompra(true);
+    try {
+      // 1. Recuperar detalle antes de borrar para revertir el stock
+      const { data: detalleCompra } = await supabase
+        .from("compras_detalle")
+        .select("producto_id, cantidad")
+        .eq("compra_id", confirmEliminarCompra.id);
 
-    // 1. Recuperar detalle antes de borrar para revertir el stock
-    const { data: detalleCompra } = await supabase
-      .from("compras_detalle")
-      .select("producto_id, cantidad")
-      .eq("compra_id", confirmEliminarCompra.id);
+      // 2. Borrar registros asociados
+      await supabase.from("compras_pagos").delete().eq("compra_id", confirmEliminarCompra.id);
+      await supabase.from("compras_detalle").delete().eq("compra_id", confirmEliminarCompra.id);
+      await supabase.from("lotes").update({ cantidad: 0 }).eq("compra_id", confirmEliminarCompra.id);
+      const { error } = await supabase.from("compras").delete().eq("id", confirmEliminarCompra.id);
 
-    // 2. Borrar registros asociados
-    await supabase.from("compras_pagos").delete().eq("compra_id", confirmEliminarCompra.id);
-    await supabase.from("compras_detalle").delete().eq("compra_id", confirmEliminarCompra.id);
-    await supabase.from("lotes").update({ cantidad: 0 }).eq("compra_id", confirmEliminarCompra.id);
-    const { error } = await supabase.from("compras").delete().eq("id", confirmEliminarCompra.id);
+      if (error) { alert("Error al eliminar: " + error.message); return; }
 
-    if (error) { setEliminandoCompra(false); alert("Error al eliminar: " + error.message); return; }
+      // 3. Revertir stock: restar la cantidad que había entrado con esta compra
+      if (detalleCompra && detalleCompra.length > 0) {
+        await Promise.all(detalleCompra.map(async (d) => {
+          const { data: prod } = await supabase.from("productos").select("stock").eq("id", d.producto_id).single();
+          if (prod) {
+            await supabase.from("productos").update({
+              stock: Math.max(0, prod.stock - d.cantidad)
+            }).eq("id", d.producto_id);
+          }
+        }));
+      }
 
-    // 3. Revertir stock: restar la cantidad que había entrado con esta compra
-    if (detalleCompra && detalleCompra.length > 0) {
-      await Promise.all(detalleCompra.map(async (d) => {
-        const { data: prod } = await supabase.from("productos").select("stock").eq("id", d.producto_id).single();
-        if (prod) {
-          await supabase.from("productos").update({
-            stock: Math.max(0, prod.stock - d.cantidad)
-          }).eq("id", d.producto_id);
-        }
-      }));
+      setConfirmEliminarCompra(null);
+      if (compraVer?.id === confirmEliminarCompra.id) setCompraVer(null);
+      cargarTodo();
+    } catch (e: any) {
+      alert("Error: " + (e?.message || "error desconocido"));
+    } finally {
+      setEliminandoCompra(false);
     }
-
-    setEliminandoCompra(false);
-    setConfirmEliminarCompra(null);
-    if (compraVer?.id === confirmEliminarCompra.id) setCompraVer(null);
-    cargarTodo();
   }
 
   async function verDetalle(c: Compra) {
@@ -456,22 +460,45 @@ export default function ComprasPage() {
     const saldo = compraVer.total - compraVer.total_pagado;
     if (saldo <= 0) return;
     setCancelando(true);
-    let montoPago = saldo;
-    if (descuentoPct > 0) {
-      const montoDesc = Math.round(saldo * (descuentoPct / 100) * 100) / 100;
-      montoPago = Math.round((saldo - montoDesc) * 100) / 100;
-      const nuevoTotal = Math.round((compraVer.total - montoDesc) * 100) / 100;
-      await supabase.from("compras").update({ total: nuevoTotal }).eq("id", compraVer.id);
+    try {
+      let montoPago = saldo;
+      let nuevoTotal = compraVer.total;
+      if (descuentoPct > 0) {
+        const montoDesc = Math.round(saldo * (descuentoPct / 100) * 100) / 100;
+        montoPago = Math.round((saldo - montoDesc) * 100) / 100;
+        nuevoTotal = Math.round((compraVer.total - montoDesc) * 100) / 100;
+        const { error: errTotal } = await supabase.from("compras").update({ total: nuevoTotal }).eq("id", compraVer.id);
+        if (errTotal) { alert("Error al actualizar total: " + errTotal.message); return; }
+      }
+      const notas = descuentoPct > 0 ? `Cancelación con ${descuentoPct}% de descuento` : "Cancelación total";
+      // Insert payment record directly (bypassing broken RPC)
+      const { error: errPago } = await supabase.from("compras_pagos").insert({
+        compra_id: compraVer.id,
+        monto: montoPago,
+        metodo_pago: "Efectivo",
+        notas,
+        fecha: new Date().toISOString(),
+      });
+      if (errPago) { alert("Error al registrar pago: " + errPago.message); return; }
+      // Update compras: total_pagado = nuevoTotal (fully paid), estado = "pagado"
+      const nuevoTotalPagado = compraVer.total_pagado + montoPago;
+      const { error: errCompra } = await supabase.from("compras").update({
+        total_pagado: nuevoTotalPagado,
+        estado: "pagado",
+      }).eq("id", compraVer.id);
+      if (errCompra) { alert("Error al actualizar compra: " + errCompra.message); return; }
+      setModalCancelar(false); setDescuentoCancelar("");
+      await cargarTodo();
+      const { data: ca } = await supabase.from("compras").select("*").eq("id", compraVer.id).single();
+      if (ca) setCompraVer(ca);
+      const { data: p } = await supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha");
+      if (p) setPagos(p);
+      cargarTodo();
+    } catch (e: any) {
+      alert("Error: " + (e?.message || "error desconocido"));
+    } finally {
+      setCancelando(false);
     }
-    const notas = descuentoPct > 0 ? `Cancelación con ${descuentoPct}% de descuento` : "Cancelación total";
-    const { error } = await supabase.rpc("registrar_pago_compra", { p_compra_id: compraVer.id, p_monto: montoPago, p_metodo_pago: "Efectivo", p_notas: notas });
-    if (error) { alert("Error: " + error.message); setCancelando(false); return; }
-    setModalCancelar(false); setDescuentoCancelar("");
-    setCancelando(false); await cargarTodo();
-    const { data: ca } = await supabase.from("compras").select("*").eq("id", compraVer.id).single();
-    if (ca) setCompraVer(ca);
-    const { data: p } = await supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha");
-    if (p) setPagos(p); cargarTodo();
   }
 
   async function reaplicarCompraAProductos() {

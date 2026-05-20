@@ -131,37 +131,51 @@ export default function Clientes() {
   async function agregarCliente() {
     if (!formNuevo.nombre.trim() || !formNuevo.apellido.trim()) { mostrarToast("Nombre y apellido obligatorios", "error"); return }
     setGuardando(true)
-    const { error } = await supabase.from("clientes").insert([{
-      nombre: formNuevo.nombre.trim(), apellido: formNuevo.apellido.trim(),
-      cuit: formNuevo.cuit.trim(), telefono: formNuevo.telefono.trim(),
-      localidad: formNuevo.localidad.trim(), porcentaje: Number(formNuevo.porcentaje || 0)
-    }])
-    setGuardando(false)
-    if (error) { mostrarToast("Error: " + error.message, "error"); return }
-    mostrarToast("✅ Cliente agregado", "ok")
-    setFormNuevo({ nombre: "", apellido: "", cuit: "", telefono: "", localidad: "", porcentaje: "" })
-    setModalNuevo(false); cargar()
+    try {
+      const { error } = await supabase.from("clientes").insert([{
+        nombre: formNuevo.nombre.trim(), apellido: formNuevo.apellido.trim(),
+        cuit: formNuevo.cuit.trim(), telefono: formNuevo.telefono.trim(),
+        localidad: formNuevo.localidad.trim(), porcentaje: Number(formNuevo.porcentaje || 0)
+      }])
+      if (error) { mostrarToast("Error: " + error.message, "error"); return }
+      mostrarToast("✅ Cliente agregado", "ok")
+      setFormNuevo({ nombre: "", apellido: "", cuit: "", telefono: "", localidad: "", porcentaje: "" })
+      setModalNuevo(false); cargar()
+    } catch (e: any) {
+      mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setGuardando(false)
+    }
   }
 
   async function guardarEdicion() {
     if (!modalEditar?.nombre?.trim() || !modalEditar?.apellido?.trim()) { mostrarToast("Nombre y apellido obligatorios", "error"); return }
     setGuardando(true)
-    const { error } = await supabase.from("clientes").update({
-      nombre: modalEditar.nombre, apellido: modalEditar.apellido,
-      cuit: modalEditar.cuit, telefono: modalEditar.telefono,
-      localidad: modalEditar.localidad, porcentaje: Number(modalEditar.porcentaje || 0)
-    }).eq("id", modalEditar.id)
-    setGuardando(false)
-    if (error) { mostrarToast("Error: " + error.message, "error"); return }
-    mostrarToast("✅ Cliente actualizado", "ok")
-    setModalEditar(null); cargar()
+    try {
+      const { error } = await supabase.from("clientes").update({
+        nombre: modalEditar.nombre, apellido: modalEditar.apellido,
+        cuit: modalEditar.cuit, telefono: modalEditar.telefono,
+        localidad: modalEditar.localidad, porcentaje: Number(modalEditar.porcentaje || 0)
+      }).eq("id", modalEditar.id)
+      if (error) { mostrarToast("Error: " + error.message, "error"); return }
+      mostrarToast("✅ Cliente actualizado", "ok")
+      setModalEditar(null); cargar()
+    } catch (e: any) {
+      mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setGuardando(false)
+    }
   }
 
   async function eliminar(id: number) {
-    const { error } = await supabase.from("clientes").delete().eq("id", id)
-    if (error) { mostrarToast("Error: " + error.message, "error"); return }
-    mostrarToast("🗑️ Cliente eliminado", "ok")
-    setConfirmEliminar(null); cargar()
+    try {
+      const { error } = await supabase.from("clientes").delete().eq("id", id)
+      if (error) { mostrarToast("Error: " + error.message, "error"); return }
+      mostrarToast("🗑️ Cliente eliminado", "ok")
+      setConfirmEliminar(null); cargar()
+    } catch (e: any) {
+      mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
+    }
   }
 
   async function abrirHistorial(cliente: any) {
@@ -212,26 +226,32 @@ export default function Clientes() {
     const monto = Number(montoPago)
     if (monto > ventaParaPagar.saldo) { mostrarToast("El monto supera el saldo pendiente", "error"); return }
     setGuardandoPago(true)
-    const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
-      cliente_id: modalHistorial.id, venta_id: ventaParaPagar.id, monto, nota: notaPago || null
-    }])
-    if (error) { mostrarToast("Error: " + error.message, "error"); setGuardandoPago(false); return }
-    // Registrar movimiento en cuentas_corrientes para mantener el saldo sincronizado
-    const { data: ultimoCC } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", modalHistorial.id).order("id", { ascending: false }).limit(1).maybeSingle()
-    let saldoBase = Number(ultimoCC?.saldo || 0)
-    if (!ultimoCC) {
-      // Sin historial en CC: calcular deuda total desde ventas CC del cliente
-      const { data: vcc } = await supabase.from("ventas").select("total").eq("cliente_id", modalHistorial.id).eq("estado", "cuenta_corriente")
-      saldoBase = (vcc || []).reduce((s: number, v: any) => s + Number(v.total), 0)
+    try {
+      const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
+        cliente_id: modalHistorial.id, venta_id: ventaParaPagar.id, monto, nota: notaPago || null
+      }])
+      if (error) { mostrarToast("Error: " + error.message, "error"); return }
+      // Registrar movimiento en cuentas_corrientes para mantener el saldo sincronizado
+      const { data: ultimoCC } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", modalHistorial.id).order("id", { ascending: false }).limit(1).maybeSingle()
+      let saldoBase = Number(ultimoCC?.saldo || 0)
+      if (!ultimoCC) {
+        // Sin historial en CC: calcular deuda total desde ventas CC del cliente
+        const { data: vcc } = await supabase.from("ventas").select("total").eq("cliente_id", modalHistorial.id).eq("estado", "cuenta_corriente")
+        saldoBase = (vcc || []).reduce((s: number, v: any) => s + Number(v.total), 0)
+      }
+      const nuevoSaldoCC = Math.max(0, saldoBase - monto)
+      await supabase.from("cuentas_corrientes").insert({ cliente_id: modalHistorial.id, tipo: "pago", monto: -monto, saldo: nuevoSaldoCC, venta_id: ventaParaPagar.id, fecha: new Date() })
+      if (monto >= ventaParaPagar.saldo) {
+        await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaParaPagar.id)
+      }
+      mostrarToast("✅ Pago registrado", "ok")
+      setModalPago(false); setVentaParaPagar(null)
+      await cargarVentasCliente(modalHistorial.id); await cargar()
+    } catch (e: any) {
+      mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setGuardandoPago(false)
     }
-    const nuevoSaldoCC = Math.max(0, saldoBase - monto)
-    await supabase.from("cuentas_corrientes").insert({ cliente_id: modalHistorial.id, tipo: "pago", monto: -monto, saldo: nuevoSaldoCC, venta_id: ventaParaPagar.id, fecha: new Date() })
-    if (monto >= ventaParaPagar.saldo) {
-      await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaParaPagar.id)
-    }
-    mostrarToast("✅ Pago registrado", "ok")
-    setModalPago(false); setVentaParaPagar(null); setGuardandoPago(false)
-    await cargarVentasCliente(modalHistorial.id); await cargar()
   }
 
   function imprimirRecibo(pago: any, venta: any) {

@@ -109,8 +109,13 @@ export default function CuentasCorrientes() {
     setTab("pendientes")
     setCargandoVentas(true)
     setVistaMovil("detalle")
-    await cargarVentas(c.id)
-    setCargandoVentas(false)
+    try {
+      await cargarVentas(c.id)
+    } catch (e: any) {
+      mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setCargandoVentas(false)
+    }
   }
 
   async function cargarVentas(clienteId: number) {
@@ -146,17 +151,23 @@ export default function CuentasCorrientes() {
     const monto = Number(montoPago)
     if (monto > ventaPago.saldo) { mostrarToast("El monto supera el saldo pendiente", "error"); return }
     setGuardando(true)
-    const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
-      cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto, nota: notaPago || null
-    }])
-    if (error) { mostrarToast("Error: " + error.message, "error"); setGuardando(false); return }
-    if (monto >= ventaPago.saldo) {
-      await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaPago.id)
+    try {
+      const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
+        cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto, nota: notaPago || null
+      }])
+      if (error) { mostrarToast("Error: " + error.message, "error"); return }
+      if (monto >= ventaPago.saldo) {
+        await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaPago.id)
+      }
+      mostrarToast("✅ Pago registrado", "ok")
+      setVentaPago(null); setMontoPago(""); setNotaPago("")
+      await cargarVentas(clienteActivo.id)
+      await calcularResumen(clientes)
+    } catch (e: any) {
+      mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setGuardando(false)
     }
-    mostrarToast("✅ Pago registrado", "ok")
-    setVentaPago(null); setMontoPago(""); setNotaPago(""); setGuardando(false)
-    await cargarVentas(clienteActivo.id)
-    await calcularResumen(clientes)
   }
 
   function imprimirRecibo(pago: any, venta: any) {
