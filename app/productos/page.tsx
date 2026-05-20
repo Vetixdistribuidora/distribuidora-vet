@@ -263,6 +263,8 @@ export default function Productos() {
   const [ajusteValor, setAjusteValor] = useState("")
   const [ajusteAplica, setAjusteAplica] = useState<"costos" | "precios">("costos")
   const [aplicandoPrecios, setAplicandoPrecios] = useState(false)
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
+  const [guardandoAgregar, setGuardandoAgregar] = useState(false)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo }); setTimeout(() => setToast(null), 3000)
@@ -270,57 +272,60 @@ export default function Productos() {
 
   async function actualizarPrecios() {
     setAplicandoPrecios(true)
+    try {
+      // Modo recalcular: aplica la fórmula Precio Neto × (1+IVA%) × (1+Flete%) a todos los productos
+      if (ajusteTipo === "recalcular") {
+        const updates = productos.map(p => {
+          const fleteNum = Number(p.flete) || 0
+          const margenNum = Number(p.margen) || 0
+          const nuevoPrecio = Math.round(p.costo * (1 + margenNum / 100) * (1 + fleteNum / 100) * 100) / 100
+          return { id: p.id, precio_venta: nuevoPrecio }
+        })
+        const CHUNK = 50
+        for (let i = 0; i < updates.length; i += CHUNK) {
+          await Promise.all(updates.slice(i, i + CHUNK).map(u =>
+            supabase.from("productos").update({ precio_venta: u.precio_venta }).eq("id", u.id)
+          ))
+        }
+        setModalPrecios(false)
+        setAjusteValor("")
+        mostrarToast(`✅ ${productos.length} precios recalculados desde fórmula`, "ok")
+        cargar()
+        return
+      }
 
-    // Modo recalcular: aplica la fórmula Precio Neto × (1+IVA%) × (1+Flete%) a todos los productos
-    if (ajusteTipo === "recalcular") {
+      const valor = parseFloat(ajusteValor)
+      if (!valor || valor <= 0) { mostrarToast("Ingresá un valor válido", "error"); return }
       const updates = productos.map(p => {
-        const fleteNum = Number(p.flete) || 0
-        const margenNum = Number(p.margen) || 0
-        const nuevoPrecio = Math.round(p.costo * (1 + margenNum / 100) * (1 + fleteNum / 100) * 100) / 100
-        return { id: p.id, precio_venta: nuevoPrecio }
+        let nuevoCosto = p.costo
+        let nuevoMargen = p.margen
+        if (ajusteAplica === "costos") {
+          nuevoCosto = ajusteTipo === "porcentaje" ? p.costo * (1 + valor / 100) : p.costo + valor
+          const fleteNum = Number(p.flete) || 0
+          const margenNum = Number(p.margen) || 0
+          const nuevoPrecio = Math.round(nuevoCosto * (1 + margenNum / 100) * (1 + fleteNum / 100) * 100) / 100
+          return { id: p.id, costo: Math.round(nuevoCosto * 100) / 100, margen: nuevoMargen, precio_venta: nuevoPrecio }
+        } else {
+          // Ajuste directo de precio_venta: no modificar margen (IVA%) ni costo
+          const nuevoPrecio = ajusteTipo === "porcentaje" ? p.precio_venta * (1 + valor / 100) : p.precio_venta + valor
+          return { id: p.id, costo: p.costo, margen: p.margen, precio_venta: Math.round(nuevoPrecio * 100) / 100 }
+        }
       })
       const CHUNK = 50
       for (let i = 0; i < updates.length; i += CHUNK) {
         await Promise.all(updates.slice(i, i + CHUNK).map(u =>
-          supabase.from("productos").update({ precio_venta: u.precio_venta }).eq("id", u.id)
+          supabase.from("productos").update({ costo: u.costo, margen: u.margen, precio_venta: u.precio_venta }).eq("id", u.id)
         ))
       }
-      setAplicandoPrecios(false)
       setModalPrecios(false)
       setAjusteValor("")
-      mostrarToast(`✅ ${productos.length} precios recalculados desde fórmula`, "ok")
+      mostrarToast(`✅ ${productos.length} precios actualizados`, "ok")
       cargar()
-      return
+    } catch (e: any) {
+      mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setAplicandoPrecios(false)
     }
-
-    const valor = parseFloat(ajusteValor)
-    if (!valor || valor <= 0) { setAplicandoPrecios(false); mostrarToast("Ingresá un valor válido", "error"); return }
-    const updates = productos.map(p => {
-      let nuevoCosto = p.costo
-      let nuevoMargen = p.margen
-      if (ajusteAplica === "costos") {
-        nuevoCosto = ajusteTipo === "porcentaje" ? p.costo * (1 + valor / 100) : p.costo + valor
-        const fleteNum = Number(p.flete) || 0
-        const margenNum = Number(p.margen) || 0
-        const nuevoPrecio = Math.round(nuevoCosto * (1 + margenNum / 100) * (1 + fleteNum / 100) * 100) / 100
-        return { id: p.id, costo: Math.round(nuevoCosto * 100) / 100, margen: nuevoMargen, precio_venta: nuevoPrecio }
-      } else {
-        // Ajuste directo de precio_venta: no modificar margen (IVA%) ni costo
-        const nuevoPrecio = ajusteTipo === "porcentaje" ? p.precio_venta * (1 + valor / 100) : p.precio_venta + valor
-        return { id: p.id, costo: p.costo, margen: p.margen, precio_venta: Math.round(nuevoPrecio * 100) / 100 }
-      }
-    })
-    const CHUNK = 50
-    for (let i = 0; i < updates.length; i += CHUNK) {
-      await Promise.all(updates.slice(i, i + CHUNK).map(u =>
-        supabase.from("productos").update({ costo: u.costo, margen: u.margen, precio_venta: u.precio_venta }).eq("id", u.id)
-      ))
-    }
-    setAplicandoPrecios(false)
-    setModalPrecios(false)
-    setAjusteValor("")
-    mostrarToast(`✅ ${productos.length} precios actualizados`, "ok")
-    cargar()
   }
 
   function exportarStock() {
@@ -330,12 +335,13 @@ export default function Productos() {
       "Precio Neto ($)": p.costo,
       "IVA (%)": p.margen,
       "Flete (%)": p.flete ?? 0,
-      "Costo ($)": p.precio_venta,
+      "Costo ($)": p.costo,
+      "Precio Venta ($)": p.precio_venta,
       "Stock (u.)": p.stock,
       "Capital ($)": Math.round(p.precio_venta * p.stock * 100) / 100,
     }))
     const ws = XLSX.utils.json_to_sheet(data)
-    ws["!cols"] = [{ wch: 40 }, { wch: 22 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 14 }]
+    ws["!cols"] = [{ wch: 40 }, { wch: 22 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 14 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Stock")
     XLSX.writeFile(wb, `stock_${new Date().toISOString().slice(0, 10)}.xlsx`)
@@ -394,7 +400,7 @@ export default function Productos() {
   useEffect(() => { cargar() }, [])
   useEffect(() => {
     if (!cargando) return
-    const w = setTimeout(() => supabase.auth.signOut(), 60000)
+    const w = setTimeout(() => supabase.auth.signOut(), 300000)
     return () => clearTimeout(w)
   }, [cargando])
 
@@ -402,29 +408,43 @@ export default function Productos() {
     if (!nombre || !costo || !margen || !stock) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
     if (Number(stock) < 0) { mostrarToast("⚠️ El stock no puede ser negativo", "error"); return }
     if (Number(costo) < 0) { mostrarToast("⚠️ El precio neto no puede ser negativo", "error"); return }
-    const costoNum = Number(costo)
-    const ivaNum = Number(margen)
-    const fleteNum = Number(fleteProducto) || 0
-    const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * 100) / 100
-    const { data, error } = await supabase.from("productos").insert([{ nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(stock), categoria: categoria.trim(), laboratorio: laboratorio.trim() }]).select()
-    if (error) return mostrarToast("❌ " + error.message, "error")
-    supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 }) // fire-and-forget
-    mostrarToast("✅ Producto agregado", "ok")
-    setNombre(""); setCosto(""); setMargen(""); setFleteProducto(""); setStock(""); setCategoria(""); setLaboratorio("")
-    setMostrarAgregar(false); cargar()
+    setGuardandoAgregar(true)
+    try {
+      const costoNum = Number(costo)
+      const ivaNum = Number(margen)
+      const fleteNum = Number(fleteProducto) || 0
+      const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * 100) / 100
+      const { data, error } = await supabase.from("productos").insert([{ nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(stock), categoria: categoria.trim(), laboratorio: laboratorio.trim() }]).select()
+      if (error) { mostrarToast("❌ " + error.message, "error"); return }
+      supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 }) // fire-and-forget
+      mostrarToast("✅ Producto agregado", "ok")
+      setNombre(""); setCosto(""); setMargen(""); setFleteProducto(""); setStock(""); setCategoria(""); setLaboratorio("")
+      setMostrarAgregar(false); cargar()
+    } catch (e: any) {
+      mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setGuardandoAgregar(false)
+    }
   }
 
   async function guardarEdicion() {
     if (!editando.nombre || !editando.costo || !editando.margen) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
-    const costoNum = Number(editando.costo)
-    const ivaNum = Number(editando.margen)
-    const fleteNum = Number(editando.flete) || 0
-    const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * 100) / 100
-    const { error } = await supabase.from("productos").update({ nombre: editando.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(editando.stock), categoria: editando.categoria || "", laboratorio: editando.laboratorio || "" }).eq("id", editando.id)
-    if (error) return mostrarToast("❌ " + error.message, "error")
-    supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id }) // fire-and-forget
-    mostrarToast("✅ Producto actualizado", "ok")
-    setEditando(null); cargar()
+    setGuardandoEdicion(true)
+    try {
+      const costoNum = Number(editando.costo)
+      const ivaNum = Number(editando.margen)
+      const fleteNum = Number(editando.flete) || 0
+      const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * 100) / 100
+      const { error } = await supabase.from("productos").update({ nombre: editando.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(editando.stock), categoria: editando.categoria || "", laboratorio: editando.laboratorio || "" }).eq("id", editando.id)
+      if (error) { mostrarToast("❌ " + error.message, "error"); return }
+      supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id }) // fire-and-forget
+      mostrarToast("✅ Producto actualizado", "ok")
+      setEditando(null); cargar()
+    } catch (e: any) {
+      mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setGuardandoEdicion(false)
+    }
   }
 
   async function confirmarEliminarFn() {

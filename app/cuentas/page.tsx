@@ -7,7 +7,9 @@ function fmt(n: number) {
   return "$" + Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 function fechaCorta(f: string) {
-  return new Date(f).toLocaleDateString("es-AR")
+  if (!f) return "-"
+  const d = f.includes("T") ? new Date(f) : new Date(f + "T00:00:00")
+  return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })
 }
 
 function Toast({ mensaje, tipo }: { mensaje: string; tipo: "ok" | "error" }) {
@@ -59,7 +61,7 @@ export default function CuentasCorrientes() {
   useEffect(() => { inicializar() }, [])
   useEffect(() => {
     if (!cargando) return
-    const w = setTimeout(() => supabase.auth.signOut(), 60000)
+    const w = setTimeout(() => supabase.auth.signOut(), 300000)
     return () => clearTimeout(w)
   }, [cargando])
 
@@ -168,6 +170,11 @@ export default function CuentasCorrientes() {
         cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto, nota: notaPago || null, nro_recibo: nroRecibo
       }])
       if (error) { mostrarToast("Error: " + error.message, "error"); return }
+      // Registrar movimiento en cuentas_corrientes para mantener el saldo sincronizado
+      const { data: ultimoCC } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", clienteActivo.id).order("id", { ascending: false }).limit(1).maybeSingle()
+      const saldoAnteriorCC = Number(ultimoCC?.saldo ?? 0)
+      const nuevoSaldoCC = Math.max(0, saldoAnteriorCC - monto)
+      await supabase.from("cuentas_corrientes").insert({ cliente_id: clienteActivo.id, venta_id: ventaPago.id, tipo: "pago", monto: -monto, saldo: nuevoSaldoCC, fecha: new Date() })
       if (monto >= ventaPago.saldo) {
         await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaPago.id)
       }

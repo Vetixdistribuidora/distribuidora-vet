@@ -150,7 +150,7 @@ export default function ComprasPage() {
   useEffect(() => { cargarTodo(); }, []);
   useEffect(() => {
     if (!loading) return
-    const w = setTimeout(() => supabase.auth.signOut(), 60000)
+    const w = setTimeout(() => supabase.auth.signOut(), 300000)
     return () => clearTimeout(w)
   }, [loading])
 
@@ -255,25 +255,32 @@ export default function ComprasPage() {
   async function crearYAgregarProducto() {
     if (!formNuevoProd.nombre.trim()) return;
     setGuardandoNuevoProd(true);
-    const costo = parseFloat(formNuevoProd.costo) || 0;
-    const margen = parseFloat(formNuevoProd.margen) || 30;
-    const precio_venta = Math.round(costo * (1 + margen / 100) * 100) / 100;
-    const { data, error } = await supabase.from("productos").insert({
-      nombre: formNuevoProd.nombre.trim().toUpperCase(),
-      laboratorio: formNuevoProd.laboratorio.trim(),
-      costo,
-      margen,
-      precio_venta,
-      stock: 0,
-    }).select("id, nombre, stock, laboratorio").single();
-    if (!error && data) {
-      const nuevo = data as Producto;
-      setProductos(prev => [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
-      agregarItem(nuevo);
-      setMostrarFormNuevoProd(false);
-      setFormNuevoProd({ nombre: "", laboratorio: "", costo: "", margen: "30" });
+    try {
+      const costo = parseFloat(formNuevoProd.costo) || 0;
+      const margen = parseFloat(formNuevoProd.margen) || 30;
+      const precio_venta = Math.round(costo * (1 + margen / 100) * 100) / 100;
+      const { data, error } = await supabase.from("productos").insert({
+        nombre: formNuevoProd.nombre.trim().toUpperCase(),
+        laboratorio: formNuevoProd.laboratorio.trim(),
+        costo,
+        margen,
+        precio_venta,
+        stock: 0,
+      }).select("id, nombre, stock, laboratorio").single();
+      if (!error && data) {
+        const nuevo = data as Producto;
+        setProductos(prev => [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+        agregarItem(nuevo);
+        setMostrarFormNuevoProd(false);
+        setFormNuevoProd({ nombre: "", laboratorio: "", costo: "", margen: "30" });
+      } else if (error) {
+        setErrorForm("Error al crear producto: " + error.message);
+      }
+    } catch (e: any) {
+      setErrorForm("Error: " + (e?.message || "error desconocido"));
+    } finally {
+      setGuardandoNuevoProd(false);
     }
-    setGuardandoNuevoProd(false);
   }
 
   const pctIvaForm = parseFloat(form.porcentaje_iva) || 0;
@@ -311,6 +318,7 @@ export default function ComprasPage() {
     const estado = totalPagado >= total ? "pagado" : totalPagado > 0 ? "parcial" : "pendiente";
 
     setGuardando(true); setErrorForm(null);
+    try {
 
     // 1. Insertar la compra principal
     const { data: compra, error: errCompra } = await supabase.from("compras").insert({
@@ -332,7 +340,6 @@ export default function ComprasPage() {
     }).select().single();
 
     if (errCompra || !compra) {
-      setGuardando(false);
       setErrorForm("Error al guardar la compra: " + (errCompra?.message || "error desconocido"));
       return;
     }
@@ -400,10 +407,14 @@ export default function ComprasPage() {
     // 5. Limpiar borrador y cerrar
     localStorage.removeItem("vetix_borrador_compra");
     setHayBorrador(false);
-    setGuardando(false);
     setModalNueva(false);
     cargarTodo();
+  } catch (e: any) {
+    setErrorForm("Error: " + (e?.message || "error desconocido"));
+  } finally {
+    setGuardando(false);
   }
+}
 
   async function eliminarCompra() {
     if (!confirmEliminarCompra) return;
@@ -447,12 +458,17 @@ export default function ComprasPage() {
 
   async function verDetalle(c: Compra) {
     setCompraVer(c); setTabDetalle("detalle"); setLoadingDetalle(true);
-    const [{ data: d }, { data: p }] = await Promise.all([
-      supabase.from("compras_detalle").select("*, productos(nombre)").eq("compra_id", c.id).order("id"),
-      supabase.from("compras_pagos").select("*").eq("compra_id", c.id).order("fecha"),
-    ]);
-    if (d) setDetalle(d); if (p) setPagos(p);
-    setLoadingDetalle(false);
+    try {
+      const [{ data: d }, { data: p }] = await Promise.all([
+        supabase.from("compras_detalle").select("*, productos(nombre)").eq("compra_id", c.id).order("id"),
+        supabase.from("compras_pagos").select("*").eq("compra_id", c.id).order("fecha"),
+      ]);
+      if (d) setDetalle(d); if (p) setPagos(p);
+    } catch (e) {
+      console.error("Error cargando detalle de compra:", e);
+    } finally {
+      setLoadingDetalle(false);
+    }
   }
 
   async function cancelarCompra(descuentoPct: number = 0) {
@@ -468,7 +484,7 @@ export default function ComprasPage() {
         montoPago = Math.round((saldo - montoDesc) * 100) / 100;
         nuevoTotal = Math.round((compraVer.total - montoDesc) * 100) / 100;
         const { error: errTotal } = await supabase.from("compras").update({ total: nuevoTotal }).eq("id", compraVer.id);
-        if (errTotal) { alert("Error al actualizar total: " + errTotal.message); return; }
+        if (errTotal) { setErrorForm("Error al actualizar total: " + errTotal.message); return; }
       }
       const notas = descuentoPct > 0 ? `Cancelación con ${descuentoPct}% de descuento` : "Cancelación total";
       // Insert payment record directly (bypassing broken RPC)
@@ -479,14 +495,14 @@ export default function ComprasPage() {
         notas,
         fecha: new Date().toISOString(),
       });
-      if (errPago) { alert("Error al registrar pago: " + errPago.message); return; }
+      if (errPago) { setErrorForm("Error al registrar pago: " + errPago.message); return; }
       // Update compras: total_pagado = nuevoTotal (fully paid), estado = "pagado"
       const nuevoTotalPagado = compraVer.total_pagado + montoPago;
       const { error: errCompra } = await supabase.from("compras").update({
         total_pagado: nuevoTotalPagado,
         estado: "pagado",
       }).eq("id", compraVer.id);
-      if (errCompra) { alert("Error al actualizar compra: " + errCompra.message); return; }
+      if (errCompra) { setErrorForm("Error al actualizar compra: " + errCompra.message); return; }
       setModalCancelar(false); setDescuentoCancelar("");
       await cargarTodo();
       const { data: ca } = await supabase.from("compras").select("*").eq("id", compraVer.id).single();
@@ -495,7 +511,7 @@ export default function ComprasPage() {
       if (p) setPagos(p);
       cargarTodo();
     } catch (e: any) {
-      alert("Error: " + (e?.message || "error desconocido"));
+      setErrorForm("Error: " + (e?.message || "error desconocido"));
     } finally {
       setCancelando(false);
     }

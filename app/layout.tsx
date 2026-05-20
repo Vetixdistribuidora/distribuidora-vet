@@ -123,10 +123,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       })
       .catch(() => {})
 
-    // Cuando el SW nuevo se activa, el mensaje SW_UPDATED dispara el reload
+    // Cuando el SW nuevo se activa, el mensaje SW_UPDATED muestra el banner
     const onMessage = (e: MessageEvent) => {
       if (e.data?.type === "SW_UPDATED") {
-        window.location.reload()
+        setHayActualizacion(true)
       }
     }
     navigator.serviceWorker.addEventListener("message", onMessage)
@@ -144,9 +144,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       } else if (document.visibilityState === "visible") {
         // Refrescar token siempre (evita "Cargando…" por token expirado)
         await supabase.auth.getSession()
-        // Si estuvo más de 30 min en background → recargar para tener datos frescos
+        // Si estuvo más de 30 min en background → recargar si no hay borrador activo
         if (hiddenAt && Date.now() - hiddenAt > INACTIVITY_MS) {
-          window.location.reload()
+          const borradorVentas = localStorage.getItem("vetix_borrador")
+          const borradorCompras = localStorage.getItem("vetix_borrador_compra")
+          const hayBorrador = borradorVentas || borradorCompras
+          if (hayBorrador) {
+            setHayActualizacion(true)
+          } else {
+            window.location.reload()
+          }
         }
         hiddenAt = null
       }
@@ -394,15 +401,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   background: hayActualizacion ? "linear-gradient(135deg,#1e40af,#3b82f6)" : "none",
                   border: hayActualizacion ? "none" : "1px solid #e2e8f0",
                   borderRadius: "8px",
-                  width: 34, height: 34,
-                  display: "flex", alignItems: "center", justifyContent: "center",
+                  padding: hayActualizacion ? "0 12px" : "0",
+                  width: hayActualizacion ? "auto" : 34, height: 34,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                   cursor: "pointer", flexShrink: 0,
                   color: hayActualizacion ? "white" : "#94a3b8",
-                  fontSize: 16,
+                  fontSize: hayActualizacion ? 12 : 16,
+                  fontWeight: hayActualizacion ? 700 : undefined,
                   transition: "all 0.2s",
                 }}
               >
-                🔄
+                🔄{hayActualizacion && " Nueva versión"}
               </button>
             </div>
           </div>

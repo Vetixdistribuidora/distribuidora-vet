@@ -29,6 +29,7 @@ type ModalTipo = "stockBajo" | "sinStock" | "sinVentas" | "sinRotacion" | "lotes
 export default function Dashboard() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [errorCarga, setErrorCarga] = useState<string | null>(null)
   const [kpis, setKpis] = useState<any>({})
   const [alertas, setAlertas] = useState<any>({ sinStock: [], stockBajo: [], sinVentas: [], sinRotacion: [] })
   const [ventasGrafico, setVentasGrafico] = useState<any[]>([])
@@ -49,16 +50,18 @@ export default function Dashboard() {
   // Watchdog: si loading queda trabado >10s, la sesión está rota → forzar re-login
   useEffect(() => {
     if (!loading) return
-    const w = setTimeout(() => supabase.auth.signOut(), 60000)
+    const w = setTimeout(() => supabase.auth.signOut(), 300000)
     return () => clearTimeout(w)
   }, [loading])
 
   async function iniciar() {
     setLoading(true)
+    setErrorCarga(null)
     try {
       await cargarDatos()
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error cargando dashboard:", e)
+      setErrorCarga("Error al cargar el dashboard: " + (e?.message || "error desconocido"))
     } finally {
       setLoading(false)
     }
@@ -203,6 +206,15 @@ export default function Dashboard() {
   if (loading) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#0c0f1a" }}>
       <p style={{ color: "#9ca3af", fontFamily: "DM Sans, sans-serif" }}>🔐 Cargando...</p>
+    </div>
+  )
+
+  if (errorCarga) return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 300, gap: 16 }}>
+      <p style={{ color: "#f87171", fontWeight: 700, fontSize: 15 }}>{errorCarga}</p>
+      <button onClick={iniciar} style={{ background: "#3b82f6", color: "white", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+        Reintentar
+      </button>
     </div>
   )
 

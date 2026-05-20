@@ -7,7 +7,9 @@ function fmt(num: number) {
   return "$" + Number(num).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 function fechaCorta(f: string) {
-  return new Date(f).toLocaleDateString("es-AR")
+  if (!f) return "-"
+  const d = f.includes("T") ? new Date(f) : new Date(f + "T00:00:00")
+  return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })
 }
 
 function Toast({ mensaje, tipo }: { mensaje: string; tipo: "ok" | "error" }) {
@@ -66,6 +68,7 @@ export default function Clientes() {
   const [formNuevo, setFormNuevo] = useState({ nombre: "", apellido: "", cuit: "", telefono: "", localidad: "", porcentaje: "" })
   const [guardando, setGuardando] = useState(false)
   const [confirmEliminar, setConfirmEliminar] = useState<any>(null)
+  const [eliminandoId, setEliminandoId] = useState<number | null>(null)
   const [deudasPorCliente, setDeudasPorCliente] = useState<Record<number, number>>({})
 
   const [modalHistorial, setModalHistorial] = useState<any>(null)
@@ -124,7 +127,7 @@ export default function Clientes() {
   useEffect(() => { cargar() }, [])
   useEffect(() => {
     if (!cargando) return
-    const w = setTimeout(() => supabase.auth.signOut(), 60000)
+    const w = setTimeout(() => supabase.auth.signOut(), 300000)
     return () => clearTimeout(w)
   }, [cargando])
 
@@ -168,6 +171,7 @@ export default function Clientes() {
   }
 
   async function eliminar(id: number) {
+    setEliminandoId(id)
     try {
       const { error } = await supabase.from("clientes").delete().eq("id", id)
       if (error) { mostrarToast("Error: " + error.message, "error"); return }
@@ -175,6 +179,8 @@ export default function Clientes() {
       setConfirmEliminar(null); cargar()
     } catch (e: any) {
       mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setEliminandoId(null)
     }
   }
 
@@ -370,9 +376,10 @@ export default function Clientes() {
                   background: "#f1f5f9", color: "#374151", border: "1px solid #e2e8f0",
                   borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer"
                 }}>✏️</button>
-                <button onClick={() => setConfirmEliminar(c)} style={{
+                <button onClick={() => setConfirmEliminar(c)} disabled={eliminandoId === c.id} style={{
                   background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca",
-                  borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer"
+                  borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: eliminandoId === c.id ? "not-allowed" : "pointer",
+                  opacity: eliminandoId === c.id ? 0.5 : 1
                 }}>🗑️</button>
               </div>
             </div>

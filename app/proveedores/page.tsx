@@ -83,7 +83,7 @@ export default function ProveedoresPage() {
   useEffect(() => { cargarProveedores(); }, []);
   useEffect(() => {
     if (!loading) return
-    const w = setTimeout(() => supabase.auth.signOut(), 60000)
+    const w = setTimeout(() => supabase.auth.signOut(), 300000)
     return () => clearTimeout(w)
   }, [loading])
 
@@ -163,15 +163,20 @@ export default function ProveedoresPage() {
     setUsarSaldoFavor(false);
     setSaldoFavorProv(0);
     setLoadingCompras(true);
-    const [{ data: compras }, { data: saldos }] = await Promise.all([
-      supabase.from("compras").select("id, total, total_pagado, numero_remito, fecha")
-        .eq("proveedor_id", p.id).in("estado", ["pendiente", "parcial"]).order("id", { ascending: true }),
-      supabase.from("saldo_proveedores").select("monto").eq("proveedor_id", p.id),
-    ]);
-    setComprasPendientes(compras || []);
-    const totalSaldo = (saldos || []).reduce((s: number, r: any) => s + Number(r.monto), 0);
-    setSaldoFavorProv(Math.max(0, totalSaldo));
-    setLoadingCompras(false);
+    try {
+      const [{ data: compras }, { data: saldos }] = await Promise.all([
+        supabase.from("compras").select("id, total, total_pagado, numero_remito, fecha")
+          .eq("proveedor_id", p.id).in("estado", ["pendiente", "parcial"]).order("id", { ascending: true }),
+        supabase.from("saldo_proveedores").select("monto").eq("proveedor_id", p.id),
+      ]);
+      setComprasPendientes(compras || []);
+      const totalSaldo = (saldos || []).reduce((s: number, r: any) => s + Number(r.monto), 0);
+      setSaldoFavorProv(Math.max(0, totalSaldo));
+    } catch (e) {
+      console.error("Error cargando compras del proveedor:", e);
+    } finally {
+      setLoadingCompras(false);
+    }
   }
 
   function cerrarPago() {
@@ -638,7 +643,7 @@ export default function ProveedoresPage() {
               }}>Cerrar</button>
               <button
                 onClick={confirmarPago}
-                disabled={procesandoPago || (parseFloat(montoPago.replace(",", ".")) || 0) <= 0 || comprasPendientes.length === 0}
+                disabled={procesandoPago || comprasPendientes.length === 0 || (Number(montoPago) <= 0 && (!usarSaldoFavor || saldoFavorProv <= 0))}
                 style={{
                   flex: 2, padding: "11px",
                   background: "linear-gradient(135deg, #16a34a, #22c55e)",

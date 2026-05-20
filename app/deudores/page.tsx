@@ -43,7 +43,7 @@ export default function Deudores() {
   useEffect(() => { cargarDeudores() }, [])
   useEffect(() => {
     if (!cargando) return
-    const w = setTimeout(() => supabase.auth.signOut(), 60000)
+    const w = setTimeout(() => supabase.auth.signOut(), 300000)
     return () => clearTimeout(w)
   }, [cargando])
 
@@ -136,7 +136,20 @@ export default function Deudores() {
     const afectadas = preview.filter((f: any) => f.pago > 0)
 
     try {
+      // Generar número de recibo secuencial
+      const { data: ultimoRecibo } = await supabase
+        .from("pagos_cuenta_corriente").select("nro_recibo")
+        .not("nro_recibo", "is", null)
+        .order("id", { ascending: false }).limit(1).maybeSingle()
+      let nextNum = 6520
+      if (ultimoRecibo?.nro_recibo) {
+        const m = ultimoRecibo.nro_recibo.match(/(\d+)$/)
+        if (m) nextNum = parseInt(m[1], 10) + 1
+      }
+
       for (const f of afectadas) {
+        const nroRecibo = "001-" + String(nextNum).padStart(6, "0")
+        nextNum++
         // Mismo insert que usa la página de cuentas corrientes
         const { error: errInsert } = await supabase
           .from("pagos_cuenta_corriente")
@@ -145,8 +158,15 @@ export default function Deudores() {
             venta_id: f.id,
             monto: f.pago,
             nota: notaCobro.trim() || null,
+            nro_recibo: nroRecibo,
           }])
         if (errInsert) throw new Error("Error en factura N°" + (f.nro_factura || f.id) + ": " + errInsert.message)
+
+        // Registrar en cuentas_corrientes
+        const { data: ultimoCC } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", modalCobro.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
+        const saldoAnteriorCC = Number(ultimoCC?.saldo ?? 0)
+        const nuevoSaldoCC = Math.max(0, saldoAnteriorCC - f.pago)
+        await supabase.from("cuentas_corrientes").insert({ cliente_id: modalCobro.cliente_id, venta_id: f.id, tipo: "pago", monto: -f.pago, saldo: nuevoSaldoCC, fecha: new Date() })
 
         // Si queda saldada, marcar la venta como cobrada (igual que cuentas)
         if (f.resultado === "pagado") {
@@ -182,7 +202,8 @@ export default function Deudores() {
       setModalCobro((prev: any) => prev ? { ...actualizado } : prev)
     } else {
       // Cliente ya no tiene deuda — cerrar automáticamente
-      setTimeout(cerrarCobro, 1800)
+      const t = setTimeout(cerrarCobro, 1800)
+      return () => clearTimeout(t)
     }
   }, [deudores])
 
