@@ -143,6 +143,7 @@ export default function ComprasPage() {
   const [guardandoNuevoProd, setGuardandoNuevoProd] = useState(false);
 
   const [loadingProductos, setLoadingProductos] = useState(false);
+  const [hayBorrador, setHayBorrador] = useState(false);
 
   useEffect(() => { cargarTodo(); }, []);
   useEffect(() => {
@@ -150,6 +151,18 @@ export default function ComprasPage() {
     const w = setTimeout(() => supabase.auth.signOut(), 60000)
     return () => clearTimeout(w)
   }, [loading])
+
+  // Guardar borrador automáticamente en localStorage cuando cambia el formulario
+  useEffect(() => {
+    if (!modalNueva) return
+    if (items.length === 0 && !form.proveedor_id) return
+    localStorage.setItem("vetix_borrador_compra", JSON.stringify({ form, items }))
+  }, [form, items, modalNueva])
+
+  // Al montar, verificar si hay borrador guardado
+  useEffect(() => {
+    setHayBorrador(!!localStorage.getItem("vetix_borrador_compra"))
+  }, [])
 
   async function cargarTodo() {
     setLoading(true);
@@ -194,16 +207,39 @@ export default function ComprasPage() {
   }
 
   function abrirNueva() {
+    const guardado = localStorage.getItem("vetix_borrador_compra")
+    if (guardado) {
+      try {
+        const b = JSON.parse(guardado)
+        if (b.form) setForm({ ...b.form, tipo_flete: b.form.tipo_flete || "pesos" })
+        if (b.items) setItems(b.items)
+      } catch {}
+    } else {
+      setForm({
+        proveedor_id: "", fecha: new Date().toLocaleDateString("sv-SE"),
+        numero_remito: "", fecha_vencimiento: "", metodo_pago: "",
+        notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
+        incluye_flete: false, tipo_flete: "pesos", valor_flete: "",
+        incluye_descuento: false, porcentaje_descuento: "",
+      });
+      setItems([]);
+    }
+    setBusquedaProducto(""); setErrorForm(null); setMostrarFormNuevoProd(false);
+    cargarProductos();
+    setModalNueva(true);
+  }
+
+  function descartarBorrador() {
+    localStorage.removeItem("vetix_borrador_compra")
+    setHayBorrador(false)
     setForm({
       proveedor_id: "", fecha: new Date().toLocaleDateString("sv-SE"),
       numero_remito: "", fecha_vencimiento: "", metodo_pago: "",
       notas: "", pago_inicial: "", incluye_iva: false, porcentaje_iva: "21",
       incluye_flete: false, tipo_flete: "pesos", valor_flete: "",
       incluye_descuento: false, porcentaje_descuento: "",
-    });
-    setItems([]); setBusquedaProducto(""); setErrorForm(null); setMostrarFormNuevoProd(false);
-    cargarProductos(); // carga lazy solo cuando se abre el modal
-    setModalNueva(true);
+    })
+    setItems([])
   }
 
   function agregarItem(prod: Producto) {
@@ -265,56 +301,106 @@ export default function ComprasPage() {
     const valFlete = parseFloat(form.valor_flete) || 0;
     const pctDesc = form.incluye_descuento ? (parseFloat(form.porcentaje_descuento) || 0) : 0;
     if (form.incluye_flete && valFlete <= 0) { setErrorForm("El valor del flete debe ser mayor a 0."); return; }
-    const { flete: montoFlete, descuento: montoDescuento, total: totalConDescuento } = calcularTotales(items, form.incluye_iva, pctIva, form.incluye_flete, form.tipo_flete, valFlete, pctDesc);
-    setGuardando(true); setErrorForm(null);
-    const { error } = await supabase.rpc("registrar_compra", {
-      p_proveedor_id: Number(form.proveedor_id), p_fecha: form.fecha,
-      p_numero_remito: form.numero_remito || null, p_fecha_vencimiento: form.fecha_vencimiento || null,
-      p_metodo_pago: (parseFloat(form.pago_inicial) || 0) > 0 ? (form.metodo_pago || null) : null, p_notas: form.notas || null,
-      p_pago_inicial: parseFloat(form.pago_inicial) || 0,
-      p_items: items.map(it => ({
-        producto_id: it.producto_id, cantidad: parseFloat(it.cantidad) || 1,
-        precio_unitario: parseFloat(it.precio_unitario) || 0, fecha_vencimiento: it.fecha_vencimiento || null
-      })),
-      p_incluye_iva: form.incluye_iva, p_porcentaje_iva: pctIva, p_monto_flete: montoFlete,
-    });
-    setGuardando(false);
-    if (error) { setErrorForm("Error: " + error.message); return; }
-    // Corregir campos que el RPC no maneja correctamente
+
+    const { subtotal: subtotalBase, iva: montoIva, flete: montoFlete, descuento: montoDescuento, total } =
+      calcularTotales(items, form.incluye_iva, pctIva, form.incluye_flete, form.tipo_flete, valFlete, pctDesc);
     const pagoInicial = parseFloat(form.pago_inicial) || 0;
-    if (pctDesc > 0 || pagoInicial === 0) {
-      const hace5seg = new Date(Date.now() - 5000).toISOString()
-      const { data: compraCreada } = await supabase
-        .from("compras").select("id").eq("proveedor_id", Number(form.proveedor_id))
-        .gte("created_at", hace5seg)
-        .order("id", { ascending: false }).limit(1).single();
-      if (compraCreada) {
-        const patch: Record<string, any> = {};
-        if (pctDesc > 0) { patch.total = totalConDescuento; patch.descuento_pct = pctDesc; patch.monto_descuento = montoDescuento; }
-        if (pagoInicial === 0) patch.metodo_pago = null;
-        await supabase.from("compras").update(patch).eq("id", compraCreada.id);
-      }
+    const totalPagado = Math.min(pagoInicial, total);
+    const estado = totalPagado >= total ? "pagado" : totalPagado > 0 ? "parcial" : "pendiente";
+
+    setGuardando(true); setErrorForm(null);
+
+    // 1. Insertar la compra principal
+    const { data: compra, error: errCompra } = await supabase.from("compras").insert({
+      proveedor_id: Number(form.proveedor_id),
+      fecha: form.fecha,
+      numero_remito: form.numero_remito || null,
+      fecha_vencimiento: form.fecha_vencimiento || null,
+      metodo_pago: pagoInicial > 0 ? (form.metodo_pago || null) : null,
+      notas: form.notas || null,
+      total,
+      total_pagado: totalPagado,
+      estado,
+      incluye_iva: form.incluye_iva,
+      monto_iva: montoIva,
+      porcentaje_iva: pctIva,
+      monto_flete: montoFlete,
+      descuento_pct: pctDesc,
+      monto_descuento: montoDescuento,
+    }).select().single();
+
+    if (errCompra || !compra) {
+      setGuardando(false);
+      setErrorForm("Error al guardar la compra: " + (errCompra?.message || "error desconocido"));
+      return;
     }
-    // El RPC registrar_compra ya actualiza el stock. Aquí solo actualizamos costo/precio_venta si está activado.
+
+    // 2. Para cada item: detalle + lote + stock
+    for (const it of items) {
+      const cantidad = parseFloat(it.cantidad) || 1;
+      const precioUnit = parseFloat(it.precio_unitario) || 0;
+      const subtotalItem = cantidad * precioUnit;
+      const proporcion = subtotalBase > 0 ? subtotalItem / subtotalBase : 0;
+      const ivaItem = form.incluye_iva ? Math.round(montoIva * proporcion * 100) / 100 : 0;
+      const fleteItem = form.incluye_flete ? Math.round(montoFlete * proporcion * 100) / 100 : 0;
+
+      await supabase.from("compras_detalle").insert({
+        compra_id: compra.id,
+        producto_id: it.producto_id,
+        cantidad,
+        precio_unitario: precioUnit,
+        subtotal: subtotalItem,
+        monto_iva: ivaItem,
+        monto_flete: fleteItem,
+      });
+
+      await supabase.from("lotes").insert({
+        producto_id: it.producto_id,
+        cantidad,
+        fecha_vencimiento: it.fecha_vencimiento || null,
+        compra_id: compra.id,
+        nro_remito: form.numero_remito || null,
+      });
+
+      // Actualizar stock con COALESCE para evitar NULL+número=NULL
+      const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single();
+      await supabase.from("productos").update({
+        stock: (prod?.stock ?? 0) + cantidad
+      }).eq("id", it.producto_id);
+    }
+
+    // 3. Registrar pago inicial si hay
+    if (pagoInicial > 0) {
+      await supabase.from("compras_pagos").insert({
+        compra_id: compra.id,
+        monto: totalPagado,
+        metodo_pago: form.metodo_pago || null,
+        notas: "Pago inicial",
+        fecha: form.fecha,
+      });
+    }
+
+    // 4. Actualizar costo/precio_venta si está activado
     if (actualizarCostos) {
-      const subtotalTotal = items.reduce((s, it) => s + (parseFloat(it.cantidad) || 0) * (parseFloat(it.precio_unitario) || 0), 0)
       await Promise.all(items.map(async (item) => {
-        const precioUnit = parseFloat(item.precio_unitario) || 0
-        if (!precioUnit) return
-        const cantidad = parseFloat(item.cantidad) || 1
-        const subtotalItem = precioUnit * cantidad
-        const proporcion = subtotalTotal > 0 ? subtotalItem / subtotalTotal : 0
-        const fleteUnitario = montoFlete > 0 ? (montoFlete * proporcion) / cantidad : 0
-        const { data: prodActual } = await supabase.from("productos").select("margen, flete").eq("id", item.producto_id).single()
-        const margen = prodActual?.margen ?? 0
-        const fleteProducto = prodActual?.flete ?? 0
+        const precioUnit = parseFloat(item.precio_unitario) || 0;
+        if (!precioUnit) return;
+        const { data: prodActual } = await supabase.from("productos").select("margen, flete").eq("id", item.producto_id).single();
+        const margen = prodActual?.margen ?? 0;
+        const fleteProducto = prodActual?.flete ?? 0;
         await supabase.from("productos").update({
           costo: Math.round(precioUnit * 100) / 100,
           precio_venta: Math.round(precioUnit * (1 + margen / 100) * (1 + fleteProducto / 100) * 100) / 100,
-        }).eq("id", item.producto_id)
-      }))
+        }).eq("id", item.producto_id);
+      }));
     }
-    setModalNueva(false); cargarTodo();
+
+    // 5. Limpiar borrador y cerrar
+    localStorage.removeItem("vetix_borrador_compra");
+    setHayBorrador(false);
+    setGuardando(false);
+    setModalNueva(false);
+    cargarTodo();
   }
 
   async function eliminarCompra() {
@@ -490,8 +576,12 @@ export default function ComprasPage() {
           <button className="compras-header-btn" onClick={abrirNueva} style={{
             background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white",
             border: "none", borderRadius: 10, padding: "10px 18px",
-            fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 8px rgba(59,130,246,0.3)"
-          }}>+ Nueva compra</button>
+            fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 8px rgba(59,130,246,0.3)",
+            position: "relative"
+          }}>
+            + Nueva compra
+            {hayBorrador && <span style={{ position: "absolute", top: -6, right: -6, background: "#f59e0b", color: "white", borderRadius: 99, fontSize: 10, padding: "2px 6px", fontWeight: 800 }}>borrador</span>}
+          </button>
         </div>
       </div>
 
@@ -578,6 +668,12 @@ export default function ComprasPage() {
               <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: 0 }}>Nueva compra</h2>
             </div>
             <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
+              {hayBorrador && items.length > 0 && (
+                <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ color: "#fbbf24", fontSize: 13 }}>📋 Borrador restaurado — {items.length} producto{items.length !== 1 ? "s" : ""} cargados</span>
+                  <button onClick={descartarBorrador} style={{ background: "none", border: "none", color: "#fbbf24", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>Descartar ×</button>
+                </div>
+              )}
               {errorForm && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 13, padding: "10px 14px", borderRadius: 8 }}>{errorForm}</div>}
 
               <div className="compras-modal-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
@@ -838,7 +934,7 @@ export default function ComprasPage() {
             <div className="compras-modal-footer" style={{ padding: "18px 28px", borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               {items.length > 0 && <span style={{ color: "#9ca3af", fontSize: 13 }}>Total: <b style={{ color: "white" }}>{fmt(totalForm)}</b></span>}
               <div className="compras-modal-footer-btns" style={{ display: "flex", gap: 10, marginLeft: "auto" }}>
-                <button onClick={() => setModalNueva(false)} style={{ padding: "10px 20px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+                <button onClick={() => setModalNueva(false)} style={{ padding: "10px 20px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cerrar (borrador guardado)</button>
                 <button onClick={guardarCompra} disabled={guardando} style={{ padding: "10px 24px", background: "linear-gradient(135deg, #2563eb, #3b82f6)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardando ? 0.5 : 1 }}>
                   {guardando ? "Guardando..." : "Registrar compra"}
                 </button>

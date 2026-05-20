@@ -558,7 +558,12 @@ export default function Ventas() {
     const { data: guardada } = await supabase
       .from("facturas_impresion").select("datos").eq("venta_id", venta.id).maybeSingle()
     if (guardada?.datos) {
-      generarHTMLEImprimir(guardada.datos, tipo)
+      // Normalizar nro_factura a 5 dígitos por si fue guardado sin padding (ej: "26" → "00026")
+      const datosNorm = { ...guardada.datos }
+      if (datosNorm.nroFactura && !isNaN(parseInt(datosNorm.nroFactura, 10))) {
+        datosNorm.nroFactura = String(parseInt(datosNorm.nroFactura, 10)).padStart(5, "0")
+      }
+      generarHTMLEImprimir(datosNorm, tipo)
     } else {
       // Reconstruir desde datos de la venta
       const items = itemsCargados?.length
@@ -575,13 +580,19 @@ export default function Ventas() {
         return acc + Math.max(0, pagan) * it.precio
       }, 0)
       const totalCalc = Number(venta.total)
-      const ivaCalc = subtotalCalc > 0 ? Math.round((totalCalc / subtotalCalc - 1) * 100) : 21
+      // Reconstruir IVA: si el cálculo da un valor inusual (< 0 o > 30), usar 21%
+      const ivaRaw = subtotalCalc > 0 ? Math.round((totalCalc / subtotalCalc - 1) * 100) : 21
+      const ivaCalc = (ivaRaw >= 0 && ivaRaw <= 30) ? ivaRaw : 21
+      // Normalizar nro_factura a 5 dígitos para reimprimir
+      const nroParaImprimir = venta.nro_factura
+        ? (isNaN(parseInt(venta.nro_factura, 10)) ? venta.nro_factura : String(parseInt(venta.nro_factura, 10)).padStart(5, "0"))
+        : ""
       generarHTMLEImprimir({
-        nroFactura: venta.nro_factura,
+        nroFactura: nroParaImprimir,
         clienteSeleccionado: clienteData || venta.clientes || {},
         carrito: carritoReconstruido,
         subtotal: subtotalCalc,
-        ivaNum: ivaCalc >= 0 ? ivaCalc : 0,
+        ivaNum: ivaCalc,
         total: totalCalc,
         esCuentaCorriente: venta.estado === "cuenta_corriente",
         metodoCobro: venta.metodo_cobro,
@@ -670,9 +681,24 @@ export default function Ventas() {
       if (producto && item.cantidad > producto.stock) { mostrarToast("Sin stock para: " + item.nombre, "error"); return }
     }
     setGuardando(true)
+    // Asegurar que nroFactura esté disponible — si cargar() todavía no terminó, buscar en el momento
+    let nroFacturaSave = nroFactura
+    if (!nroFacturaSave || nroFacturaSave === "00000") {
+      const { data: ultimaV } = await supabase.from("ventas").select("nro_factura").order("id", { ascending: false }).limit(1).maybeSingle()
+      if (ultimaV?.nro_factura) {
+        const n = parseInt(ultimaV.nro_factura, 10)
+        nroFacturaSave = String(isNaN(n) ? 1 : n + 1).padStart(5, "0")
+      } else {
+        nroFacturaSave = "10047"
+      }
+      setNroFactura(nroFacturaSave)
+    }
+    // Normalizar siempre a 5 dígitos con ceros
+    const numParsed = parseInt(nroFacturaSave, 10)
+    if (!isNaN(numParsed)) nroFacturaSave = String(numParsed).padStart(5, "0")
     const { data: venta, error: errorVenta } = await supabase.from("ventas").insert({
       cliente_id: Number(clienteId), total, fecha: new Date(),
-      estado: esCuentaCorriente ? "cuenta_corriente" : "cobrada", nro_factura: nroFactura,
+      estado: esCuentaCorriente ? "cuenta_corriente" : "cobrada", nro_factura: nroFacturaSave,
       metodo_cobro: esCuentaCorriente ? null : metodoCobro
     }).select().single()
     if (errorVenta || !venta) { mostrarToast("Error al guardar venta", "error"); setGuardando(false); return }
@@ -711,7 +737,9 @@ export default function Ventas() {
       }
     }
     const carritoEfectivo = carrito.map(item => ({ ...item, precio: precioEfectivo(item) }))
-    await supabase.from("facturas_impresion").insert([{ nro_factura: nroFactura, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? null : metodoCobro } }])
+    // nroFacturaSave ya está normalizado (5 dígitos con ceros), lo usamos directo
+    const { error: errorFI } = await supabase.from("facturas_impresion").insert([{ nro_factura: nroFacturaSave, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura: nroFacturaSave, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? null : metodoCobro } }])
+    if (errorFI) console.error("Error guardando factura_impresion:", errorFI)
     mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : "✅ Venta confirmada", "ok")
     setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false)
     localStorage.removeItem("vetix_borrador")
@@ -828,8 +856,8 @@ export default function Ventas() {
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>N° Presupuesto</label>
-                  <input type="text" value={nroFactura} onChange={e => setNroFactura(e.target.value)}
-                    style={{ width: "100%", padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, color: "#111827", outline: "none", boxSizing: "border-box" }} />
+                  <input type="text" value={nroFactura} readOnly
+                    style={{ width: "100%", padding: "10px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, color: "#111827", outline: "none", boxSizing: "border-box", background: "#f8fafc", cursor: "default" }} />
                 </div>
               </div>
             </div>
