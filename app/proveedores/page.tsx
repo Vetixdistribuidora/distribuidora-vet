@@ -595,9 +595,9 @@ export default function ProveedoresPage() {
                         <span style={{ color: "white", fontWeight: 700 }}>{fmt(totalAplicado)}</span>
                       </div>
                       {exceso > 0.01 && (
-                        <div style={{ display: "flex", justifyContent: "space-between", color: "#fbbf24" }}>
-                          <span>Excedente → saldo a favor:</span>
-                          <span style={{ fontWeight: 700 }}>{fmt(exceso)}</span>
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af" }}>
+                          <span>Excedente (saldo a favor):</span>
+                          <span style={{ color: "#4ade80", fontWeight: 700 }}>{fmt(exceso)}</span>
                         </div>
                       )}
                     </div>
