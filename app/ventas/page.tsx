@@ -129,6 +129,7 @@ export default function Ventas() {
   const [ncCantidades, setNcCantidades] = useState<Record<number, number>>({})
   const [ncMotivo, setNcMotivo] = useState("")
   const [guardandoNC, setGuardandoNC] = useState(false)
+  const [cargandoItemsNC, setCargandoItemsNC] = useState(false)
   // ─────────────────────────────────────────────────────────────────────────────
 
   // ── BORRADORES ──────────────────────────────────────────────────────────────
@@ -198,18 +199,32 @@ export default function Ventas() {
   }
 
   async function abrirModalNC(venta: any) {
-    let items = detalleItems
-    if (!items.length || items[0]?.venta_id !== venta.id) {
-      const { data } = await supabase.from("detalle_ventas").select("*, productos(nombre)").eq("venta_id", venta.id)
-      items = data || []
-      setDetalleItems(items)
+    setCargandoItemsNC(true)
+    try {
+      let items = detalleItems
+      // Siempre re-fetchar para asegurarse de tener los items de ESTA venta
+      if (!items.length || !items[0]?.venta_id || items[0]?.venta_id !== venta.id) {
+        const { data, error } = await supabase
+          .from("detalle_ventas")
+          .select("*, productos(nombre, codigo)")
+          .eq("venta_id", venta.id)
+        if (error) { mostrarToast("Error al cargar productos de la venta: " + error.message, "error"); return }
+        items = data || []
+        setDetalleItems(items)
+      }
+      // Arrancar con TODAS las cantidades al máximo (devolución total por defecto)
+      // El usuario reduce con − si quiere devolver menos
+      const cantInit: Record<number, number> = {}
+      items.forEach((it: any) => { cantInit[it.producto_id] = it.cantidad })
+      setNcCantidades(cantInit)
+      setNcMotivo("")
+      setModalNC({ venta, items })
+      setVentaDetalle(null)
+    } catch (e: any) {
+      mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setCargandoItemsNC(false)
     }
-    const cantInit: Record<number, number> = {}
-    items.forEach((it: any) => { cantInit[it.producto_id] = 0 })
-    setNcCantidades(cantInit)
-    setNcMotivo("")
-    setModalNC({ venta, items })
-    setVentaDetalle(null)
   }
 
   async function confirmarNC() {
@@ -1464,25 +1479,37 @@ export default function Ventas() {
               <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>Venta N° {modalNC.venta.nro_factura} · {modalNC.venta.clientes?.nombre} {modalNC.venta.clientes?.apellido}</p>
             </div>
 
-            <p style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Productos a devolver</p>
+            <div style={{ marginBottom: 10 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 4px" }}>Productos a devolver</p>
+              <p style={{ fontSize: 11, color: "#9ca3af", margin: 0 }}>Todos los productos están seleccionados. Usá − para reducir la cantidad o poner en 0 para excluir un producto.</p>
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-              {modalNC.items.map((it: any) => {
+              {modalNC.items.length === 0 ? (
+                <div style={{ padding: "20px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, textAlign: "center" }}>
+                  <p style={{ margin: 0, fontSize: 13, color: "#dc2626", fontWeight: 600 }}>⚠️ Esta venta no tiene productos registrados en detalle</p>
+                  <p style={{ margin: "6px 0 0", fontSize: 11, color: "#6b7280" }}>No se puede generar nota de crédito sin detalle de productos</p>
+                </div>
+              ) : modalNC.items.map((it: any) => {
                 const maxCant = it.cantidad
                 const cantSelec = ncCantidades[it.producto_id] ?? maxCant
                 return (
                   <div key={it.producto_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: cantSelec > 0 ? "#f0fdf4" : "#f9fafb", borderRadius: 10, border: cantSelec > 0 ? "1px solid #86efac" : "1px solid #e5e7eb" }}>
-                    <div style={{ flex: 1 }}>
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#111827" }}>{it.productos?.nombre}</p>
-                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280" }}>Compró {maxCant} u. × {fmt(it.precio)}</p>
+                    <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: cantSelec > 0 ? "#111827" : "#9ca3af" }}>{it.productos?.nombre || "Producto sin nombre"}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280" }}>
+                        Facturado: {maxCant} u. × {fmt(it.precio)}
+                        {cantSelec > 0 && cantSelec < maxCant && <span style={{ color: "#d97706", fontWeight: 600 }}> · devolviendo {cantSelec}</span>}
+                        {cantSelec === 0 && <span style={{ color: "#9ca3af" }}> · no se devuelve</span>}
+                      </p>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 11, color: "#6b7280" }}>Devolver:</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, color: "#6b7280" }}>Cant.:</span>
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <button onClick={() => setNcCantidades(prev => ({ ...prev, [it.producto_id]: Math.max(0, (prev[it.producto_id] ?? maxCant) - 1) }))}
-                          style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #d1d5db", background: "white", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                        <span style={{ minWidth: 24, textAlign: "center", fontWeight: 700, fontSize: 14, color: "#111827" }}>{cantSelec}</span>
+                          style={{ width: 30, height: 30, borderRadius: 7, border: "1px solid #d1d5db", background: "white", cursor: "pointer", fontSize: 18, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                        <span style={{ minWidth: 28, textAlign: "center", fontWeight: 800, fontSize: 15, color: cantSelec > 0 ? "#059669" : "#9ca3af" }}>{cantSelec}</span>
                         <button onClick={() => setNcCantidades(prev => ({ ...prev, [it.producto_id]: Math.min(maxCant, (prev[it.producto_id] ?? maxCant) + 1) }))}
-                          style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #d1d5db", background: "white", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                          style={{ width: 30, height: 30, borderRadius: 7, border: "1px solid #d1d5db", background: "white", cursor: "pointer", fontSize: 18, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
                       </div>
                     </div>
                   </div>
@@ -1497,14 +1524,24 @@ export default function Ventas() {
             </div>
 
             {(() => {
-              const totalNC = modalNC.items.reduce((acc: number, it: any) => acc + it.precio * (ncCantidades[it.producto_id] ?? it.cantidad), 0)
+              const itemsSelec = modalNC.items.filter((it: any) => (ncCantidades[it.producto_id] ?? it.cantidad) > 0)
+              const totalNC = itemsSelec.reduce((acc: number, it: any) => acc + it.precio * (ncCantidades[it.producto_id] ?? it.cantidad), 0)
+              const cantExcluidos = modalNC.items.length - itemsSelec.length
               return (
-                <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 12, color: "#15803d", fontWeight: 600 }}>Total a acreditar</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280" }}>Se descuenta del total de la venta original</p>
+                <div style={{ background: totalNC > 0 ? "#f0fdf4" : "#fef9c3", border: `1px solid ${totalNC > 0 ? "#86efac" : "#fde047"}`, borderRadius: 10, padding: "12px 16px", marginBottom: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 12, color: totalNC > 0 ? "#15803d" : "#92400e", fontWeight: 600 }}>
+                        {totalNC > 0 ? "Total a acreditar" : "⚠️ Ningún producto seleccionado"}
+                      </p>
+                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280" }}>
+                        {totalNC > 0
+                          ? `${itemsSelec.length} producto${itemsSelec.length !== 1 ? "s" : ""} · Se descuenta del total original${cantExcluidos > 0 ? ` · ${cantExcluidos} excluido${cantExcluidos !== 1 ? "s" : ""}` : ""}`
+                          : "Usá los botones + para seleccionar qué productos devuelve el cliente"}
+                      </p>
+                    </div>
+                    {totalNC > 0 && <span style={{ fontSize: 22, fontWeight: 800, color: "#059669" }}>{fmt(totalNC)}</span>}
                   </div>
-                  <span style={{ fontSize: 22, fontWeight: 800, color: "#059669" }}>{fmt(totalNC)}</span>
                 </div>
               )
             })()}
@@ -1563,7 +1600,9 @@ export default function Ventas() {
                 📦 Remito
               </button>
               {ventaDetalle.estado !== "anulada" && (
-                <button onClick={() => abrirModalNC(ventaDetalle)} disabled={loadingDetalle} style={{ flex: 1, minWidth: 120, padding: "10px", background: "linear-gradient(135deg, #059669, #10b981)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: loadingDetalle ? 0.6 : 1 }}>↩️ Nota de Crédito</button>
+                <button onClick={() => abrirModalNC(ventaDetalle)} disabled={loadingDetalle || cargandoItemsNC} style={{ flex: 1, minWidth: 120, padding: "10px", background: "linear-gradient(135deg, #059669, #10b981)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: (loadingDetalle || cargandoItemsNC) ? 0.6 : 1 }}>
+                  {cargandoItemsNC ? "Cargando..." : "↩️ Nota de Crédito"}
+                </button>
               )}
               {ventaDetalle.estado !== "anulada" && (
                 <button onClick={() => { setConfirmAnular(ventaDetalle); setVentaDetalle(null) }} style={{ flex: 1, minWidth: 120, padding: "10px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Anular venta</button>
