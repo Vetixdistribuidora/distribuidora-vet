@@ -124,12 +124,23 @@ export default function CuentasCorrientes() {
     const { data: vv } = await supabase.from("ventas").select("id, total, estado, nro_factura, fecha").eq("cliente_id", clienteId).order("id", { ascending: false })
     if (!vv) { setVentas([]); return }
     const ventaIds = vv.map(v => v.id)
-    const [{ data: todosDetalles }, { data: todosPagos }] = await Promise.all([
-      supabase.from("detalle_ventas").select("venta_id, cantidad, precio, productos(nombre)").in("venta_id", ventaIds),
+    // Two-step: no FK declarada entre detalle_ventas y productos
+    const [{ data: detallesRaw }, { data: todosPagos }] = await Promise.all([
+      supabase.from("detalle_ventas").select("venta_id, producto_id, cantidad, precio").in("venta_id", ventaIds),
       supabase.from("pagos_cuenta_corriente").select("id, venta_id, monto, fecha, nota, nro_recibo").in("venta_id", ventaIds).order("fecha", { ascending: true })
     ])
+    // Resolver nombres de productos en un solo query
+    const prodIds = [...new Set((detallesRaw || []).map((d: any) => d.producto_id))]
+    const { data: prodsData } = prodIds.length
+      ? await supabase.from("productos").select("id, nombre").in("id", prodIds)
+      : { data: [] }
+    const prodsMap: Record<number, string> = {}
+    ;(prodsData || []).forEach((p: any) => { prodsMap[p.id] = p.nombre })
+    const todosDetalles = (detallesRaw || []).map((d: any) => ({
+      ...d, productos: { nombre: prodsMap[d.producto_id] || "" }
+    }))
     const detallesPorVenta: Record<number, any[]> = {}
-    ;(todosDetalles || []).forEach((d: any) => {
+    todosDetalles.forEach((d: any) => {
       if (!detallesPorVenta[d.venta_id]) detallesPorVenta[d.venta_id] = []
       detallesPorVenta[d.venta_id].push(d)
     })
@@ -170,7 +181,8 @@ export default function CuentasCorrientes() {
         }
         nroRecibo = "001-" + String(nextNum).padStart(6, "0")
       } else {
-        nroRecibo = nroData
+        // nroData es bigint → formatear como "001-006520"
+        nroRecibo = "001-" + String(Number(nroData)).padStart(6, "0")
       }
 
       const { error } = await supabase.from("pagos_cuenta_corriente").insert([{

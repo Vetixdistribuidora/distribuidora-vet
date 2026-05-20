@@ -152,7 +152,8 @@ export default function Deudores() {
         }
         nroReciboBase = "001-" + String(nextNum).padStart(6, "0")
       } else {
-        nroReciboBase = nroData
+        // nroData es bigint → formatear como "001-006520"
+        nroReciboBase = "001-" + String(Number(nroData)).padStart(6, "0")
       }
       const baseNum = parseInt(nroReciboBase.replace(/^.*-/, ""), 10)
       let offsetRecibo = 0

@@ -488,7 +488,8 @@ thead th:last-child{text-align:right}
         if (ultima?.nro_nota) { const m = ultima.nro_nota.match(/(\d+)$/); if (m) nextNum = parseInt(m[1], 10) + 1 }
         nroNota = "NC-" + String(nextNum).padStart(5, "0")
       } else {
-        nroNota = nroNotaData
+        // nroNotaData es bigint → formatear como "NC-00002"
+        nroNota = "NC-" + String(Number(nroNotaData)).padStart(5, "0")
       }
 
       const totalNC = itemsDevueltos.reduce((acc: number, it: any) => acc + it.precio * (ncCantidades[it.producto_id] || 0), 0)
@@ -1020,7 +1021,8 @@ thead th:last-child{text-align:right}
         nroFacturaSave = "10047"
       }
     } else {
-      nroFacturaSave = nroData
+      // nroData es bigint → usar como string (ej: "10128")
+      nroFacturaSave = String(Number(nroData))
     }
     setNroFactura(nroFacturaSave)
     const { data: venta, error: errorVenta } = await supabase.from("ventas").insert({
