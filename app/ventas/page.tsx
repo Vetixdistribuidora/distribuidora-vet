@@ -217,6 +217,7 @@ export default function Ventas() {
   const [clienteIndice, setClienteIndice] = useState(-1)
   const inputProductoRef = useRef<HTMLInputElement>(null)
   const inputCantidadRef = useRef<HTMLInputElement>(null)
+  const historialDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [toast, setToast] = useState<any>(null)
 
   const [ventas, setVentas] = useState<any[]>([])
@@ -274,7 +275,12 @@ export default function Ventas() {
     if (tab === "borradores") cargarBorradores()
     if (tab === "notascredito") cargarNotasCredito()
   }, [tab])
-  useEffect(() => { if (tab === "historial") cargarHistorial() }, [fechaDesde, fechaHasta])
+  useEffect(() => {
+    if (tab !== "historial") return
+    if (historialDebounceRef.current) clearTimeout(historialDebounceRef.current)
+    historialDebounceRef.current = setTimeout(() => cargarHistorial(), 350)
+    return () => { if (historialDebounceRef.current) clearTimeout(historialDebounceRef.current) }
+  }, [fechaDesde, fechaHasta])
 
   // Borrador automático en localStorage
   useEffect(() => {

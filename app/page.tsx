@@ -10,7 +10,9 @@ function fmt(num: number) {
 }
 function fechaLocal(f: string | null | undefined): string {
   if (!f) return ""
-  return new Date(f).toLocaleDateString("sv-SE")
+  // Si es solo fecha (YYYY-MM-DD) agregar T00:00:00 para evitar desfase UTC
+  const d = f.includes("T") ? new Date(f) : new Date(f + "T00:00:00")
+  return d.toLocaleDateString("es-AR")
 }
 
 function fmtExacto(num: number) {
@@ -193,12 +195,28 @@ export default function Dashboard() {
     setVentaDetalle(venta)
     setLoadingDetalle(true)
     setModal("detalleVenta")
-    const { data } = await supabase
-      .from("detalle_ventas")
-      .select("*, productos(nombre)")
-      .eq("venta_id", venta.id)
-    setDetalleItems(data || [])
-    setLoadingDetalle(false)
+    try {
+      // Two-step: no FK declared between detalle_ventas and productos
+      const { data: detalle, error } = await supabase
+        .from("detalle_ventas")
+        .select("*")
+        .eq("venta_id", venta.id)
+      if (error) throw error
+      if (!detalle || detalle.length === 0) { setDetalleItems([]); return }
+      const ids = [...new Set(detalle.map((d: any) => d.producto_id))]
+      const { data: prods } = await supabase
+        .from("productos")
+        .select("id, nombre")
+        .in("id", ids)
+      const prodsMap: Record<number, any> = {}
+      ;(prods || []).forEach((p: any) => { prodsMap[p.id] = p })
+      setDetalleItems(detalle.map((d: any) => ({ ...d, productos: prodsMap[d.producto_id] || null })))
+    } catch (e: any) {
+      console.error("Error cargando detalle:", e)
+      setDetalleItems([])
+    } finally {
+      setLoadingDetalle(false)
+    }
   }
 
   function cerrarModal() { setModal(null); setVentaDetalle(null); setDetalleItems([]) }
