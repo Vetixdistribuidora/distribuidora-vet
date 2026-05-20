@@ -11,7 +11,7 @@ interface ItemForm {
   cantidad: string; precio_unitario: string; fecha_vencimiento: string;
 }
 interface Compra {
-  id: number; fecha: string; numero_remito: string | null;
+  id: number; proveedor_id: number; fecha: string; numero_remito: string | null;
   fecha_vencimiento: string | null; metodo_pago: string | null; notas: string | null;
   total: number; total_pagado: number; estado: string;
   incluye_iva: boolean; monto_iva: number; porcentaje_iva: number; monto_flete: number;
@@ -131,6 +131,8 @@ export default function ComprasPage() {
   const [modalPago, setModalPago] = useState(false);
   const [formPago, setFormPago] = useState({ monto: "", metodo_pago: "Efectivo", notas: "" });
   const [guardandoPago, setGuardandoPago] = useState(false);
+  const [saldoFavorDisponible, setSaldoFavorDisponible] = useState(0);
+  const [usarSaldoFavor, setUsarSaldoFavor] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [modalCancelar, setModalCancelar] = useState(false);
   const [descuentoCancelar, setDescuentoCancelar] = useState("");
@@ -510,19 +512,77 @@ export default function ComprasPage() {
     alert(`✅ Stock corregido: se restaron las cantidades de ${detalle.length} producto${detalle.length !== 1 ? "s" : ""}.`);
   }
 
+  async function cargarSaldoFavor(proveedorId: number) {
+    const { data } = await supabase.from("saldo_proveedores").select("monto").eq("proveedor_id", proveedorId)
+    const total = (data || []).reduce((s: number, r: any) => s + Number(r.monto), 0)
+    setSaldoFavorDisponible(Math.max(0, total))
+  }
+
   async function guardarPago() {
     if (!compraVer) return;
-    const monto = parseFloat(formPago.monto);
-    const saldo = compraVer.total - compraVer.total_pagado;
-    if (!monto || monto <= 0) return;
-    if (monto > saldo) { alert("El monto supera el saldo pendiente."); return; }
+    const monto = parseFloat(formPago.monto) || 0;
+    const saldoDeuda = compraVer.total - compraVer.total_pagado;
+    const saldoAplicado = usarSaldoFavor ? Math.min(saldoFavorDisponible, saldoDeuda) : 0;
+    const montoEfectivo = monto + saldoAplicado; // total que cubre la deuda
+    if (monto <= 0 && saldoAplicado <= 0) return;
+
     setGuardandoPago(true);
-    await supabase.rpc("registrar_pago_compra", { p_compra_id: compraVer.id, p_monto: monto, p_metodo_pago: formPago.metodo_pago, p_notas: formPago.notas || null });
-    setGuardandoPago(false); setModalPago(false);
-    const nuevoTotal = compraVer.total_pagado + monto;
-    setCompraVer({ ...compraVer, total_pagado: nuevoTotal, estado: nuevoTotal >= compraVer.total ? "pagado" : "parcial" });
+
+    // Cuánto de la deuda se cancela con este pago
+    const montoCancela = Math.min(montoEfectivo, saldoDeuda);
+    // Si pagó más efectivo del necesario → exceso va a saldo a favor
+    const exceso = monto - (montoCancela - saldoAplicado);
+
+    // 1. Registrar el pago en compras_pagos
+    await supabase.from("compras_pagos").insert({
+      compra_id: compraVer.id,
+      monto: montoCancela,
+      metodo_pago: monto > 0 ? formPago.metodo_pago : "Saldo a favor",
+      notas: [
+        formPago.notas || null,
+        saldoAplicado > 0 ? `Saldo a favor aplicado: ${fmt(saldoAplicado)}` : null,
+        exceso > 0 ? `Exceso pasó a saldo a favor: ${fmt(exceso)}` : null,
+      ].filter(Boolean).join(" | ") || null,
+      fecha: new Date().toISOString(),
+    });
+
+    // 2. Actualizar total_pagado y estado de la compra
+    const nuevoTotalPagado = compraVer.total_pagado + montoCancela;
+    const nuevoEstado = nuevoTotalPagado >= compraVer.total ? "pagado" : "parcial";
+    await supabase.from("compras").update({ total_pagado: nuevoTotalPagado, estado: nuevoEstado }).eq("id", compraVer.id);
+
+    // 3. Si hubo exceso de efectivo → guardar como saldo a favor
+    if (exceso > 0.01) {
+      await supabase.from("saldo_proveedores").insert({
+        proveedor_id: compraVer.proveedor_id,
+        monto: Math.round(exceso * 100) / 100,
+        notas: `Exceso de pago — compra #${compraVer.id} (${compraVer.numero_remito || "sin remito"})`,
+      });
+    }
+
+    // 4. Si se usó saldo a favor → descontarlo de saldo_proveedores (FIFO)
+    if (saldoAplicado > 0.01) {
+      const { data: registros } = await supabase.from("saldo_proveedores")
+        .select("id, monto").eq("proveedor_id", compraVer.proveedor_id)
+        .gt("monto", 0).order("fecha", { ascending: true });
+      let aDescontar = saldoAplicado;
+      for (const reg of (registros || [])) {
+        if (aDescontar <= 0.001) break;
+        if (reg.monto <= aDescontar + 0.001) {
+          await supabase.from("saldo_proveedores").delete().eq("id", reg.id);
+          aDescontar -= reg.monto;
+        } else {
+          await supabase.from("saldo_proveedores").update({ monto: Math.round((reg.monto - aDescontar) * 100) / 100 }).eq("id", reg.id);
+          aDescontar = 0;
+        }
+      }
+    }
+
+    setGuardandoPago(false); setModalPago(false); setUsarSaldoFavor(false);
+    setCompraVer({ ...compraVer, total_pagado: nuevoTotalPagado, estado: nuevoEstado });
     const { data: p } = await supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha");
-    if (p) setPagos(p); cargarTodo();
+    if (p) setPagos(p);
+    cargarTodo();
   }
 
   const filtradas = compras.filter(c => {
@@ -979,10 +1039,20 @@ export default function ComprasPage() {
                   </div>
                 ))}
               </div>
+              {saldoFavorDisponible > 0 && (
+                <div style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 10, padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>💰 Saldo a favor disponible</span>
+                  <span style={{ color: "#4ade80", fontSize: 15, fontWeight: 800 }}>{fmt(saldoFavorDisponible)}</span>
+                </div>
+              )}
               {compraVer.estado !== "pagado" ? (
                 <div className="compras-botones-pago" style={{ display: "flex", gap: 10 }}>
-                  <button onClick={() => { setFormPago({ monto: "", metodo_pago: "Efectivo", notas: "" }); setModalPago(true) }}
-                    style={{ flex: 1, padding: "10px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                  <button onClick={() => {
+                    setFormPago({ monto: "", metodo_pago: "Efectivo", notas: "" });
+                    setUsarSaldoFavor(false);
+                    cargarSaldoFavor(compraVer.proveedor_id);
+                    setModalPago(true);
+                  }} style={{ flex: 1, padding: "10px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                     💳 Pago parcial
                   </button>
                   <button onClick={() => { setDescuentoCancelar(""); setModalCancelar(true); }} disabled={cancelando}
@@ -1129,36 +1199,77 @@ export default function ComprasPage() {
       )}
 
       {/* ── MODAL PAGO PARCIAL ── */}
-      {modalPago && compraVer && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 }}>
-          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 380, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
-            <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: "0 0 4px" }}>Registrar pago</h2>
-            <p style={{ color: "#6b7280", fontSize: 12, marginBottom: 20 }}>Saldo: <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(compraVer.total - compraVer.total_pagado)}</span></p>
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Monto *</label>
-              <input type="number" min="0" step="0.01" value={formPago.monto}
-                onChange={e => setFormPago({ ...formPago, monto: e.target.value })}
-                placeholder="0.00" style={inputDarkStyle} />
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Método</label>
-              <select value={formPago.metodo_pago} onChange={e => setFormPago({ ...formPago, metodo_pago: e.target.value })} style={selectDarkStyle}>
-                {METODOS.map(m => <option key={m} style={{ background: "#1e293b", color: "white" }}>{m}</option>)}
-              </select>
-            </div>
-            <div style={{ marginBottom: 24 }}>
-              <label style={labelStyle}>Notas</label>
-              <input type="text" value={formPago.notas} onChange={e => setFormPago({ ...formPago, notas: e.target.value })} placeholder="Opcional" style={inputDarkStyle} />
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setModalPago(false)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
-              <button onClick={guardarPago} disabled={guardandoPago} style={{ flex: 1, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardandoPago ? 0.5 : 1 }}>
-                {guardandoPago ? "Guardando..." : "Confirmar pago"}
-              </button>
+      {modalPago && compraVer && (() => {
+        const saldoDeuda = compraVer.total - compraVer.total_pagado;
+        const saldoAplicado = usarSaldoFavor ? Math.min(saldoFavorDisponible, saldoDeuda) : 0;
+        const montoIngresado = parseFloat(formPago.monto) || 0;
+        const montoEfectivo = montoIngresado + saldoAplicado;
+        const exceso = montoIngresado > (saldoDeuda - saldoAplicado) ? montoIngresado - (saldoDeuda - saldoAplicado) : 0;
+        const cubreDeuda = montoEfectivo >= saldoDeuda;
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 }}>
+            <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 400, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+              <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: "0 0 4px" }}>Registrar pago</h2>
+              <p style={{ color: "#6b7280", fontSize: 12, marginBottom: 16 }}>
+                Saldo pendiente: <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(saldoDeuda)}</span>
+              </p>
+
+              {/* Saldo a favor disponible */}
+              {saldoFavorDisponible > 0 && (
+                <div onClick={() => setUsarSaldoFavor(!usarSaldoFavor)}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, cursor: "pointer", marginBottom: 14,
+                    background: usarSaldoFavor ? "rgba(34,197,94,0.1)" : "rgba(255,255,255,0.04)",
+                    border: usarSaldoFavor ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 4, border: "2px solid", borderColor: usarSaldoFavor ? "#22c55e" : "#4b5563",
+                    background: usarSaldoFavor ? "#22c55e" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {usarSaldoFavor && <span style={{ color: "white", fontSize: 11, fontWeight: 900 }}>✓</span>}
+                  </div>
+                  <div>
+                    <div style={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>💰 Usar saldo a favor: {fmt(saldoFavorDisponible)}</div>
+                    {usarSaldoFavor && <div style={{ color: "#86efac", fontSize: 11, marginTop: 2 }}>Se aplicarán {fmt(saldoAplicado)} a esta deuda</div>}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Monto a pagar{usarSaldoFavor && saldoAplicado >= saldoDeuda ? " (opcional — deuda cubierta por saldo)" : " *"}</label>
+                <input type="number" min="0" step="0.01" value={formPago.monto}
+                  onChange={e => setFormPago({ ...formPago, monto: e.target.value })}
+                  placeholder={usarSaldoFavor && saldoAplicado >= saldoDeuda ? "0.00 (no es necesario)" : "0.00"} style={inputDarkStyle} />
+              </div>
+
+              {/* Aviso de exceso → saldo a favor */}
+              {exceso > 0.01 && (
+                <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#fbbf24" }}>
+                  ⚠️ Estás pagando {fmt(exceso)} de más. Ese exceso quedará como <b>saldo a favor</b> para el próximo pago con este proveedor.
+                </div>
+              )}
+              {cubreDeuda && montoEfectivo > 0 && !exceso && (
+                <div style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, color: "#4ade80" }}>
+                  ✅ Este pago cancela la deuda completa.
+                </div>
+              )}
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Método</label>
+                <select value={formPago.metodo_pago} onChange={e => setFormPago({ ...formPago, metodo_pago: e.target.value })} style={selectDarkStyle}>
+                  {METODOS.map(m => <option key={m} style={{ background: "#1e293b", color: "white" }}>{m}</option>)}
+                </select>
+              </div>
+              <div style={{ marginBottom: 24 }}>
+                <label style={labelStyle}>Notas</label>
+                <input type="text" value={formPago.notas} onChange={e => setFormPago({ ...formPago, notas: e.target.value })} placeholder="Opcional" style={inputDarkStyle} />
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => { setModalPago(false); setUsarSaldoFavor(false); }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+                <button onClick={guardarPago} disabled={guardandoPago} style={{ flex: 1, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardandoPago ? 0.5 : 1 }}>
+                  {guardandoPago ? "Guardando..." : "Confirmar pago"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ── MODAL CANCELAR CON DESCUENTO ── */}
       {modalCancelar && compraVer && (() => {
