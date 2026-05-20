@@ -124,7 +124,7 @@ export default function CuentasCorrientes() {
     const ventaIds = vv.map(v => v.id)
     const [{ data: todosDetalles }, { data: todosPagos }] = await Promise.all([
       supabase.from("detalle_ventas").select("venta_id, cantidad, precio, productos(nombre)").in("venta_id", ventaIds),
-      supabase.from("pagos_cuenta_corriente").select("id, venta_id, monto, fecha, nota").in("venta_id", ventaIds).order("fecha", { ascending: true })
+      supabase.from("pagos_cuenta_corriente").select("id, venta_id, monto, fecha, nota, nro_recibo").in("venta_id", ventaIds).order("fecha", { ascending: true })
     ])
     const detallesPorVenta: Record<number, any[]> = {}
     ;(todosDetalles || []).forEach((d: any) => {
@@ -152,14 +152,26 @@ export default function CuentasCorrientes() {
     if (monto > ventaPago.saldo) { mostrarToast("El monto supera el saldo pendiente", "error"); return }
     setGuardando(true)
     try {
+      // Generar número de recibo secuencial a partir de 001-006520
+      const { data: ultimoRecibo } = await supabase
+        .from("pagos_cuenta_corriente").select("nro_recibo")
+        .not("nro_recibo", "is", null)
+        .order("id", { ascending: false }).limit(1).maybeSingle()
+      let nextNum = 6520
+      if (ultimoRecibo?.nro_recibo) {
+        const m = ultimoRecibo.nro_recibo.match(/(\d+)$/)
+        if (m) nextNum = parseInt(m[1], 10) + 1
+      }
+      const nroRecibo = "001-" + String(nextNum).padStart(6, "0")
+
       const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
-        cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto, nota: notaPago || null
+        cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto, nota: notaPago || null, nro_recibo: nroRecibo
       }])
       if (error) { mostrarToast("Error: " + error.message, "error"); return }
       if (monto >= ventaPago.saldo) {
         await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaPago.id)
       }
-      mostrarToast("✅ Pago registrado", "ok")
+      mostrarToast("✅ Pago registrado — Recibo " + nroRecibo, "ok")
       setVentaPago(null); setMontoPago(""); setNotaPago("")
       await cargarVentas(clienteActivo.id)
       await calcularResumen(clientes)
@@ -175,10 +187,40 @@ export default function CuentasCorrientes() {
     const fecha = pago.fecha ? fechaCorta(pago.fecha) : new Date().toLocaleDateString("es-AR")
     const saldoAnterior = Number(venta.total) - (Number(venta.totalPagado) - Number(pago.monto))
     const saldoRestante = Math.max(0, saldoAnterior - Number(pago.monto))
-    const html = `<!DOCTYPE html><html><head><style>@page{margin:20px;size:A5}body{font-family:Arial;padding:20px;box-sizing:border-box}.logo{height:80px}.header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1971c2;padding-bottom:12px;margin-bottom:16px}.titulo{font-size:22px;font-weight:bold;color:#1971c2}.sub{font-size:12px;color:#555}.row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:14px}.pagado{background:#d3f9d8;border:1px solid #2f9e44;border-radius:6px;padding:10px;margin-top:14px;font-size:16px;font-weight:bold;text-align:center;color:#2f9e44}.saldo{background:#fff3cd;border:1px solid #e67700;border-radius:6px;padding:10px;margin-top:8px;font-size:13px;font-weight:bold;color:#e67700}.footer{margin-top:40px;font-size:11px;color:#aaa;text-align:center;border-top:1px solid #eee;padding-top:10px}</style></head><body><div class="header"><img src="${logoUrl}" class="logo"/><div style="text-align:right"><div class="titulo">RECIBO DE PAGO</div><div class="sub">Fecha: ${fecha}</div></div></div><div class="row"><span><b>Cliente:</b></span><span>${clienteActivo.nombre} ${clienteActivo.apellido}</span></div><div class="row"><span><b>CUIT:</b></span><span>${clienteActivo.cuit || "-"}</span></div><div class="row"><span><b>Tel:</b></span><span>${clienteActivo.telefono || "-"}</span></div><div class="row"><span><b>Factura N°:</b></span><span>${venta.nro_factura || venta.id}</span></div><div class="row"><span><b>Total factura:</b></span><span>${fmt(venta.total)}</span></div><div class="row"><span><b>Saldo anterior:</b></span><span>${fmt(saldoAnterior)}</span></div>${pago.nota ? `<div class="row"><span><b>Nota:</b></span><span>${pago.nota}</span></div>` : ""}<div class="pagado">Monto pagado: ${fmt(Number(pago.monto))}</div><div class="saldo">${saldoRestante > 0 ? "Saldo restante: " + fmt(saldoRestante) : "✓ Factura saldada completamente"}</div><div class="footer">VETIX Distribuidora — Almirante Brown 620 — Tel: 2604518157</div></body></html>`
+    const nroRecibo = pago.nro_recibo || "001-??????"
+    const f = (n: number) => "$" + n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const filaConcepto = (label: string, valor: string) =>
+      `<tr><td style="padding:7px 10px;font-size:12px;color:#555;border-bottom:1px solid #f0f0f0;">${label}</td><td style="padding:7px 10px;font-size:12px;font-weight:600;color:#111;border-bottom:1px solid #f0f0f0;text-align:right;">${valor}</td></tr>`
+    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>@page{size:A4;margin:15mm}*{box-sizing:border-box}html,body{margin:0;padding:0;font-family:Arial;background:#e5e7eb}.acciones{display:flex;gap:10px;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;position:sticky;top:0;z-index:10}.page{width:180mm;min-height:267mm;margin:16px auto;background:white;padding:24px;display:flex;flex-direction:column;box-shadow:0 2px 8px rgba(0,0,0,.12)}.logo{height:130px;display:block}.empresa-info{font-size:11px;color:#555;margin-top:4px;line-height:1.6}.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1971c2;padding-bottom:14px;margin-bottom:16px}.header-right{text-align:center;padding-top:4px}.titulo{font-size:20px;font-weight:800;color:#1971c2;margin:0 0 6px}.nro-doc{font-size:15px;font-weight:700;color:#111;margin:0 0 4px}.fecha-doc{font-size:12px;color:#555;margin:0}.cliente-row{padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;line-height:1.9;margin-bottom:16px}.tabla-concepto{width:100%;border-collapse:collapse;border-radius:6px;overflow:hidden}.tabla-concepto thead th{background:#f1f5f9;padding:8px 10px;font-size:11px;font-weight:700;color:#374151;text-align:left;text-transform:uppercase;letter-spacing:.4px}.tabla-concepto thead th:last-child{text-align:right}.total-box{margin-top:20px;display:flex;justify-content:flex-end}.total-inner{width:260px}.total-pagado{background:#d3f9d8;border:1px solid #2f9e44;border-radius:8px;padding:12px 16px;text-align:center}.total-pagado-label{font-size:11px;color:#2f9e44;font-weight:600;text-transform:uppercase;margin:0 0 4px}.total-pagado-monto{font-size:24px;font-weight:800;color:#2f9e44;margin:0}.saldo-box{margin-top:8px;border-radius:8px;padding:10px 16px;text-align:center}.saldo-saldado{background:#d3f9d8;border:1px solid #2f9e44;color:#2f9e44}.saldo-pendiente{background:#fff3cd;border:1px solid #e67700;color:#e67700}.saldo-label{font-size:12px;font-weight:700;margin:0}.firma-box{margin-top:40px;display:flex;justify-content:space-between;font-size:11px;color:#555}.firma-linea{border-top:1px solid #555;width:200px;text-align:center;padding-top:6px}.footer{margin-top:auto;padding-top:16px;border-top:1px solid #eee;font-size:10px;color:#aaa;text-align:center}@media print{body{background:white}.acciones{display:none}.page{width:100%;min-height:calc(297mm - 30mm);margin:0;padding:16px;box-shadow:none}}</style></head><body>
+<div class="acciones"><button onclick="window.close()" style="background:#f1f5f9;border:1px solid #d1d5db;border-radius:8px;padding:10px 18px;font-size:14px;font-family:Arial;cursor:pointer;color:#374151;font-weight:600">&#8592; Cerrar</button><button onclick="window.print()" style="background:#0f172a;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-family:Arial;cursor:pointer;color:white;font-weight:700">&#128438; Imprimir</button></div>
+<div class="page">
+  <div class="header">
+    <div><img src="${logoUrl}" class="logo"/><div class="empresa-info">Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div></div>
+    <div class="header-right"><div class="titulo">RECIBO DE COBRO</div><div class="nro-doc">N° ${nroRecibo}</div><div class="fecha-doc">Fecha: ${fecha}</div></div>
+  </div>
+  <div class="cliente-row"><b>Cliente:</b> ${clienteActivo.nombre} ${clienteActivo.apellido} &nbsp;|&nbsp; <b>CUIT:</b> ${clienteActivo.cuit || "-"} &nbsp;|&nbsp; <b>Tel:</b> ${clienteActivo.telefono || "-"} &nbsp;|&nbsp; <b>Dir:</b> ${clienteActivo.localidad || "-"}</div>
+  <table class="tabla-concepto">
+    <thead><tr><th>Concepto</th><th style="text-align:right;">Importe</th></tr></thead>
+    <tbody>
+      ${filaConcepto("Factura / Comprobante N°", venta.nro_factura || String(venta.id))}
+      ${filaConcepto("Total de la factura", f(Number(venta.total)))}
+      ${filaConcepto("Saldo anterior al pago", f(saldoAnterior))}
+      ${pago.nota ? filaConcepto("Nota / Detalle", pago.nota) : ""}
+    </tbody>
+  </table>
+  <div class="total-box"><div class="total-inner">
+    <div class="total-pagado"><p class="total-pagado-label">Monto recibido</p><p class="total-pagado-monto">${f(Number(pago.monto))}</p></div>
+    <div class="saldo-box ${saldoRestante > 0 ? "saldo-pendiente" : "saldo-saldado"}"><p class="saldo-label">${saldoRestante > 0 ? "Saldo restante: " + f(saldoRestante) : "✓ Factura saldada completamente"}</p></div>
+  </div></div>
+  <div class="firma-box">
+    <div class="firma-linea">Firma y aclaración<br/><span style="font-size:10px;color:#aaa;">Cliente</span></div>
+    <div class="firma-linea">Firma y sello<br/><span style="font-size:10px;color:#aaa;">VETIX Distribuidora</span></div>
+  </div>
+  <div class="footer">VETIX Distribuidora — Almirante Brown 620 — Tel: 2604518157 — vetix.cf@gmail.com</div>
+</div></body></html>`
     const w = window.open("", "_blank")
     if (!w) { alert("Habilitá ventanas emergentes"); return }
-    w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500)
+    w.document.write(html); w.document.close(); setTimeout(() => w.print(), 600)
   }
 
   const clientesFiltrados = clientes
