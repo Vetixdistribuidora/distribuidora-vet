@@ -206,7 +206,7 @@ export default function Ventas() {
       if (!items.length || !items[0]?.venta_id || items[0]?.venta_id !== venta.id) {
         const { data, error } = await supabase
           .from("detalle_ventas")
-          .select("*, productos(nombre, codigo)")
+          .select("*, productos(nombre)")
           .eq("venta_id", venta.id)
         if (error) { mostrarToast("Error al cargar productos de la venta: " + error.message, "error"); return }
         items = data || []
