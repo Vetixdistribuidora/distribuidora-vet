@@ -29,7 +29,9 @@ interface PagoCompra {
 const METODOS = ["Efectivo", "Transferencia", "Cheque", "Tarjeta", "Otro"];
 function fechaLocal(f: string | null | undefined): string {
   if (!f) return ""
-  return new Date(f).toLocaleDateString("es-AR")
+  // Agregar T00:00:00 para fechas sin hora (evita desfase UTC en Argentina)
+  const d = f.includes("T") ? new Date(f) : new Date(f + "T00:00:00")
+  return d.toLocaleDateString("es-AR")
 }
 const METODO_COLOR: Record<string, { bg: string; color: string }> = {
   Efectivo:      { bg: "rgba(74,222,128,0.15)",  color: "#4ade80" },
@@ -444,7 +446,7 @@ export default function ComprasPage() {
       await supabase.from("lotes").update({ cantidad: 0 }).eq("compra_id", confirmEliminarCompra.id);
       const { error } = await supabase.from("compras").delete().eq("id", confirmEliminarCompra.id);
 
-      if (error) { alert("Error al eliminar: " + error.message); return; }
+      if (error) { setErrorForm("Error al eliminar: " + error.message); return; }
 
       // 3. Revertir stock: restar la cantidad que había entrado con esta compra
       if (detalleCompra && detalleCompra.length > 0) {
@@ -462,7 +464,7 @@ export default function ComprasPage() {
       if (compraVer?.id === confirmEliminarCompra.id) setCompraVer(null);
       cargarTodo();
     } catch (e: any) {
-      alert("Error: " + (e?.message || "error desconocido"));
+      setErrorForm("Error: " + (e?.message || "error desconocido"));
     } finally {
       setEliminandoCompra(false);
     }
@@ -516,10 +518,12 @@ export default function ComprasPage() {
       }).eq("id", compraVer.id);
       if (errCompra) { setErrorForm("Error al actualizar compra: " + errCompra.message); return; }
       setModalCancelar(false); setDescuentoCancelar("");
-      await cargarTodo();
-      const { data: ca } = await supabase.from("compras").select("*").eq("id", compraVer.id).single();
+      // Actualizar vista detalle con datos frescos y recargar lista (una sola vez)
+      const [{ data: ca }, { data: p }] = await Promise.all([
+        supabase.from("compras").select("*").eq("id", compraVer.id).single(),
+        supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha"),
+      ]);
       if (ca) setCompraVer(ca);
-      const { data: p } = await supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha");
       if (p) setPagos(p);
       cargarTodo();
     } catch (e: any) {
