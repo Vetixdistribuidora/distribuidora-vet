@@ -198,22 +198,29 @@ export default function Ventas() {
     }
   }
 
+  async function fetchDetalleConProductos(ventaId: number) {
+    const { data: detalle, error } = await supabase
+      .from("detalle_ventas").select("*").eq("venta_id", ventaId)
+    if (error) throw new Error(error.message)
+    if (!detalle || detalle.length === 0) return []
+    const ids = [...new Set(detalle.map((d: any) => d.producto_id))]
+    const { data: prods } = await supabase.from("productos").select("id, nombre").in("id", ids)
+    const prodsMap: Record<number, any> = {}
+    ;(prods || []).forEach((p: any) => { prodsMap[p.id] = p })
+    return detalle.map((d: any) => ({ ...d, productos: prodsMap[d.producto_id] || null }))
+  }
+
   async function abrirModalNC(venta: any) {
     setCargandoItemsNC(true)
     try {
       let items = detalleItems
-      // Siempre re-fetchar para asegurarse de tener los items de ESTA venta
-      if (!items.length || !items[0]?.venta_id || items[0]?.venta_id !== venta.id) {
-        const { data, error } = await supabase
-          .from("detalle_ventas")
-          .select("*, productos(nombre)")
-          .eq("venta_id", venta.id)
-        if (error) { mostrarToast("Error al cargar productos de la venta: " + error.message, "error"); return }
-        items = data || []
+      // Siempre re-fetchar si los items no son de esta venta
+      if (!items.length || Number(items[0]?.venta_id) !== Number(venta.id)) {
+        items = await fetchDetalleConProductos(venta.id)
         setDetalleItems(items)
       }
       // Arrancar con TODAS las cantidades al máximo (devolución total por defecto)
-      // El usuario reduce con − si quiere devolver menos
+      // El usuario usa − para reducir o poner en 0 para excluir
       const cantInit: Record<number, number> = {}
       items.forEach((it: any) => { cantInit[it.producto_id] = it.cantidad })
       setNcCantidades(cantInit)
@@ -221,7 +228,7 @@ export default function Ventas() {
       setModalNC({ venta, items })
       setVentaDetalle(null)
     } catch (e: any) {
-      mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
+      mostrarToast("Error al cargar productos de la venta: " + (e?.message || "error desconocido"), "error")
     } finally {
       setCargandoItemsNC(false)
     }
@@ -489,8 +496,14 @@ export default function Ventas() {
 
   async function verDetalle(v: any) {
     setVentaDetalle(v); setLoadingDetalle(true)
-    const { data } = await supabase.from("detalle_ventas").select("*, productos(nombre)").eq("venta_id", v.id)
-    setDetalleItems(data || []); setLoadingDetalle(false)
+    try {
+      const items = await fetchDetalleConProductos(v.id)
+      setDetalleItems(items)
+    } catch {
+      setDetalleItems([])
+    } finally {
+      setLoadingDetalle(false)
+    }
   }
 
   async function anularVenta() {
@@ -593,7 +606,7 @@ export default function Ventas() {
       // Reconstruir desde datos de la venta
       const items = itemsCargados?.length
         ? itemsCargados
-        : (await supabase.from("detalle_ventas").select("*, productos(nombre)").eq("venta_id", venta.id)).data || []
+        : await fetchDetalleConProductos(venta.id)
       const { data: clienteData } = await supabase
         .from("clientes").select("*").eq("id", venta.cliente_id).maybeSingle()
       const carritoReconstruido = items.map((d: any) => ({
