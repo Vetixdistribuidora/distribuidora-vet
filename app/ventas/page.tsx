@@ -186,6 +186,105 @@ export default function Ventas() {
   }, [])
 
   // ── FUNCIONES NOTAS DE CRÉDITO ───────────────────────────────────────────────
+  function imprimirNC(nc: any) {
+    const logoUrl = window.location.origin + "/logo.png"
+    const fecha = nc.fecha ? fechaLocal(nc.fecha) : new Date().toLocaleDateString("es-AR")
+    const items: any[] = nc.items || []
+    const f = (n: number) => "$" + n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const cliente = nc.clientes || {}
+    const nroVenta = nc.ventas?.nro_factura ?? nc.venta_id ?? "-"
+    const filas = items.map((it: any) =>
+      `<tr>
+        <td style="padding:7px 10px;font-size:12px;color:#111;border-bottom:1px solid #f0f0f0;text-align:left;">${it.nombre || "-"}</td>
+        <td style="padding:7px 10px;font-size:12px;color:#111;border-bottom:1px solid #f0f0f0;text-align:center;">${it.cantidad}</td>
+        <td style="padding:7px 10px;font-size:12px;color:#111;border-bottom:1px solid #f0f0f0;text-align:right;">${f(Number(it.precio))}</td>
+        <td style="padding:7px 10px;font-size:12px;font-weight:700;color:#059669;border-bottom:1px solid #f0f0f0;text-align:right;">${f(Number(it.cantidad) * Number(it.precio))}</td>
+      </tr>`
+    ).join("")
+    const badgeAnulada = nc.estado === "anulada"
+      ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 14px;margin-bottom:16px;font-size:12px;font-weight:700;color:#dc2626;text-align:center;">⚠️ NOTA DE CRÉDITO ANULADA — Solo de referencia</div>`
+      : ""
+    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>
+@page{size:A4;margin:15mm}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;font-family:Arial;background:#e5e7eb}
+.acciones{display:flex;gap:10px;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;position:sticky;top:0;z-index:10}
+.page{width:180mm;min-height:267mm;margin:16px auto;background:white;padding:24px;display:flex;flex-direction:column;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.logo{height:130px;display:block}
+.empresa-info{font-size:11px;color:#555;margin-top:4px;line-height:1.6}
+.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #059669;padding-bottom:14px;margin-bottom:16px}
+.header-right{text-align:center;padding-top:4px}
+.titulo{font-size:20px;font-weight:800;color:#059669;margin:0 0 6px}
+.nro-doc{font-size:15px;font-weight:700;color:#111;margin:0 0 4px}
+.fecha-doc{font-size:12px;color:#555;margin:0}
+.ref-venta{display:inline-block;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:4px 12px;font-size:11px;color:#15803d;font-weight:600;margin-top:6px}
+.cliente-row{padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;line-height:1.9;margin-bottom:16px}
+.motivo-row{padding:8px 14px;background:#fefce8;border:1px solid #fde047;border-radius:6px;font-size:12px;color:#854d0e;margin-bottom:16px}
+table{width:100%;border-collapse:collapse}
+thead th{background:#f0fdf4;padding:8px 10px;font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.4px}
+thead th:first-child{text-align:left}
+thead th:last-child{text-align:right}
+.total-box{margin-top:20px;display:flex;justify-content:flex-end}
+.total-inner{width:280px;border-top:2px solid #059669;padding-top:10px}
+.total-inner p{margin:4px 0;font-size:12px;display:flex;justify-content:space-between}
+.total-inner h2{margin:10px 0 4px;font-size:22px;font-weight:800;color:#059669;display:flex;justify-content:space-between}
+.aclaracion{margin-top:40px;display:flex;justify-content:space-between;font-size:11px;color:#555}
+.firma-linea{border-top:1px solid #555;width:200px;text-align:center;padding-top:6px}
+.footer{margin-top:auto;padding-top:16px;border-top:1px solid #eee;font-size:10px;color:#aaa;text-align:center}
+@media print{body{background:white}.acciones{display:none}.page{width:100%;min-height:calc(297mm - 30mm);margin:0;padding:16px;box-shadow:none}}
+</style></head><body>
+<div class="acciones">
+  <button onclick="window.close()" style="background:#f1f5f9;border:1px solid #d1d5db;border-radius:8px;padding:10px 18px;font-size:14px;font-family:Arial;cursor:pointer;color:#374151;font-weight:600">&#8592; Cerrar</button>
+  <button onclick="window.print()" style="background:#0f172a;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-family:Arial;cursor:pointer;color:white;font-weight:700">&#128438; Imprimir</button>
+</div>
+<div class="page">
+  <div class="header">
+    <div>
+      <img src="${logoUrl}" class="logo"/>
+      <div class="empresa-info">Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div>
+    </div>
+    <div class="header-right">
+      <div class="titulo">NOTA DE CRÉDITO</div>
+      <div class="nro-doc">N° ${nc.nro_nota}</div>
+      <div class="fecha-doc">Fecha: ${fecha}</div>
+      <div class="ref-venta">↩️ Ref. Ppto. N° 001-${String(nroVenta).padStart(5, "0")}</div>
+    </div>
+  </div>
+  ${badgeAnulada}
+  <div class="cliente-row">
+    <b>Cliente:</b> ${cliente.nombre || ""} ${cliente.apellido || ""} &nbsp;|&nbsp;
+    <b>CUIT:</b> ${cliente.cuit || "-"} &nbsp;|&nbsp;
+    <b>Tel:</b> ${cliente.telefono || "-"} &nbsp;|&nbsp;
+    <b>Dir:</b> ${cliente.localidad || "-"}
+  </div>
+  ${nc.motivo ? `<div class="motivo-row"><b>Motivo:</b> ${nc.motivo}</div>` : ""}
+  <table>
+    <thead>
+      <tr>
+        <th style="text-align:left;">Descripción</th>
+        <th style="text-align:center;">Cant.</th>
+        <th style="text-align:right;">Precio U.</th>
+        <th style="text-align:right;">Total</th>
+      </tr>
+    </thead>
+    <tbody>${filas}</tbody>
+  </table>
+  <div class="total-box"><div class="total-inner">
+    <h2><span>Total acreditado</span><span>${f(Number(nc.total))}</span></h2>
+    <p style="color:#6b7280;font-size:11px;margin-top:4px;">Importe descontado del comprobante original</p>
+  </div></div>
+  <div class="aclaracion">
+    <div class="firma-linea">Firma y aclaración<br/><span style="font-size:10px;color:#aaa;">Cliente</span></div>
+    <div class="firma-linea">Firma y sello<br/><span style="font-size:10px;color:#aaa;">VETIX Distribuidora</span></div>
+  </div>
+  <div class="footer">VETIX Distribuidora — Almirante Brown 620 — Tel: 2604518157 — vetix.cf@gmail.com</div>
+</div>
+</body></html>`
+    const w = window.open("", "_blank")
+    if (!w) { alert("Habilitá ventanas emergentes"); return }
+    w.document.write(html); w.document.close()
+  }
+
   async function cargarNotasCredito() {
     setLoadingNC(true)
     try {
@@ -1471,8 +1570,12 @@ export default function Ventas() {
                         ))}
                       </div>
                     </div>
-                    <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <p style={{ margin: "0 0 8px", fontWeight: 800, fontSize: 16, color: "#059669" }}>{fmt(Number(nc.total))}</p>
+                    <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                      <p style={{ margin: 0, fontWeight: 800, fontSize: 16, color: "#059669" }}>{fmt(Number(nc.total))}</p>
+                      <button onClick={() => imprimirNC(nc)}
+                        style={{ background: "linear-gradient(135deg, #1e40af, #3b82f6)", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 11, color: "white", cursor: "pointer", fontWeight: 700 }}>
+                        🖨️ Imprimir
+                      </button>
                       {nc.estado !== "anulada" && (
                         <button onClick={() => { if (confirm("¿Anular esta nota de crédito? Se revertirá el stock y se restaurará el total de la venta original.")) anularNC(nc) }}
                           style={{ background: "none", border: "1px solid #fca5a5", borderRadius: 8, padding: "5px 10px", fontSize: 11, color: "#dc2626", cursor: "pointer", fontWeight: 600 }}>
