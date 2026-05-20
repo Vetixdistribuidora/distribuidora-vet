@@ -78,6 +78,7 @@ export default function ProveedoresPage() {
   const [exito, setExito] = useState<string | null>(null);
   const [saldoFavorProv, setSaldoFavorProv] = useState(0);
   const [usarSaldoFavor, setUsarSaldoFavor] = useState(false);
+  const [saldosFavor, setSaldosFavor] = useState<Record<string, number>>({});
 
   useEffect(() => { cargarProveedores(); }, []);
   useEffect(() => {
@@ -89,8 +90,18 @@ export default function ProveedoresPage() {
   async function cargarProveedores() {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from("proveedores_con_saldo").select("*").order("nombre");
+      const [{ data, error }, { data: saldos }] = await Promise.all([
+        supabase.from("proveedores_con_saldo").select("*").order("nombre"),
+        supabase.from("saldo_proveedores").select("proveedor_id, monto"),
+      ]);
       if (!error && data) setProveedores(data);
+      if (saldos) {
+        const mapa: Record<string, number> = {};
+        saldos.forEach((s: any) => {
+          mapa[s.proveedor_id] = (mapa[s.proveedor_id] || 0) + Number(s.monto);
+        });
+        setSaldosFavor(mapa);
+      }
     } catch (e) {
       console.error("Error cargando proveedores:", e)
     } finally {
@@ -335,19 +346,26 @@ export default function ProveedoresPage() {
 
               {/* Saldo + botones */}
               <div className="prov-card-acciones" style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
-                {p.saldo_pendiente > 0 ? (
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 2 }}>Deuda pendiente</div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: "#dc2626" }}>{fmt(p.saldo_pendiente)}</div>
-                    <div style={{ fontSize: 11, color: "#9ca3af" }}>{p.compras_pendientes} compra{p.compras_pendientes !== 1 ? "s" : ""}</div>
-                  </div>
-                ) : (
-                  <span style={{
-                    background: "#f0fdf4", color: "#16a34a", fontSize: 11,
-                    fontWeight: 700, padding: "4px 10px", borderRadius: 20,
-                    border: "1px solid #bbf7d0"
-                  }}>✓ Sin deuda</span>
-                )}
+                <div style={{ textAlign: "right" }}>
+                  {p.saldo_pendiente > 0 ? (
+                    <>
+                      <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 2 }}>Deuda pendiente</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: "#dc2626" }}>{fmt(p.saldo_pendiente)}</div>
+                      <div style={{ fontSize: 11, color: "#9ca3af" }}>{p.compras_pendientes} compra{p.compras_pendientes !== 1 ? "s" : ""}</div>
+                    </>
+                  ) : (
+                    <span style={{
+                      background: "#f0fdf4", color: "#16a34a", fontSize: 11,
+                      fontWeight: 700, padding: "4px 10px", borderRadius: 20,
+                      border: "1px solid #bbf7d0"
+                    }}>✓ Sin deuda</span>
+                  )}
+                  {(saldosFavor[p.id] || 0) > 0 && (
+                    <div style={{ marginTop: 4, fontSize: 11, fontWeight: 700, color: "#16a34a", background: "#f0fdf4", borderRadius: 20, padding: "2px 8px", border: "1px solid #bbf7d0", display: "inline-block" }}>
+                      💰 Saldo a favor: {fmt(saldosFavor[p.id])}
+                    </div>
+                  )}
+                </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   {p.saldo_pendiente > 0 && (
                     <button onClick={() => abrirPago(p)} style={{
