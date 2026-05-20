@@ -593,50 +593,55 @@ export default function Ventas() {
 
   async function reimprimir(venta: any, itemsCargados?: any[], tipo: "presupuesto" | "remito" = "presupuesto") {
     setReimprimiendo(true)
-    const { data: guardada } = await supabase
-      .from("facturas_impresion").select("datos").eq("venta_id", venta.id).maybeSingle()
-    if (guardada?.datos) {
-      // Normalizar nro_factura a 5 dígitos por si fue guardado sin padding (ej: "26" → "00026")
-      const datosNorm = { ...guardada.datos }
-      if (datosNorm.nroFactura && !isNaN(parseInt(datosNorm.nroFactura, 10))) {
-        datosNorm.nroFactura = String(parseInt(datosNorm.nroFactura, 10)).padStart(5, "0")
+    try {
+      const { data: guardada } = await supabase
+        .from("facturas_impresion").select("datos").eq("venta_id", venta.id).maybeSingle()
+      if (guardada?.datos) {
+        // Normalizar nro_factura a 5 dígitos por si fue guardado sin padding (ej: "26" → "00026")
+        const datosNorm = { ...guardada.datos }
+        if (datosNorm.nroFactura && !isNaN(parseInt(datosNorm.nroFactura, 10))) {
+          datosNorm.nroFactura = String(parseInt(datosNorm.nroFactura, 10)).padStart(5, "0")
+        }
+        generarHTMLEImprimir(datosNorm, tipo)
+      } else {
+        // Reconstruir desde datos de la venta
+        const items = itemsCargados?.length
+          ? itemsCargados
+          : await fetchDetalleConProductos(venta.id)
+        const { data: clienteData } = await supabase
+          .from("clientes").select("*").eq("id", venta.cliente_id).maybeSingle()
+        const carritoReconstruido = items.map((d: any) => ({
+          producto_id: d.producto_id, nombre: d.productos?.nombre || "",
+          cantidad: d.cantidad, precio: d.precio, bonificacion: d.bonificacion || 0
+        }))
+        const subtotalCalc = carritoReconstruido.reduce((acc: number, it: any) => {
+          const pagan = it.cantidad - (it.bonificacion || 0)
+          return acc + Math.max(0, pagan) * it.precio
+        }, 0)
+        const totalCalc = Number(venta.total)
+        // Reconstruir IVA: si el cálculo da un valor inusual (< 0 o > 30), usar 21%
+        const ivaRaw = subtotalCalc > 0 ? Math.round((totalCalc / subtotalCalc - 1) * 100) : 21
+        const ivaCalc = (ivaRaw >= 0 && ivaRaw <= 30) ? ivaRaw : 21
+        // Normalizar nro_factura a 5 dígitos para reimprimir
+        const nroParaImprimir = venta.nro_factura
+          ? (isNaN(parseInt(venta.nro_factura, 10)) ? venta.nro_factura : String(parseInt(venta.nro_factura, 10)).padStart(5, "0"))
+          : ""
+        generarHTMLEImprimir({
+          nroFactura: nroParaImprimir,
+          clienteSeleccionado: clienteData || venta.clientes || {},
+          carrito: carritoReconstruido,
+          subtotal: subtotalCalc,
+          ivaNum: ivaCalc,
+          total: totalCalc,
+          esCuentaCorriente: venta.estado === "cuenta_corriente",
+          metodoCobro: venta.metodo_cobro,
+        }, tipo)
       }
-      generarHTMLEImprimir(datosNorm, tipo)
-    } else {
-      // Reconstruir desde datos de la venta
-      const items = itemsCargados?.length
-        ? itemsCargados
-        : await fetchDetalleConProductos(venta.id)
-      const { data: clienteData } = await supabase
-        .from("clientes").select("*").eq("id", venta.cliente_id).maybeSingle()
-      const carritoReconstruido = items.map((d: any) => ({
-        producto_id: d.producto_id, nombre: d.productos?.nombre || "",
-        cantidad: d.cantidad, precio: d.precio, bonificacion: d.bonificacion || 0
-      }))
-      const subtotalCalc = carritoReconstruido.reduce((acc: number, it: any) => {
-        const pagan = it.cantidad - (it.bonificacion || 0)
-        return acc + Math.max(0, pagan) * it.precio
-      }, 0)
-      const totalCalc = Number(venta.total)
-      // Reconstruir IVA: si el cálculo da un valor inusual (< 0 o > 30), usar 21%
-      const ivaRaw = subtotalCalc > 0 ? Math.round((totalCalc / subtotalCalc - 1) * 100) : 21
-      const ivaCalc = (ivaRaw >= 0 && ivaRaw <= 30) ? ivaRaw : 21
-      // Normalizar nro_factura a 5 dígitos para reimprimir
-      const nroParaImprimir = venta.nro_factura
-        ? (isNaN(parseInt(venta.nro_factura, 10)) ? venta.nro_factura : String(parseInt(venta.nro_factura, 10)).padStart(5, "0"))
-        : ""
-      generarHTMLEImprimir({
-        nroFactura: nroParaImprimir,
-        clienteSeleccionado: clienteData || venta.clientes || {},
-        carrito: carritoReconstruido,
-        subtotal: subtotalCalc,
-        ivaNum: ivaCalc,
-        total: totalCalc,
-        esCuentaCorriente: venta.estado === "cuenta_corriente",
-        metodoCobro: venta.metodo_cobro,
-      }, tipo)
+    } catch (e: any) {
+      mostrarToast("Error al generar impresión: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setReimprimiendo(false)
     }
-    setReimprimiendo(false)
   }
 
   function exportarVentas() {
