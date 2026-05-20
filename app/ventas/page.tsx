@@ -472,11 +472,18 @@ thead th:last-child{text-align:right}
     }
     setGuardandoNC(true)
     try {
-      // Generar número de NC
-      const { data: ultima } = await supabase.from("notas_credito").select("nro_nota").order("id", { ascending: false }).limit(1).maybeSingle()
-      let nextNum = 1
-      if (ultima?.nro_nota) { const m = ultima.nro_nota.match(/(\d+)$/); if (m) nextNum = parseInt(m[1], 10) + 1 }
-      const nroNota = "NC-" + String(nextNum).padStart(5, "0")
+      // Generar número de NC con secuencia atómica
+      let nroNota: string
+      const { data: nroNotaData, error: nroNotaError } = await supabase.rpc('get_next_nro_nota')
+      if (nroNotaError || !nroNotaData) {
+        // Fallback
+        const { data: ultima } = await supabase.from("notas_credito").select("nro_nota").order("id", { ascending: false }).limit(1).maybeSingle()
+        let nextNum = 1
+        if (ultima?.nro_nota) { const m = ultima.nro_nota.match(/(\d+)$/); if (m) nextNum = parseInt(m[1], 10) + 1 }
+        nroNota = "NC-" + String(nextNum).padStart(5, "0")
+      } else {
+        nroNota = nroNotaData
+      }
 
       const totalNC = itemsDevueltos.reduce((acc: number, it: any) => acc + it.precio * (ncCantidades[it.producto_id] || 0), 0)
       const ncItemsData = itemsDevueltos.map((it: any) => ({
@@ -994,9 +1001,11 @@ thead th:last-child{text-align:right}
     }
     setGuardando(true)
     try {
-    // Asegurar que nroFactura esté disponible — si cargar() todavía no terminó, buscar en el momento
-    let nroFacturaSave = nroFactura
-    if (!nroFacturaSave || nroFacturaSave === "00000") {
+    // Generar número de factura con secuencia atómica
+    let nroFacturaSave: string
+    const { data: nroData, error: nroError } = await supabase.rpc('get_next_nro_factura')
+    if (nroError || !nroData) {
+      // Fallback si la función RPC no existe todavía
       const { data: ultimaV } = await supabase.from("ventas").select("nro_factura").order("id", { ascending: false }).limit(1).maybeSingle()
       if (ultimaV?.nro_factura) {
         const n = parseInt(ultimaV.nro_factura, 10)
@@ -1004,11 +1013,10 @@ thead th:last-child{text-align:right}
       } else {
         nroFacturaSave = "10047"
       }
-      setNroFactura(nroFacturaSave)
+    } else {
+      nroFacturaSave = nroData
     }
-    // Normalizar siempre a 5 dígitos con ceros
-    const numParsed = parseInt(nroFacturaSave, 10)
-    if (!isNaN(numParsed)) nroFacturaSave = String(numParsed).padStart(5, "0")
+    setNroFactura(nroFacturaSave)
     const { data: venta, error: errorVenta } = await supabase.from("ventas").insert({
       cliente_id: Number(clienteId), total, fecha: new Date(),
       estado: esCuentaCorriente ? "cuenta_corriente" : "cobrada", nro_factura: nroFacturaSave,
@@ -1028,7 +1036,13 @@ thead th:last-child{text-align:right}
           }
         })
       )
-      if (errorDetalle) { mostrarToast("Error al guardar detalle", "error"); return }
+      if (errorDetalle) {
+        // Compensating: borrar la venta que recién se insertó
+        try { await supabase.from("cuentas_corrientes").delete().eq("venta_id", venta.id) } catch {}
+        try { await supabase.from("ventas").delete().eq("id", venta.id) } catch {}
+        mostrarToast("Error al guardar detalle de venta", "error")
+        return
+      }
       if (esCuentaCorriente) {
         const { data: ultimo } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", Number(clienteId)).order("id", { ascending: false }).limit(1).maybeSingle()
         const nuevoSaldo = (ultimo?.saldo || 0) + total

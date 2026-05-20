@@ -154,17 +154,24 @@ export default function CuentasCorrientes() {
     if (monto > ventaPago.saldo) { mostrarToast("El monto supera el saldo pendiente", "error"); return }
     setGuardando(true)
     try {
-      // Generar número de recibo secuencial a partir de 001-006520
-      const { data: ultimoRecibo } = await supabase
-        .from("pagos_cuenta_corriente").select("nro_recibo")
-        .not("nro_recibo", "is", null)
-        .order("id", { ascending: false }).limit(1).maybeSingle()
-      let nextNum = 6520
-      if (ultimoRecibo?.nro_recibo) {
-        const m = ultimoRecibo.nro_recibo.match(/(\d+)$/)
-        if (m) nextNum = parseInt(m[1], 10) + 1
+      // Generar número de recibo con secuencia atómica
+      let nroRecibo: string
+      const { data: nroData, error: nroError } = await supabase.rpc('get_next_nro_recibo')
+      if (nroError || !nroData) {
+        // Fallback
+        const { data: ultimoRecibo } = await supabase
+          .from("pagos_cuenta_corriente").select("nro_recibo")
+          .not("nro_recibo", "is", null)
+          .order("id", { ascending: false }).limit(1).maybeSingle()
+        let nextNum = 6520
+        if (ultimoRecibo?.nro_recibo) {
+          const m = ultimoRecibo.nro_recibo.match(/(\d+)$/)
+          if (m) nextNum = parseInt(m[1], 10) + 1
+        }
+        nroRecibo = "001-" + String(nextNum).padStart(6, "0")
+      } else {
+        nroRecibo = nroData
       }
-      const nroRecibo = "001-" + String(nextNum).padStart(6, "0")
 
       const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
         cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto, nota: notaPago || null, nro_recibo: nroRecibo

@@ -136,20 +136,30 @@ export default function Deudores() {
     const afectadas = preview.filter((f: any) => f.pago > 0)
 
     try {
-      // Generar número de recibo secuencial
-      const { data: ultimoRecibo } = await supabase
-        .from("pagos_cuenta_corriente").select("nro_recibo")
-        .not("nro_recibo", "is", null)
-        .order("id", { ascending: false }).limit(1).maybeSingle()
-      let nextNum = 6520
-      if (ultimoRecibo?.nro_recibo) {
-        const m = ultimoRecibo.nro_recibo.match(/(\d+)$/)
-        if (m) nextNum = parseInt(m[1], 10) + 1
+      // Generar número de recibo con secuencia atómica
+      let nroReciboBase: string
+      const { data: nroData, error: nroError } = await supabase.rpc('get_next_nro_recibo')
+      if (nroError || !nroData) {
+        // Fallback
+        const { data: ultimoRecibo } = await supabase
+          .from("pagos_cuenta_corriente").select("nro_recibo")
+          .not("nro_recibo", "is", null)
+          .order("id", { ascending: false }).limit(1).maybeSingle()
+        let nextNum = 6520
+        if (ultimoRecibo?.nro_recibo) {
+          const m = ultimoRecibo.nro_recibo.match(/(\d+)$/)
+          if (m) nextNum = parseInt(m[1], 10) + 1
+        }
+        nroReciboBase = "001-" + String(nextNum).padStart(6, "0")
+      } else {
+        nroReciboBase = nroData
       }
+      const baseNum = parseInt(nroReciboBase.replace(/^.*-/, ""), 10)
+      let offsetRecibo = 0
 
       for (const f of afectadas) {
-        const nroRecibo = "001-" + String(nextNum).padStart(6, "0")
-        nextNum++
+        const nroRecibo = "001-" + String(baseNum + offsetRecibo).padStart(6, "0")
+        offsetRecibo++
         // Mismo insert que usa la página de cuentas corrientes
         const { error: errInsert } = await supabase
           .from("pagos_cuenta_corriente")

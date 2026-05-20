@@ -353,7 +353,7 @@ export default function ComprasPage() {
       const ivaItem = form.incluye_iva ? Math.round(montoIva * proporcion * 100) / 100 : 0;
       const fleteItem = form.incluye_flete ? Math.round(montoFlete * proporcion * 100) / 100 : 0;
 
-      await supabase.from("compras_detalle").insert({
+      const { error: errorDetalle } = await supabase.from("compras_detalle").insert({
         compra_id: compra.id,
         producto_id: it.producto_id,
         cantidad,
@@ -362,6 +362,13 @@ export default function ComprasPage() {
         monto_iva: ivaItem,
         monto_flete: fleteItem,
       });
+
+      if (errorDetalle) {
+        try { await supabase.from("compras_pagos").delete().eq("compra_id", compra.id) } catch {}
+        try { await supabase.from("compras").delete().eq("id", compra.id) } catch {}
+        setErrorForm("Error al guardar detalle de compra")
+        return;
+      }
 
       await supabase.from("lotes").insert({
         producto_id: it.producto_id,
@@ -372,10 +379,15 @@ export default function ComprasPage() {
       });
 
       // Actualizar stock con COALESCE para evitar NULL+número=NULL
-      const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single();
-      await supabase.from("productos").update({
-        stock: (prod?.stock ?? 0) + cantidad
-      }).eq("id", it.producto_id);
+      const { data: prod, error: errStock } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single();
+      if (errStock) {
+        console.error("Error al leer stock del producto", it.producto_id, errStock)
+      } else {
+        const { error: errUpdate } = await supabase.from("productos").update({
+          stock: (prod?.stock ?? 0) + cantidad
+        }).eq("id", it.producto_id);
+        if (errUpdate) console.error("Error al actualizar stock del producto", it.producto_id, errUpdate)
+      }
     }
 
     // 3. Registrar pago inicial si hay
