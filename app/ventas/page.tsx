@@ -61,6 +61,118 @@ function generarHTMLEImprimir(datos: DatosImpresion, tipo: "presupuesto" | "remi
   ventana.document.write(html); ventana.document.close()
 }
 
+interface DatosRecibo {
+  nroFactura: string
+  clienteSeleccionado: any
+  carrito: any[]
+  subtotal: number
+  ivaNum: number
+  total: number
+  esCuentaCorriente: boolean
+  metodoCobro?: string
+  fecha?: string
+}
+
+function generarReciboHTMLEImprimir(datos: DatosRecibo) {
+  const { nroFactura, clienteSeleccionado, carrito, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro, fecha: fechaParam } = datos
+  const logoUrl = window.location.origin + "/logo.png"
+  const fecha = fechaParam || new Date().toLocaleDateString("es-AR")
+  const f = (n: number) => "$" + n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const filas = carrito.map((item: any) => {
+    const bonif = item.bonificacion || 0
+    const unidadesPagas = Math.max(0, item.cantidad - bonif)
+    return `<tr>
+      <td style="padding:7px 8px;font-size:12px;color:#111;border-bottom:1px solid #f0f0f0;text-align:center;">${item.cantidad}</td>
+      <td style="padding:7px 8px;font-size:12px;color:#111;border-bottom:1px solid #f0f0f0;text-align:left;">${item.nombre}</td>
+      <td style="padding:7px 8px;font-size:12px;color:#111;border-bottom:1px solid #f0f0f0;text-align:right;">${f(item.precio)}</td>
+      ${bonif > 0 ? `<td style="padding:7px 8px;font-size:12px;color:#e67700;border-bottom:1px solid #f0f0f0;text-align:center;">${bonif}</td>` : `<td style="padding:7px 8px;font-size:12px;color:#9ca3af;border-bottom:1px solid #f0f0f0;text-align:center;">—</td>`}
+      <td style="padding:7px 8px;font-size:12px;font-weight:600;color:#111;border-bottom:1px solid #f0f0f0;text-align:right;">${f(unidadesPagas * item.precio)}</td>
+    </tr>`
+  }).join("")
+  const metodoLabel = metodoCobro && metodoCobro !== "sin_especificar" ? metodoCobro.replace(/_/g, " ").toUpperCase() : ""
+  const estadoHTML = esCuentaCorriente
+    ? `<div style="background:#fff3cd;border:1px solid #fde047;border-radius:8px;padding:12px 16px;margin-bottom:12px;text-align:center;"><p style="margin:0;font-size:13px;font-weight:800;color:#92400e;">⏳ CUENTA CORRIENTE — PENDIENTE DE PAGO</p></div>`
+    : `<div style="background:#d3f9d8;border:1px solid #2f9e44;border-radius:8px;padding:12px 16px;margin-bottom:12px;text-align:center;">
+        <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:#2f9e44;text-transform:uppercase;letter-spacing:.4px;">✅ Cobrado</p>
+        ${metodoLabel ? `<p style="margin:0;font-size:13px;font-weight:800;color:#166534;">Método: ${metodoLabel}</p>` : ""}
+      </div>`
+  const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>
+@page{size:A4;margin:15mm}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;font-family:Arial;background:#e5e7eb}
+.acciones{display:flex;gap:10px;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;position:sticky;top:0;z-index:10}
+.page{width:180mm;min-height:267mm;margin:16px auto;background:white;padding:24px;display:flex;flex-direction:column;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.logo{height:130px;display:block}
+.empresa-info{font-size:11px;color:#555;margin-top:4px;line-height:1.6}
+.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0f172a;padding-bottom:14px;margin-bottom:16px}
+.header-right{text-align:center;padding-top:4px}
+.titulo{font-size:20px;font-weight:800;color:#0f172a;margin:0 0 6px}
+.nro-doc{font-size:15px;font-weight:700;color:#111;margin:0 0 4px}
+.fecha-doc{font-size:12px;color:#555;margin:0}
+.cliente-row{padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;line-height:1.9;margin-bottom:16px}
+table{width:100%;border-collapse:collapse}
+thead th{background:#f1f5f9;padding:8px 8px;font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.4px;border-bottom:2px solid #e2e8f0}
+.total-box{margin-top:16px;display:flex;justify-content:flex-end}
+.total-inner{width:260px;border-top:2px solid #0f172a;padding-top:10px}
+.total-inner p{margin:4px 0;font-size:12px;display:flex;justify-content:space-between}
+.total-inner h2{margin:8px 0 4px;font-size:22px;font-weight:800;color:#0f172a;display:flex;justify-content:space-between}
+.firma-box{margin-top:40px;display:flex;justify-content:space-between;font-size:11px;color:#555}
+.firma-linea{border-top:1px solid #555;width:200px;text-align:center;padding-top:6px}
+.footer{margin-top:auto;padding-top:16px;border-top:1px solid #eee;font-size:10px;color:#aaa;text-align:center}
+@media print{body{background:white}.acciones{display:none}.page{width:100%;min-height:calc(297mm - 30mm);margin:0;padding:16px;box-shadow:none}tr{page-break-inside:avoid}}
+</style></head><body>
+<div class="acciones">
+  <button onclick="window.close()" style="background:#f1f5f9;border:1px solid #d1d5db;border-radius:8px;padding:10px 18px;font-size:14px;font-family:Arial;cursor:pointer;color:#374151;font-weight:600">&#8592; Cerrar</button>
+  <button onclick="window.print()" style="background:#0f172a;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-family:Arial;cursor:pointer;color:white;font-weight:700">&#128438; Imprimir</button>
+</div>
+<div class="page">
+  <div class="header">
+    <div>
+      <img src="${logoUrl}" class="logo"/>
+      <div class="empresa-info">Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div>
+    </div>
+    <div class="header-right">
+      <div class="titulo">RECIBO DE ${esCuentaCorriente ? "VENTA" : "COBRO"}</div>
+      <div class="nro-doc">N° 001-${nroFactura}</div>
+      <div class="fecha-doc">Fecha: ${fecha}</div>
+    </div>
+  </div>
+  <div class="cliente-row">
+    <b>Cliente:</b> ${clienteSeleccionado.nombre} ${clienteSeleccionado.apellido} &nbsp;|&nbsp;
+    <b>CUIT:</b> ${clienteSeleccionado.cuit || "-"} &nbsp;|&nbsp;
+    <b>Tel:</b> ${clienteSeleccionado.telefono || "-"} &nbsp;|&nbsp;
+    <b>Dir:</b> ${clienteSeleccionado.localidad || "-"}
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:7%;text-align:center;">Cant.</th>
+        <th style="width:50%;text-align:left;">Descripción</th>
+        <th style="width:16%;text-align:right;">Precio U.</th>
+        <th style="width:10%;text-align:center;">Bonif.</th>
+        <th style="width:17%;text-align:right;">Total</th>
+      </tr>
+    </thead>
+    <tbody>${filas}</tbody>
+  </table>
+  <div class="total-box"><div class="total-inner">
+    <p><span>Subtotal</span><span>${f(subtotal)}</span></p>
+    <p><span>IVA (${ivaNum}%)</span><span>${f(subtotal * ivaNum / 100)}</span></p>
+    <h2><span>Total</span><span>${f(total)}</span></h2>
+  </div></div>
+  <div style="margin-top:16px;">${estadoHTML}</div>
+  <div class="firma-box">
+    <div class="firma-linea">Firma y aclaración<br/><span style="font-size:10px;color:#aaa;">Cliente</span></div>
+    <div class="firma-linea">Firma y sello<br/><span style="font-size:10px;color:#aaa;">VETIX Distribuidora</span></div>
+  </div>
+  <div class="footer">VETIX Distribuidora — Almirante Brown 620 — Tel: 2604518157 — vetix.cf@gmail.com</div>
+</div>
+</body></html>`
+  const ventana = window.open("", "_blank")
+  if (!ventana) { alert("Habilita ventanas emergentes"); return }
+  ventana.document.write(html); ventana.document.close()
+}
+
 const ESTADO_VENTA: Record<string, { label: string, color: string, bg: string }> = {
   cobrada:          { label: "Cobrada",          color: "#16a34a", bg: "#f0fdf4" },
   cuenta_corriente: { label: "Cuenta corriente", color: "#d97706", bg: "#fffbeb" },
@@ -743,6 +855,47 @@ thead th:last-child{text-align:right}
     }
   }
 
+  async function reimprimirRecibo(venta: any, itemsCargados?: any[]) {
+    setReimprimiendo(true)
+    try {
+      const items = itemsCargados?.length
+        ? itemsCargados
+        : await fetchDetalleConProductos(venta.id)
+      const { data: clienteData } = await supabase
+        .from("clientes").select("*").eq("id", venta.cliente_id).maybeSingle()
+      const carritoReconstruido = items.map((d: any) => ({
+        producto_id: d.producto_id, nombre: d.productos?.nombre || "",
+        cantidad: d.cantidad, precio: d.precio, bonificacion: d.bonificacion || 0
+      }))
+      const subtotalCalc = carritoReconstruido.reduce((acc: number, it: any) => {
+        const pagan = it.cantidad - (it.bonificacion || 0)
+        return acc + Math.max(0, pagan) * it.precio
+      }, 0)
+      const totalCalc = Number(venta.total)
+      const ivaRaw = subtotalCalc > 0 ? Math.round((totalCalc / subtotalCalc - 1) * 100) : 21
+      const ivaCalc = (ivaRaw >= 0 && ivaRaw <= 30) ? ivaRaw : 21
+      const nroParaImprimir = venta.nro_factura
+        ? (isNaN(parseInt(venta.nro_factura, 10)) ? venta.nro_factura : String(parseInt(venta.nro_factura, 10)).padStart(5, "0"))
+        : ""
+      const fechaVenta = venta.fecha ? new Date(venta.fecha).toLocaleDateString("es-AR") : new Date().toLocaleDateString("es-AR")
+      generarReciboHTMLEImprimir({
+        nroFactura: nroParaImprimir,
+        clienteSeleccionado: clienteData || venta.clientes || {},
+        carrito: carritoReconstruido,
+        subtotal: subtotalCalc,
+        ivaNum: ivaCalc,
+        total: totalCalc,
+        esCuentaCorriente: venta.estado === "cuenta_corriente",
+        metodoCobro: venta.metodo_cobro,
+        fecha: fechaVenta,
+      })
+    } catch (e: any) {
+      mostrarToast("Error al generar recibo: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setReimprimiendo(false)
+    }
+  }
+
   function exportarVentas() {
     const datos = ventasFiltradas.map(v => ({
       "N° Presupuesto": v.nro_factura,
@@ -884,6 +1037,11 @@ thead th:last-child{text-align:right}
       const { error: errorFI } = await supabase.from("facturas_impresion").insert([{ nro_factura: nroFacturaSave, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura: nroFacturaSave, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? null : metodoCobro } }])
       if (errorFI) console.error("Error guardando factura_impresion:", errorFI)
       mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : "✅ Venta confirmada", "ok")
+      // Imprimir recibo automáticamente con los datos actuales antes de resetear el formulario
+      const carritoParaRecibo = carritoEfectivo
+      const clienteParaRecibo = clienteSeleccionado
+      const fechaHoy = new Date().toLocaleDateString("es-AR")
+      generarReciboHTMLEImprimir({ nroFactura: nroFacturaSave, clienteSeleccionado: clienteParaRecibo, carrito: carritoParaRecibo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? undefined : metodoCobro, fecha: fechaHoy })
       setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false)
       localStorage.removeItem("vetix_borrador")
       cargar()
@@ -1713,6 +1871,12 @@ thead th:last-child{text-align:right}
                 disabled={reimprimiendo || loadingDetalle}
                 style={{ flex: 1, minWidth: 110, padding: "10px", background: "linear-gradient(135deg, #1e40af, #3b82f6)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: reimprimiendo || loadingDetalle ? 0.6 : 1 }}>
                 {reimprimiendo ? "Generando..." : "🖨️ Presupuesto"}
+              </button>
+              <button
+                onClick={() => reimprimirRecibo(ventaDetalle, detalleItems.length ? detalleItems : undefined)}
+                disabled={reimprimiendo || loadingDetalle}
+                style={{ flex: 1, minWidth: 110, padding: "10px", background: "linear-gradient(135deg, #065f46, #059669)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: reimprimiendo || loadingDetalle ? 0.6 : 1 }}>
+                {reimprimiendo ? "Generando..." : "🧾 Recibo"}
               </button>
               <button
                 onClick={() => reimprimir(ventaDetalle, detalleItems.length ? detalleItems : undefined, "remito")}
