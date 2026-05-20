@@ -76,6 +76,8 @@ export default function ProveedoresPage() {
   const [procesandoPago, setProcesandoPago] = useState(false);
   const [errorPago, setErrorPago] = useState<string | null>(null);
   const [exito, setExito] = useState<string | null>(null);
+  const [saldoFavorProv, setSaldoFavorProv] = useState(0);
+  const [usarSaldoFavor, setUsarSaldoFavor] = useState(false);
 
   useEffect(() => { cargarProveedores(); }, []);
   useEffect(() => {
@@ -147,14 +149,17 @@ export default function ProveedoresPage() {
     setNotaPago("");
     setErrorPago(null);
     setExito(null);
+    setUsarSaldoFavor(false);
+    setSaldoFavorProv(0);
     setLoadingCompras(true);
-    const { data } = await supabase
-      .from("compras")
-      .select("id, total, total_pagado, numero_remito, fecha")
-      .eq("proveedor_id", p.id)
-      .in("estado", ["pendiente", "parcial"])
-      .order("id", { ascending: true });
-    setComprasPendientes(data || []);
+    const [{ data: compras }, { data: saldos }] = await Promise.all([
+      supabase.from("compras").select("id, total, total_pagado, numero_remito, fecha")
+        .eq("proveedor_id", p.id).in("estado", ["pendiente", "parcial"]).order("id", { ascending: true }),
+      supabase.from("saldo_proveedores").select("monto").eq("proveedor_id", p.id),
+    ]);
+    setComprasPendientes(compras || []);
+    const totalSaldo = (saldos || []).reduce((s: number, r: any) => s + Number(r.monto), 0);
+    setSaldoFavorProv(Math.max(0, totalSaldo));
     setLoadingCompras(false);
   }
 
@@ -164,12 +169,16 @@ export default function ProveedoresPage() {
     setMontoPago("");
     setErrorPago(null);
     setExito(null);
+    setUsarSaldoFavor(false);
+    setSaldoFavorProv(0);
   }
 
   function calcularPreview() {
     const monto = parseFloat(montoPago.replace(",", ".")) || 0;
-    if (monto <= 0 || comprasPendientes.length === 0) return [];
-    let restante = monto;
+    const saldoExtra = usarSaldoFavor ? saldoFavorProv : 0;
+    const total = monto + saldoExtra;
+    if (total <= 0 || comprasPendientes.length === 0) return [];
+    let restante = total;
     return comprasPendientes.map(c => {
       const saldo = Math.round((c.total - c.total_pagado) * 100) / 100;
       if (restante <= 0) return { ...c, saldo, pago: 0, resultado: "sin_cambio" };
@@ -181,35 +190,72 @@ export default function ProveedoresPage() {
 
   async function confirmarPago() {
     const monto = parseFloat(montoPago.replace(",", ".")) || 0;
-    if (monto <= 0) { setErrorPago("Ingresá un monto válido."); return; }
+    const saldoExtra = usarSaldoFavor ? saldoFavorProv : 0;
+    if (monto <= 0 && saldoExtra <= 0) { setErrorPago("Ingresá un monto válido."); return; }
     if (!modalPago) return;
     setProcesandoPago(true);
     setErrorPago(null);
     const preview = calcularPreview();
-    const afectadas = preview.filter(c => c.pago > 0);
+    const afectadas = preview.filter((c: any) => c.pago > 0);
+    const totalAplicado = afectadas.reduce((s: number, c: any) => s + c.pago, 0);
+    const exceso = Math.max(0, Math.round((monto + saldoExtra - totalAplicado) * 100) / 100);
     try {
+      // 1. Registrar pago en cada compra directamente (sin RPC)
       for (const c of afectadas) {
-        const { error } = await supabase.rpc("registrar_pago_compra", {
-          p_compra_id: c.id,
-          p_monto: c.pago,
-          p_metodo_pago: metodoPago,
-          p_notas: notaPago.trim() || null,
+        await supabase.from("compras_pagos").insert({
+          compra_id: c.id,
+          monto: c.pago,
+          metodo_pago: metodoPago,
+          notas: notaPago.trim() || null,
+          fecha: new Date().toISOString(),
         });
-        if (error) throw new Error("Error en factura " + (c.numero_remito || c.id) + ": " + error.message);
+        const nuevoTotal = Math.round((c.total_pagado + c.pago) * 100) / 100;
+        const nuevoEstado = nuevoTotal >= c.total ? "pagado" : "parcial";
+        await supabase.from("compras").update({ total_pagado: nuevoTotal, estado: nuevoEstado }).eq("id", c.id);
       }
-      const totalPagado = afectadas.reduce((s: number, c: any) => s + c.pago, 0);
+
+      // 2. Si se usó saldo a favor → descontarlo (FIFO)
+      if (saldoExtra > 0.01) {
+        const { data: registros } = await supabase.from("saldo_proveedores")
+          .select("id, monto").eq("proveedor_id", modalPago.id)
+          .gt("monto", 0).order("fecha", { ascending: true });
+        let aDescontar = Math.min(saldoExtra, totalAplicado);
+        for (const reg of (registros || [])) {
+          if (aDescontar <= 0.001) break;
+          if (reg.monto <= aDescontar + 0.001) {
+            await supabase.from("saldo_proveedores").delete().eq("id", reg.id);
+            aDescontar -= reg.monto;
+          } else {
+            await supabase.from("saldo_proveedores").update({ monto: Math.round((reg.monto - aDescontar) * 100) / 100 }).eq("id", reg.id);
+            aDescontar = 0;
+          }
+        }
+      }
+
+      // 3. Si hay exceso de efectivo → guardar como saldo a favor
+      if (exceso > 0.01) {
+        await supabase.from("saldo_proveedores").insert({
+          proveedor_id: modalPago.id,
+          monto: exceso,
+          notas: `Exceso de pago — ${new Date().toLocaleDateString("es-AR")}`,
+        });
+        setSaldoFavorProv(prev => Math.round((prev + exceso) * 100) / 100);
+      }
+
       const facturasPagadas = afectadas.filter((c: any) => c.resultado === "pagado").length;
-      setExito(`✅ Pago de ${fmt(totalPagado)} aplicado. ${facturasPagadas} factura${facturasPagadas !== 1 ? "s" : ""} saldada${facturasPagadas !== 1 ? "s" : ""}.`);
+      let msg = `✅ Pago de ${fmt(totalAplicado)} aplicado. ${facturasPagadas} factura${facturasPagadas !== 1 ? "s" : ""} saldada${facturasPagadas !== 1 ? "s" : ""}.`;
+      if (exceso > 0.01) msg += ` ${fmt(exceso)} quedaron como saldo a favor.`;
+      setExito(msg);
+
       await cargarProveedores();
-      // Refrescar compras pendientes
-      const { data } = await supabase
-        .from("compras")
+      const { data } = await supabase.from("compras")
         .select("id, total, total_pagado, numero_remito, fecha")
         .eq("proveedor_id", modalPago.id)
         .in("estado", ["pendiente", "parcial"])
         .order("id", { ascending: true });
       setComprasPendientes(data || []);
       setMontoPago("");
+      setUsarSaldoFavor(false);
     } catch (e: any) {
       setErrorPago(e.message || "Error al procesar el pago.");
     } finally {
@@ -423,15 +469,32 @@ export default function ProveedoresPage() {
               </div>
             )}
 
+            {/* Saldo a favor disponible */}
+            {saldoFavorProv > 0 && (
+              <div onClick={() => { setUsarSaldoFavor(!usarSaldoFavor); setExito(null); }}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, cursor: "pointer", marginBottom: 16,
+                  background: usarSaldoFavor ? "rgba(34,197,94,0.1)" : "rgba(255,255,255,0.04)",
+                  border: usarSaldoFavor ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ width: 18, height: 18, borderRadius: 4, border: "2px solid", borderColor: usarSaldoFavor ? "#22c55e" : "#4b5563",
+                  background: usarSaldoFavor ? "#22c55e" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {usarSaldoFavor && <span style={{ color: "white", fontSize: 11, fontWeight: 900 }}>✓</span>}
+                </div>
+                <div>
+                  <div style={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>💰 Usar saldo a favor: {fmt(saldoFavorProv)}</div>
+                  {usarSaldoFavor && <div style={{ color: "#86efac", fontSize: 11, marginTop: 2 }}>Se aplicará al pago automáticamente</div>}
+                </div>
+              </div>
+            )}
+
             {/* Inputs */}
             <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
               <div>
-                <label style={labelStyle}>Monto a pagar</label>
+                <label style={labelStyle}>Monto a pagar{usarSaldoFavor ? " (además del saldo a favor)" : ""}</label>
                 <input
                   type="number" min="0" step="0.01"
                   value={montoPago}
                   onChange={e => { setMontoPago(e.target.value); setErrorPago(null); setExito(null); }}
-                  placeholder="Ej: 2000000"
+                  placeholder={usarSaldoFavor ? "0 si el saldo cubre todo" : "Ej: 2000000"}
                   style={inputStyle}
                   autoFocus
                 />
@@ -502,14 +565,21 @@ export default function ProveedoresPage() {
                 {/* Resumen del preview */}
                 {(() => {
                   const monto = parseFloat(montoPago.replace(",", ".")) || 0;
-                  if (monto <= 0) return null;
+                  const saldoExtra = usarSaldoFavor ? saldoFavorProv : 0;
+                  if (monto <= 0 && saldoExtra <= 0) return null;
                   const preview = calcularPreview();
                   const totalAplicado = preview.reduce((s: number, c: any) => s + c.pago, 0);
-                  const vuelto = Math.max(0, monto - totalAplicado);
+                  const exceso = Math.max(0, Math.round((monto + saldoExtra - totalAplicado) * 100) / 100);
                   const saldadas = preview.filter((c: any) => c.resultado === "pagado").length;
                   const parciales = preview.filter((c: any) => c.resultado === "parcial").length;
                   return (
                     <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", fontSize: 12 }}>
+                      {saldoExtra > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
+                          <span>Saldo a favor aplicado:</span>
+                          <span style={{ color: "#4ade80", fontWeight: 700 }}>−{fmt(Math.min(saldoExtra, totalAplicado))}</span>
+                        </div>
+                      )}
                       <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
                         <span>Facturas a saldar:</span>
                         <span style={{ color: "#4ade80", fontWeight: 700 }}>{saldadas}</span>
@@ -520,14 +590,14 @@ export default function ProveedoresPage() {
                           <span style={{ color: "#fbbf24", fontWeight: 700 }}>{parciales}</span>
                         </div>
                       )}
-                      <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: exceso > 0 ? 4 : 0 }}>
                         <span>Total aplicado:</span>
                         <span style={{ color: "white", fontWeight: 700 }}>{fmt(totalAplicado)}</span>
                       </div>
-                      {vuelto > 0 && (
-                        <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af" }}>
-                          <span>Excedente (no se aplica):</span>
-                          <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(vuelto)}</span>
+                      {exceso > 0.01 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#fbbf24" }}>
+                          <span>Excedente → saldo a favor:</span>
+                          <span style={{ fontWeight: 700 }}>{fmt(exceso)}</span>
                         </div>
                       )}
                     </div>
