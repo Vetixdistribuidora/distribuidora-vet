@@ -96,20 +96,59 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const inicialAvatar = usuario?.email?.charAt(0).toUpperCase() ?? "?"
   const emailCorto = usuario?.email ?? ""
 
+  const [hayActualizacion, setHayActualizacion] = useState(false)
+
+  // ── Service Worker: registrar y detectar nuevas versiones ──────────────────
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {})
+    if (!("serviceWorker" in navigator)) return
+    navigator.serviceWorker.register("/sw.js")
+      .then((reg) => {
+        // Cuando el SW encuentra una nueva versión
+        reg.addEventListener("updatefound", () => {
+          const nuevoSW = reg.installing
+          if (!nuevoSW) return
+          nuevoSW.addEventListener("statechange", () => {
+            if (nuevoSW.state === "installed" && navigator.serviceWorker.controller) {
+              // Hay una nueva versión lista — activarla y recargar
+              nuevoSW.postMessage({ type: "SKIP_WAITING" })
+            }
+          })
+        })
+        // Revisar si ya hay un SW esperando (caso: página abierta cuando deployaron)
+        if (reg.waiting) {
+          reg.waiting.postMessage({ type: "SKIP_WAITING" })
+        }
+        // Buscar actualización cada vez que el usuario abre la app
+        reg.update().catch(() => {})
+      })
+      .catch(() => {})
+
+    // Cuando el SW nuevo se activa, el mensaje SW_UPDATED dispara el reload
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === "SW_UPDATED") {
+        window.location.reload()
+      }
     }
+    navigator.serviceWorker.addEventListener("message", onMessage)
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage)
   }, [])
 
-  // Cuando el usuario vuelve a la pestaña después de inactividad, el browser
-  // pausó el timer de auto-refresh de Supabase (throttling de background tabs).
-  // Esto fuerza un refresh del token proactivamente antes de que el usuario
-  // intente hacer algo, evitando el "Cargando..." al volver.
+  // ── Visibilidad: refresh de sesión + reload tras inactividad larga ─────────
   useEffect(() => {
+    let hiddenAt: number | null = null
+    const INACTIVITY_MS = 30 * 60 * 1000 // 30 minutos
+
     const handleVisibilityChange = async () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now()
+      } else if (document.visibilityState === "visible") {
+        // Refrescar token siempre (evita "Cargando…" por token expirado)
         await supabase.auth.getSession()
+        // Si estuvo más de 30 min en background → recargar para tener datos frescos
+        if (hiddenAt && Date.now() - hiddenAt > INACTIVITY_MS) {
+          window.location.reload()
+        }
+        hiddenAt = null
       }
     }
     document.addEventListener("visibilitychange", handleVisibilityChange)
@@ -344,8 +383,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "1px", fontWeight: 500 }}>{orgNombre}</div>
               </div>
             </div>
-            <div className="header-date" style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 500 }}>
-              {new Date().toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div className="header-date" style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 500 }}>
+                {new Date().toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                title="Actualizar app"
+                style={{
+                  background: hayActualizacion ? "linear-gradient(135deg,#1e40af,#3b82f6)" : "none",
+                  border: hayActualizacion ? "none" : "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  width: 34, height: 34,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  cursor: "pointer", flexShrink: 0,
+                  color: hayActualizacion ? "white" : "#94a3b8",
+                  fontSize: 16,
+                  transition: "all 0.2s",
+                }}
+              >
+                🔄
+              </button>
             </div>
           </div>
 
