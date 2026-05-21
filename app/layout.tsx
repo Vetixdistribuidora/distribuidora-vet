@@ -3,10 +3,9 @@
 import "./globals.css"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
-import AuthGuard from "@/components/AuthGuard"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -14,19 +13,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const [orgNombre, setOrgNombre] = useState<string>("VETIX")
   const [sidebarAbierto, setSidebarAbierto] = useState(false)
   const router = useRouter()
+  // Ref para evitar re-renders cuando el token se refresca pero es el mismo usuario
+  const usuarioIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === "SIGNED_OUT") {
+        usuarioIdRef.current = null
         setUsuario(null)
         router.replace("/login")
-      } else if (event === "SIGNED_IN" && session) {
-        // Solo actualizar en SIGNED_IN, no en TOKEN_REFRESHED
-        // TOKEN_REFRESHED causaba re-renders innecesarios del layout
-        setUsuario(session.user)
-        const { data: org } = await supabase.from("organizaciones").select("nombre").single()
-        if (org) setOrgNombre(org.nombre)
-      } else if (event === "INITIAL_SESSION" && session) {
+      } else if (event === "INITIAL_SESSION" && !session) {
+        // No hay sesión en la carga inicial → redirigir a login
+        router.replace("/login")
+      } else if (session && (event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED")) {
+        // Si es el mismo usuario (token refresh), no hacer nada para evitar re-renders
+        if (usuarioIdRef.current === session.user.id) return
+        usuarioIdRef.current = session.user.id
         setUsuario(session.user)
         const { data: org } = await supabase.from("organizaciones").select("nombre").single()
         if (org) setOrgNombre(org.nombre)
@@ -443,7 +445,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           {/* CONTENT */}
           <div className="main-content" style={{ padding: "30px", overflowY: "auto", flex: 1, background: "#f1f5f9" }}>
-            <AuthGuard>{children}</AuthGuard>
+            {children}
           </div>
         </main>
 
