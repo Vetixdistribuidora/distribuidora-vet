@@ -26,6 +26,13 @@ function estadoLote(dias: number) {
   return { label: "OK", color: "#4ade80", bg: "rgba(74,222,128,0.12)" }
 }
 
+// dias_para_vencer puede no venir de la vista — calcular desde fecha_vencimiento como fallback
+function diasParaVencer(l: any): number {
+  if (l.dias_para_vencer != null) return Number(l.dias_para_vencer)
+  if (!l.fecha_vencimiento) return 999
+  return Math.floor((new Date(l.fecha_vencimiento + "T00:00:00").getTime() - Date.now()) / 86400000)
+}
+
 type ModalTipo = "stockBajo" | "sinStock" | "sinVentas" | "sinRotacion" | "lotes" | "ventasHoy" | "ventasMes" | "detalleVenta" | "cuentasCC" | null
 
 export default function Dashboard() {
@@ -421,7 +428,7 @@ export default function Dashboard() {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {lotesPorVencer.slice(0, 5).map((l: any) => {
-                const dias = l.dias_para_vencer
+                const dias = diasParaVencer(l)
                 const est = estadoLote(dias)
                 return (
                   <div key={l.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", background: "rgba(255,255,255,0.04)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -566,7 +573,8 @@ export default function Dashboard() {
                 {lotesPorVencer.length === 0 ? (
                   <p style={{ color: "#4ade80", fontSize: 14 }}>✓ No hay lotes próximos a vencer</p>
                 ) : lotesPorVencer.map((l: any) => {
-                  const est = estadoLote(l.dias_para_vencer)
+                  const dias = diasParaVencer(l)
+                  const est = estadoLote(dias)
                   return (
                     <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8, marginBottom: 6, border: "1px solid rgba(255,255,255,0.06)" }}>
                       <div>
@@ -574,7 +582,7 @@ export default function Dashboard() {
                         <div style={{ color: "#6b7280", fontSize: 11, marginTop: 2 }}>{l.fecha_vencimiento} · {l.cantidad} u.</div>
                       </div>
                       <span style={{ background: est.bg, color: est.color, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 6 }}>
-                        {l.dias_para_vencer < 0 ? "Vencido" : `${l.dias_para_vencer}d`}
+                        {dias < 0 ? "Vencido" : `${dias}d`}
                       </span>
                     </div>
                   )
