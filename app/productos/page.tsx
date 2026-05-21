@@ -365,13 +365,13 @@ export default function Productos() {
   async function cargar() {
     setCargando(true)
     try {
-      // Productos y lotes en paralelo — una sola request cada uno
-      // range(0, 1999) garantiza hasta 2000 productos sin el overhead del while loop
-      const [productosData, lotesData] = await Promise.all([
+      // Lotes y primera página de productos se piden en paralelo para ganar tiempo
+      // Luego el while loop sigue pidiendo el resto de productos mientras lotes ya está listo
+      const [primeraPageData, lotesData] = await Promise.all([
         supabase.from("productos")
           .select("id, nombre, costo, margen, flete, precio_venta, stock, categoria, laboratorio, imagen_url")
           .order("nombre")
-          .range(0, 1999)
+          .range(0, 999)
           .then(r => r.data || []),
         supabase.from("lotes")
           .select("id, producto_id, cantidad, fecha_vencimiento")
@@ -379,6 +379,21 @@ export default function Productos() {
           .order("fecha_vencimiento", { ascending: true })
           .then(r => r.data || [])
       ])
+
+      // Continuar paginando si hay más de 1000 productos
+      let productosData = [...primeraPageData]
+      let desde = 1000
+      while (primeraPageData.length === 1000) {
+        const { data } = await supabase
+          .from("productos")
+          .select("id, nombre, costo, margen, flete, precio_venta, stock, categoria, laboratorio, imagen_url")
+          .order("nombre")
+          .range(desde, desde + 999)
+        if (!data?.length) break
+        productosData = [...productosData, ...data]
+        if (data.length < 1000) break
+        desde += 1000
+      }
 
       const mapa: Record<number, any[]> = {}
       for (const l of lotesData) {

@@ -673,18 +673,34 @@ thead th:last-child{text-align:right}
 
   async function cargar() {
     try {
-      // Clientes, productos y último nro de factura en paralelo
-      const [{ data: c }, { data: p }, { data: ultima }] = await Promise.all([
+      // Clientes, primera página de productos y último nro de factura en paralelo
+      const [{ data: c }, primeraPageData, { data: ultima }] = await Promise.all([
         supabase.from("clientes").select("*").order("nombre"),
-        // Solo columnas necesarias para el formulario de venta — sin costo, margen, imagen_url
         supabase.from("productos")
           .select("id, nombre, precio_venta, stock, categoria, laboratorio")
           .order("nombre")
-          .range(0, 1999),
+          .range(0, 999)
+          .then(r => r.data || []),
         supabase.from("ventas").select("nro_factura").order("id", { ascending: false }).limit(1).maybeSingle(),
       ])
+
+      // Continuar paginando si hay más de 1000 productos
+      let todosProductos = [...primeraPageData]
+      let desde = 1000
+      while (primeraPageData.length === 1000) {
+        const { data } = await supabase
+          .from("productos")
+          .select("id, nombre, precio_venta, stock, categoria, laboratorio")
+          .order("nombre")
+          .range(desde, desde + 999)
+        if (!data?.length) break
+        todosProductos = [...todosProductos, ...data]
+        if (data.length < 1000) break
+        desde += 1000
+      }
+
       setClientes(c || [])
-      setProductos(p || [])
+      setProductos(todosProductos)
       if (ultima?.nro_factura) {
         const num = parseInt(ultima.nro_factura, 10)
         if (!isNaN(num)) setNroFactura(String(num + 1).padStart(5, "0"))
