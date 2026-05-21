@@ -92,7 +92,9 @@ export default function Dashboard() {
       supabase.from("ventas")
         .select("id, total, nro_factura, fecha, estado, clientes(nombre, apellido)")
         .gte("fecha", inicioMesStr).neq("estado", "anulada").order("id", { ascending: false }),
-      supabase.from("productos").select("id, nombre, stock"),
+      // Solo traer productos con stock bajo o sin stock — evita cargar 9000+ filas
+      // para luego filtrar. Supabase devuelve máx 1000 sin paginación explícita.
+      supabase.from("productos").select("id, nombre, stock").or("stock.is.null,stock.lte.5"),
       supabase.from("pagos_cuenta_corriente").select("monto").gte("fecha", inicioHoyUTC),
       supabase.from("pagos_cuenta_corriente").select("monto").gte("fecha", inicioMesStr),
     ])
