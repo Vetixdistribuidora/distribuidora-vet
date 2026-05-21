@@ -40,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   const isLoginPage = pathname === "/login"
   const isOnboarding = pathname === "/onboarding"
+  const isRegistro = pathname === "/registro"
 
   const getItemStyle = (path: string) => {
     const active = path === "/" ? pathname === "/" : pathname.startsWith(path)
@@ -193,7 +194,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
   }, [])
 
-  if (isLoginPage || isOnboarding) {
+  if (isLoginPage || isOnboarding || isRegistro) {
     return (
       <html lang="es">
         <head>
