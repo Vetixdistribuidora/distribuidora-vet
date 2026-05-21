@@ -929,16 +929,56 @@ thead th:last-child{text-align:right}
 
   async function exportarVentas() {
     const XLSX = await import("xlsx")
-    const datos = ventasFiltradas.map(v => ({
-      "N° Presupuesto": v.nro_factura,
-      "Fecha": fechaLocal(v.fecha),
-      "Cliente": (v.clientes?.nombre || "") + " " + (v.clientes?.apellido || ""),
-      "Estado": ESTADO_VENTA[v.estado]?.label || v.estado,
-      "Método de cobro": v.metodo_cobro || "",
-      "Total": Number(v.total),
-    }))
+
+    // Para ventas en cuenta corriente: buscar pagos parciales ya realizados
+    const idsCC = ventasFiltradas.filter(v => v.estado === "cuenta_corriente").map(v => v.id)
+    const pagosMap: Record<number, number> = {}
+    if (idsCC.length > 0) {
+      const { data: pagos } = await supabase
+        .from("pagos_cuenta_corriente")
+        .select("venta_id, monto")
+        .in("venta_id", idsCC)
+      ;(pagos || []).forEach((p: any) => {
+        pagosMap[p.venta_id] = (pagosMap[p.venta_id] || 0) + Number(p.monto)
+      })
+    }
+
+    const datos = ventasFiltradas.map(v => {
+      const total = Number(v.total)
+      let pagado: number
+      let saldo: number
+      if (v.estado === "anulada") {
+        pagado = 0; saldo = 0
+      } else if (v.estado === "cobrada") {
+        pagado = total; saldo = 0
+      } else {
+        // cuenta_corriente: puede tener pagos parciales
+        pagado = pagosMap[v.id] || 0
+        saldo = Math.max(0, total - pagado)
+      }
+      return {
+        "N° Presupuesto": v.nro_factura,
+        "Fecha": fechaLocal(v.fecha),
+        "Cliente": (v.clientes?.nombre || "") + " " + (v.clientes?.apellido || ""),
+        "Estado": ESTADO_VENTA[v.estado]?.label || v.estado,
+        "Método de cobro": v.estado === "cobrada" ? (v.metodo_cobro || "") : v.estado === "cuenta_corriente" ? "Cuenta Corriente" : "",
+        "Total": total,
+        "Pagado": pagado,
+        "Saldo pendiente": saldo,
+      }
+    })
+
     const ws = XLSX.utils.json_to_sheet(datos)
-    ws["!cols"] = [{ wch: 14 }, { wch: 12 }, { wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 14 }]
+    ws["!cols"] = [
+      { wch: 14 }, // N° Presupuesto
+      { wch: 12 }, // Fecha
+      { wch: 28 }, // Cliente
+      { wch: 16 }, // Estado
+      { wch: 20 }, // Método de cobro
+      { wch: 14 }, // Total
+      { wch: 14 }, // Pagado
+      { wch: 16 }, // Saldo pendiente
+    ]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Ventas")
     XLSX.writeFile(wb, "ventas_" + new Date().toISOString().slice(0, 10) + ".xlsx")
