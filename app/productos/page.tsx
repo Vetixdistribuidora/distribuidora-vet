@@ -51,6 +51,15 @@ const btnSecundario: React.CSSProperties = {
 }
 
 const responsiveStyles = `
+  @media (max-width: 1100px) {
+    .productos-add-grid {
+      grid-template-columns: 1fr 1fr 1fr 1fr !important;
+    }
+    .productos-add-grid > *:first-child {
+      grid-column: 1 / -1 !important;
+    }
+  }
+
   @media (max-width: 768px) {
     .productos-topbar { flex-wrap: wrap !important; }
     .productos-topbar input { min-width: 0 !important; width: 100% !important; }
