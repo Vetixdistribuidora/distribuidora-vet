@@ -150,11 +150,6 @@ export default function ComprasPage() {
   const [hayBorrador, setHayBorrador] = useState(false);
 
   useEffect(() => { cargarTodo(); }, []);
-  useEffect(() => {
-    if (!loading) return
-    const w = setTimeout(() => supabase.auth.signOut(), 300000)
-    return () => clearTimeout(w)
-  }, [loading])
 
   // Avisar al layout cuando el modal de nueva compra está abierto (tiene su propio borrador en localStorage,
   // pero el flag en sessionStorage evita la recarga automática por inactividad)

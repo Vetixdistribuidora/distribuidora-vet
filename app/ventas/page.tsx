@@ -266,11 +266,6 @@ export default function Ventas() {
 
   useEffect(() => { cargar() }, [])
   useEffect(() => {
-    if (!loadingHistorial) return
-    const w = setTimeout(() => supabase.auth.signOut(), 300000)
-    return () => clearTimeout(w)
-  }, [loadingHistorial])
-  useEffect(() => {
     if (tab === "historial") cargarHistorial()
     if (tab === "borradores") cargarBorradores()
     if (tab === "notascredito") cargarNotasCredito()

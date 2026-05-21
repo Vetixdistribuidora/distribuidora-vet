@@ -81,11 +81,6 @@ export default function ProveedoresPage() {
   const [saldosFavor, setSaldosFavor] = useState<Record<string, number>>({});
 
   useEffect(() => { cargarProveedores(); }, []);
-  useEffect(() => {
-    if (!loading) return
-    const w = setTimeout(() => supabase.auth.signOut(), 300000)
-    return () => clearTimeout(w)
-  }, [loading])
 
   async function cargarProveedores() {
     setLoading(true);

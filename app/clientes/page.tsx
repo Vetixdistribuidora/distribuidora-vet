@@ -125,11 +125,6 @@ export default function Clientes() {
   }
 
   useEffect(() => { cargar() }, [])
-  useEffect(() => {
-    if (!cargando) return
-    const w = setTimeout(() => supabase.auth.signOut(), 300000)
-    return () => clearTimeout(w)
-  }, [cargando])
 
   // Avisar al layout cuando hay un modal de edición/alta abierto
   useEffect(() => {

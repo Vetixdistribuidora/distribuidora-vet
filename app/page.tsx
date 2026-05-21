@@ -49,12 +49,6 @@ export default function Dashboard() {
   const [loadingModalLista, setLoadingModalLista] = useState(false)
 
   useEffect(() => { iniciar() }, [])
-  // Watchdog: si loading queda trabado >10s, la sesión está rota → forzar re-login
-  useEffect(() => {
-    if (!loading) return
-    const w = setTimeout(() => supabase.auth.signOut(), 300000)
-    return () => clearTimeout(w)
-  }, [loading])
 
   async function iniciar() {
     setLoading(true)

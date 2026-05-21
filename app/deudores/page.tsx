@@ -41,11 +41,6 @@ export default function Deudores() {
   const [exitoCobro, setExitoCobro] = useState<string | null>(null)
 
   useEffect(() => { cargarDeudores() }, [])
-  useEffect(() => {
-    if (!cargando) return
-    const w = setTimeout(() => supabase.auth.signOut(), 300000)
-    return () => clearTimeout(w)
-  }, [cargando])
 
   async function cargarDeudores() {
     setCargando(true)
