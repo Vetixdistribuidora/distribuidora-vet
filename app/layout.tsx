@@ -164,18 +164,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return () => clearInterval(interval)
   }, [])
 
-  // ── Visibilidad: refresh de sesión silencioso al volver a la pestaña ────────
-  // El auto-reload fue eliminado — con JWT de 8h y refresh cada 10min no es necesario
-  // y causaba pérdida de datos en formularios abiertos
-  useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState === "visible") {
-        try { await supabase.auth.refreshSession() } catch { /* silencioso */ }
-      }
-    }
-    document.addEventListener("visibilitychange", handleVisibilityChange)
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
-  }, [])
+  // Nota: el handler de visibilityChange fue eliminado porque refreshSession()
+  // al volver a la pestaña causaba que las páginas quedaran en loading state.
+  // La sesión se mantiene activa con el refresh proactivo cada 10min + JWT de 8h.
 
   if (isLoginPage || isOnboarding || isRegistro) {
     return (
