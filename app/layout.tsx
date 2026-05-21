@@ -13,8 +13,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const [orgNombre, setOrgNombre] = useState<string>("VETIX")
   const [sidebarAbierto, setSidebarAbierto] = useState(false)
   const router = useRouter()
-  // Ref para evitar re-renders cuando el token se refresca pero es el mismo usuario
+  // Refs para acceder siempre al valor actualizado dentro del callback (evitar stale closure)
   const usuarioIdRef = useRef<string | null>(null)
+  const pathnameRef  = useRef(pathname)
+  useEffect(() => { pathnameRef.current = pathname }, [pathname])
+
+  // Páginas públicas que NO requieren autenticación
+  const RUTAS_PUBLICAS = ["/login", "/onboarding", "/registro"]
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -23,8 +28,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         setUsuario(null)
         router.replace("/login")
       } else if (event === "INITIAL_SESSION" && !session) {
-        // No hay sesión en la carga inicial → redirigir a login
-        router.replace("/login")
+        // Solo redirigir a /login si el usuario está intentando acceder a una ruta protegida
+        if (!RUTAS_PUBLICAS.includes(pathnameRef.current)) {
+          router.replace("/login")
+        }
       } else if (session && (event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED")) {
         // Si es el mismo usuario (token refresh), no hacer nada para evitar re-renders
         if (usuarioIdRef.current === session.user.id) return
@@ -35,6 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       }
     })
     return () => subscription.unsubscribe()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Cerrar sidebar al navegar
