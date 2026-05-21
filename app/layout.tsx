@@ -164,30 +164,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return () => clearInterval(interval)
   }, [])
 
-  // ── Visibilidad: refresh de sesión + reload tras inactividad larga ─────────
+  // ── Visibilidad: refresh de sesión silencioso al volver a la pestaña ────────
+  // El auto-reload fue eliminado — con JWT de 8h y refresh cada 10min no es necesario
+  // y causaba pérdida de datos en formularios abiertos
   useEffect(() => {
-    let hiddenAt: number | null = null
-    const INACTIVITY_MS = 30 * 60 * 1000 // 30 minutos
-
     const handleVisibilityChange = async () => {
-      if (document.visibilityState === "hidden") {
-        hiddenAt = Date.now()
-      } else if (document.visibilityState === "visible") {
-        // Forzar refresh real del token (no solo leer caché) al volver a la pestaña
+      if (document.visibilityState === "visible") {
         try { await supabase.auth.refreshSession() } catch { /* silencioso */ }
-        // Si estuvo más de 30 min en background → recargar si no hay borrador activo
-        if (hiddenAt && Date.now() - hiddenAt > INACTIVITY_MS) {
-          const borradorVentas  = localStorage.getItem("vetix_borrador")
-          const borradorCompras = localStorage.getItem("vetix_borrador_compra")
-          const trabajoEnCurso  = sessionStorage.getItem("vetix_wip") // edición/alta en curso en cualquier página
-          if (borradorVentas || borradorCompras || trabajoEnCurso) {
-            // Hay datos sin guardar → no recargar, solo mostrar botón de actualización
-            setHayActualizacion(true)
-          } else {
-            window.location.reload()
-          }
-        }
-        hiddenAt = null
       }
     }
     document.addEventListener("visibilitychange", handleVisibilityChange)
