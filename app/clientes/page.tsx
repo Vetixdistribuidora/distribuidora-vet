@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { generarHTMLEImprimir } from "@/lib/impresion"
 
 function fmt(num: number) {
   return "$" + Number(num).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -322,19 +323,31 @@ export default function Clientes() {
       const res = await supabase.from("facturas_impresion").select("datos").eq("nro_factura", venta.nro_factura).order("id", { ascending: false }).limit(1).maybeSingle()
       data = res.data
     }
-    if (!data) { mostrarToast("Factura no encontrada", "error"); return }
+    if (!data) { mostrarToast("Presupuesto no encontrado", "error"); return }
     const factura = data.datos
-    const logoUrl = window.location.origin + "/logo.png"
-    const f = (n: number) => "$" + n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    const filas = factura.carrito.map((item: any) => {
-      const bonif = item.bonificacion || 0
-      const pagan = Math.max(0, item.cantidad - bonif)
-      return `<tr><td>${item.cantidad}</td><td style="text-align:left">${item.nombre}</td><td>${f(item.precio)}</td><td>${bonif}</td><td>${f(pagan * item.precio)}</td></tr>`
-    }).join("")
-    const html = `<!DOCTYPE html><html><head><style>@page{margin:20px}body{font-family:Arial;padding:20px;display:flex;flex-direction:column;min-height:95vh;box-sizing:border-box}.logo{height:120px}.header{display:flex;justify-content:space-between;align-items:center}.datos{display:flex;justify-content:space-between;margin-top:20px}.contenido{flex:1}table{width:100%;margin-top:30px;border-collapse:collapse}th{border:1px solid #ccc;padding:8px;background:#eee}td{padding:6px;text-align:center}.totales{margin-top:40px;display:flex;justify-content:flex-end}.box{width:280px;border-top:2px solid #ccc;padding-top:10px}.box p,.box h2{margin:6px 0}</style></head><body><div class="contenido"><div class="header"><img src="${logoUrl}" class="logo"/><div style="text-align:center"><h2>PRESUPUESTO</h2><div style="font-size:14px;color:#555">N ${factura.nroFactura} | Fecha: ${factura.fecha || ""}</div></div></div><div class="datos"><div><b>VETIX Distribuidora</b><br/>Almirante Brown 620<br/>Tel: 2604518157<br/>Email: vetix.cf@gmail.com</div><div><b>Cliente:</b><br/>${factura.clienteSeleccionado.nombre} ${factura.clienteSeleccionado.apellido}<br/>CUIT: ${factura.clienteSeleccionado.cuit || "-"}<br/>Dirección: ${factura.clienteSeleccionado.localidad || "-"}<br/>Tel: ${factura.clienteSeleccionado.telefono || "-"}</div></div><table><thead><tr><th>Cant.</th><th style="width:40%">Descripción</th><th>Precio U.</th><th>Bonif.</th><th>Total</th></tr></thead><tbody>${filas}</tbody></table></div><div class="totales"><div class="box"><p><b>Subtotal:</b> ${f(factura.subtotal)}</p><p><b>IVA (${factura.ivaNum}%):</b> ${f(factura.subtotal * factura.ivaNum / 100)}</p><h2><b>Total:</b> ${f(factura.total)}</h2></div></div></body></html>`
-    const w = window.open("", "_blank")
-    if (!w) { alert("Habilitá ventanas emergentes"); return }
-    w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500)
+    // Normalizar nro_factura igual que en ventas
+    const nroParaImprimir = factura.nroFactura
+      ? (isNaN(parseInt(factura.nroFactura, 10)) ? factura.nroFactura : String(parseInt(factura.nroFactura, 10)).padStart(5, "0"))
+      : ""
+    // Obtener fecha: intentar desde datos guardados, luego desde la venta
+    const fechaVenta = venta.fecha
+      ? new Date(venta.fecha).toLocaleDateString("es-AR")
+      : new Date().toLocaleDateString("es-AR")
+    const subtotalCalc = (factura.carrito || []).reduce((acc: number, item: any) => {
+      const pagan = Math.max(0, item.cantidad - (item.bonificacion || 0))
+      return acc + pagan * item.precio
+    }, 0)
+    generarHTMLEImprimir({
+      nroFactura: nroParaImprimir,
+      clienteSeleccionado: factura.clienteSeleccionado || {},
+      carrito: factura.carrito || [],
+      subtotal: subtotalCalc,
+      ivaNum: factura.ivaNum ?? 21,
+      total: factura.total ?? subtotalCalc,
+      esCuentaCorriente: factura.esCuentaCorriente ?? false,
+      metodoCobro: factura.metodoCobro,
+      fecha: fechaVenta,
+    }, "presupuesto")
   }
 
   const clientesFiltrados = clientes.filter(c =>
