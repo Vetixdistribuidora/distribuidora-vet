@@ -736,9 +736,7 @@ export default function Productos() {
     })
   }
 
-  if (cargando) return <p style={{ padding: 30, color: "#9ca3af" }}>⏳ Cargando productos...</p>
-
-  // useMemo: solo recalcula cuando cambia la búsqueda, categoría o la lista base
+  // useMemo ANTES del early return — los hooks no pueden ir después de un condicional
   const productosFiltrados = useMemo(() => {
     const termino = busqueda.trim().replace(/\s+/g, " ").toLowerCase()
     const palabras = termino.split(" ").filter(Boolean)
@@ -752,6 +750,8 @@ export default function Productos() {
   }, [productos, busqueda, filtroCategoria])
 
   const productosVisibles = productosFiltrados.slice(0, pagina * 50)
+
+  if (cargando) return <p style={{ padding: 30, color: "#9ca3af" }}>⏳ Cargando productos...</p>
 
   return (
     <div>
