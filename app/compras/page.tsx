@@ -156,6 +156,17 @@ export default function ComprasPage() {
     return () => clearTimeout(w)
   }, [loading])
 
+  // Avisar al layout cuando el modal de nueva compra está abierto (tiene su propio borrador en localStorage,
+  // pero el flag en sessionStorage evita la recarga automática por inactividad)
+  useEffect(() => {
+    if (modalNueva) {
+      sessionStorage.setItem("vetix_wip", "compras")
+    } else {
+      sessionStorage.removeItem("vetix_wip")
+    }
+    return () => { sessionStorage.removeItem("vetix_wip") }
+  }, [modalNueva])
+
   // Guardar borrador automáticamente en localStorage cuando cambia el formulario
   useEffect(() => {
     if (!modalNueva) return
@@ -346,50 +357,46 @@ export default function ComprasPage() {
       return;
     }
 
-    // 2. Para cada item: detalle + lote + stock
-    for (const it of items) {
-      const cantidad = parseFloat(it.cantidad) || 1;
-      const precioUnit = parseFloat(it.precio_unitario) || 0;
-      const subtotalItem = cantidad * precioUnit;
-      const proporcion = subtotalBase > 0 ? subtotalItem / subtotalBase : 0;
-      const ivaItem = form.incluye_iva ? Math.round(montoIva * proporcion * 100) / 100 : 0;
-      const fleteItem = form.incluye_flete ? Math.round(montoFlete * proporcion * 100) / 100 : 0;
+    // 2. Todos los items EN PARALELO: detalle + lote + stock (antes era secuencial = lento con muchos productos)
+    try {
+      await Promise.all(items.map(async (it) => {
+        const cantidad = parseFloat(it.cantidad) || 1;
+        const precioUnit = parseFloat(it.precio_unitario) || 0;
+        const subtotalItem = cantidad * precioUnit;
+        const proporcion = subtotalBase > 0 ? subtotalItem / subtotalBase : 0;
+        const ivaItem = form.incluye_iva ? Math.round(montoIva * proporcion * 100) / 100 : 0;
+        const fleteItem = form.incluye_flete ? Math.round(montoFlete * proporcion * 100) / 100 : 0;
 
-      const { error: errorDetalle } = await supabase.from("compras_detalle").insert({
-        compra_id: compra.id,
-        producto_id: it.producto_id,
-        cantidad,
-        precio_unitario: precioUnit,
-        subtotal: subtotalItem,
-        monto_iva: ivaItem,
-        monto_flete: fleteItem,
-      });
+        const { error: errorDetalle } = await supabase.from("compras_detalle").insert({
+          compra_id: compra.id,
+          producto_id: it.producto_id,
+          cantidad,
+          precio_unitario: precioUnit,
+          subtotal: subtotalItem,
+          monto_iva: ivaItem,
+          monto_flete: fleteItem,
+        });
+        if (errorDetalle) throw new Error("Error en detalle de " + it.nombre + ": " + errorDetalle.message);
 
-      if (errorDetalle) {
-        try { await supabase.from("compras_pagos").delete().eq("compra_id", compra.id) } catch {}
-        try { await supabase.from("compras").delete().eq("id", compra.id) } catch {}
-        setErrorForm("Error al guardar detalle de compra")
-        return;
-      }
+        await supabase.from("lotes").insert({
+          producto_id: it.producto_id,
+          cantidad,
+          fecha_vencimiento: it.fecha_vencimiento || null,
+          compra_id: compra.id,
+          nro_remito: form.numero_remito || null,
+        });
 
-      await supabase.from("lotes").insert({
-        producto_id: it.producto_id,
-        cantidad,
-        fecha_vencimiento: it.fecha_vencimiento || null,
-        compra_id: compra.id,
-        nro_remito: form.numero_remito || null,
-      });
-
-      // Actualizar stock con COALESCE para evitar NULL+número=NULL
-      const { data: prod, error: errStock } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single();
-      if (errStock) {
-        console.error("Error al leer stock del producto", it.producto_id, errStock)
-      } else {
-        const { error: errUpdate } = await supabase.from("productos").update({
-          stock: (prod?.stock ?? 0) + cantidad
-        }).eq("id", it.producto_id);
-        if (errUpdate) console.error("Error al actualizar stock del producto", it.producto_id, errUpdate)
-      }
+        const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single();
+        await supabase.from("productos").update({ stock: (prod?.stock ?? 0) + cantidad }).eq("id", it.producto_id);
+      }));
+    } catch (errItems: any) {
+      // Cleanup: borrar todo lo generado para esta compra
+      try { await supabase.from("compras_detalle").delete().eq("compra_id", compra.id) } catch {}
+      try { await supabase.from("lotes").update({ cantidad: 0 }).eq("compra_id", compra.id) } catch {}
+      try { await supabase.from("compras_pagos").delete().eq("compra_id", compra.id) } catch {}
+      try { await supabase.from("compras").delete().eq("id", compra.id) } catch {}
+      setErrorForm(errItems.message || "Error al guardar los productos de la compra");
+      return;
     }
 
     // 3. Registrar pago inicial si hay
@@ -403,7 +410,7 @@ export default function ComprasPage() {
       });
     }
 
-    // 4. Actualizar costo/precio_venta si está activado
+    // 4. Actualizar costo/precio_venta si está activado (ya era paralelo)
     if (actualizarCostos) {
       await Promise.all(items.map(async (item) => {
         const precioUnit = parseFloat(item.precio_unitario) || 0;
@@ -418,11 +425,13 @@ export default function ComprasPage() {
       }));
     }
 
-    // 5. Limpiar borrador y cerrar
+    // 5. Agregar la compra nueva a la lista local y cerrar (sin recargar toda la lista)
+    const proveedorLocal = proveedores.find(p => p.id === Number(form.proveedor_id));
+    const nuevaCompra = { ...compra, proveedores: proveedorLocal ? { nombre: proveedorLocal.nombre } : null } as Compra;
+    setCompras(prev => [nuevaCompra, ...prev]);
     localStorage.removeItem("vetix_borrador_compra");
     setHayBorrador(false);
     setModalNueva(false);
-    cargarTodo();
   } catch (e: any) {
     setErrorForm("Error: " + (e?.message || "error desconocido"));
   } finally {
@@ -460,9 +469,10 @@ export default function ComprasPage() {
         }));
       }
 
+      // Filtrar localmente — sin recargar toda la lista
+      setCompras(prev => prev.filter(c => c.id !== confirmEliminarCompra.id))
       setConfirmEliminarCompra(null);
       if (compraVer?.id === confirmEliminarCompra.id) setCompraVer(null);
-      cargarTodo();
     } catch (e: any) {
       setErrorForm("Error: " + (e?.message || "error desconocido"));
     } finally {
@@ -523,9 +533,12 @@ export default function ComprasPage() {
         supabase.from("compras").select("*").eq("id", compraVer.id).single(),
         supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha"),
       ]);
-      if (ca) setCompraVer(ca);
+      if (ca) {
+        setCompraVer(ca);
+        // Actualizar la fila en la lista local sin recargar todo
+        setCompras(prev => prev.map(c => c.id === compraVer.id ? { ...c, ...ca } : c));
+      }
       if (p) setPagos(p);
-      cargarTodo();
     } catch (e: any) {
       setErrorForm("Error: " + (e?.message || "error desconocido"));
     } finally {
@@ -592,56 +605,64 @@ export default function ComprasPage() {
     // Si pagó más efectivo del necesario → exceso va a saldo a favor
     const exceso = monto - (montoCancela - saldoAplicado);
 
-    // 1. Registrar el pago en compras_pagos
-    await supabase.from("compras_pagos").insert({
-      compra_id: compraVer.id,
-      monto: montoCancela,
-      metodo_pago: monto > 0 ? formPago.metodo_pago : "Saldo a favor",
-      notas: [
-        formPago.notas || null,
-        saldoAplicado > 0 ? `Saldo a favor aplicado: ${fmt(saldoAplicado)}` : null,
-        exceso > 0 ? `Exceso pasó a saldo a favor: ${fmt(exceso)}` : null,
-      ].filter(Boolean).join(" | ") || null,
-      fecha: new Date().toISOString(),
-    });
-
-    // 2. Actualizar total_pagado y estado de la compra
-    const nuevoTotalPagado = compraVer.total_pagado + montoCancela;
-    const nuevoEstado = nuevoTotalPagado >= compraVer.total ? "pagado" : "parcial";
-    await supabase.from("compras").update({ total_pagado: nuevoTotalPagado, estado: nuevoEstado }).eq("id", compraVer.id);
-
-    // 3. Si hubo exceso de efectivo → guardar como saldo a favor
-    if (exceso > 0.01) {
-      await supabase.from("saldo_proveedores").insert({
-        proveedor_id: compraVer.proveedor_id,
-        monto: Math.round(exceso * 100) / 100,
-        notas: `Exceso de pago — compra #${compraVer.id} (${compraVer.numero_remito || "sin remito"})`,
+    try {
+      // 1. Registrar el pago en compras_pagos
+      const { error: errPago } = await supabase.from("compras_pagos").insert({
+        compra_id: compraVer.id,
+        monto: montoCancela,
+        metodo_pago: monto > 0 ? formPago.metodo_pago : "Saldo a favor",
+        notas: [
+          formPago.notas || null,
+          saldoAplicado > 0 ? `Saldo a favor aplicado: ${fmt(saldoAplicado)}` : null,
+          exceso > 0 ? `Exceso pasó a saldo a favor: ${fmt(exceso)}` : null,
+        ].filter(Boolean).join(" | ") || null,
+        fecha: new Date().toISOString(),
       });
-    }
+      if (errPago) { setErrorForm("Error al registrar pago: " + errPago.message); return; }
 
-    // 4. Si se usó saldo a favor → descontarlo de saldo_proveedores (FIFO)
-    if (saldoAplicado > 0.01) {
-      const { data: registros } = await supabase.from("saldo_proveedores")
-        .select("id, monto").eq("proveedor_id", compraVer.proveedor_id)
-        .gt("monto", 0).order("fecha", { ascending: true });
-      let aDescontar = saldoAplicado;
-      for (const reg of (registros || [])) {
-        if (aDescontar <= 0.001) break;
-        if (reg.monto <= aDescontar + 0.001) {
-          await supabase.from("saldo_proveedores").delete().eq("id", reg.id);
-          aDescontar -= reg.monto;
-        } else {
-          await supabase.from("saldo_proveedores").update({ monto: Math.round((reg.monto - aDescontar) * 100) / 100 }).eq("id", reg.id);
-          aDescontar = 0;
+      // 2. Actualizar total_pagado y estado de la compra
+      const nuevoTotalPagado = compraVer.total_pagado + montoCancela;
+      const nuevoEstado = nuevoTotalPagado >= compraVer.total ? "pagado" : "parcial";
+      await supabase.from("compras").update({ total_pagado: nuevoTotalPagado, estado: nuevoEstado }).eq("id", compraVer.id);
+
+      // 3. Si hubo exceso de efectivo → guardar como saldo a favor
+      if (exceso > 0.01) {
+        await supabase.from("saldo_proveedores").insert({
+          proveedor_id: compraVer.proveedor_id,
+          monto: Math.round(exceso * 100) / 100,
+          notas: `Exceso de pago — compra #${compraVer.id} (${compraVer.numero_remito || "sin remito"})`,
+        });
+      }
+
+      // 4. Si se usó saldo a favor → descontarlo de saldo_proveedores (FIFO)
+      if (saldoAplicado > 0.01) {
+        const { data: registros } = await supabase.from("saldo_proveedores")
+          .select("id, monto").eq("proveedor_id", compraVer.proveedor_id)
+          .gt("monto", 0).order("fecha", { ascending: true });
+        let aDescontar = saldoAplicado;
+        for (const reg of (registros || [])) {
+          if (aDescontar <= 0.001) break;
+          if (reg.monto <= aDescontar + 0.001) {
+            await supabase.from("saldo_proveedores").delete().eq("id", reg.id);
+            aDescontar -= reg.monto;
+          } else {
+            await supabase.from("saldo_proveedores").update({ monto: Math.round((reg.monto - aDescontar) * 100) / 100 }).eq("id", reg.id);
+            aDescontar = 0;
+          }
         }
       }
-    }
 
-    setGuardandoPago(false); setModalPago(false); setUsarSaldoFavor(false);
-    setCompraVer({ ...compraVer, total_pagado: nuevoTotalPagado, estado: nuevoEstado });
-    const { data: p } = await supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha");
-    if (p) setPagos(p);
-    cargarTodo();
+      setModalPago(false); setUsarSaldoFavor(false);
+      setCompraVer({ ...compraVer, total_pagado: nuevoTotalPagado, estado: nuevoEstado });
+      // Actualizar la fila en la lista local sin recargar todo
+      setCompras(prev => prev.map(c => c.id === compraVer.id ? { ...c, total_pagado: nuevoTotalPagado, estado: nuevoEstado } : c));
+      const { data: p } = await supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha");
+      if (p) setPagos(p);
+    } catch (e: any) {
+      setErrorForm("Error: " + (e?.message || "error desconocido"));
+    } finally {
+      setGuardandoPago(false);
+    }
   }
 
   const filtradas = compras.filter(c => {

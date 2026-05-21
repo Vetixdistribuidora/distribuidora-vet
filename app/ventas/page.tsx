@@ -836,38 +836,29 @@ thead th:last-child{text-align:right}
   async function reimprimir(venta: any, itemsCargados?: any[], tipo: "presupuesto" | "remito" = "presupuesto") {
     setReimprimiendo(true)
     try {
-      const { data: guardada } = await supabase
-        .from("facturas_impresion").select("datos").eq("venta_id", venta.id).maybeSingle()
-      if (guardada?.datos) {
-        // Normalizar nro_factura a 5 dígitos por si fue guardado sin padding (ej: "26" → "00026")
-        const datosNorm = { ...guardada.datos }
-        if (datosNorm.nroFactura && !isNaN(parseInt(datosNorm.nroFactura, 10))) {
-          datosNorm.nroFactura = String(parseInt(datosNorm.nroFactura, 10)).padStart(5, "0")
-        }
-        generarHTMLEImprimir(datosNorm, tipo)
-      } else {
-        // Reconstruir desde datos de la venta
-        const items = itemsCargados?.length
-          ? itemsCargados
-          : await fetchDetalleConProductos(venta.id)
-        const { data: clienteData } = await supabase
-          .from("clientes").select("*").eq("id", venta.cliente_id).maybeSingle()
-        const carritoReconstruido = items.map((d: any) => ({
-          producto_id: d.producto_id, nombre: d.productos?.nombre || "",
-          cantidad: d.cantidad, precio: d.precio, bonificacion: d.bonificacion || 0
-        }))
-        const subtotalCalc = carritoReconstruido.reduce((acc: number, it: any) => {
-          const pagan = it.cantidad - (it.bonificacion || 0)
-          return acc + Math.max(0, pagan) * it.precio
-        }, 0)
-        const totalCalc = Number(venta.total)
-        // Reconstruir IVA: si el cálculo da un valor inusual (< 0 o > 30), usar 21%
-        const ivaRaw = subtotalCalc > 0 ? Math.round((totalCalc / subtotalCalc - 1) * 100) : 21
-        const ivaCalc = (ivaRaw >= 0 && ivaRaw <= 30) ? ivaRaw : 21
-        // Normalizar nro_factura a 5 dígitos para reimprimir
-        const nroParaImprimir = venta.nro_factura
-          ? (isNaN(parseInt(venta.nro_factura, 10)) ? venta.nro_factura : String(parseInt(venta.nro_factura, 10)).padStart(5, "0"))
-          : ""
+      // Reconstruir carrito e ítems (necesario para ambos formatos)
+      const items = itemsCargados?.length
+        ? itemsCargados
+        : await fetchDetalleConProductos(venta.id)
+      const { data: clienteData } = await supabase
+        .from("clientes").select("*").eq("id", venta.cliente_id).maybeSingle()
+      const carritoReconstruido = items.map((d: any) => ({
+        producto_id: d.producto_id, nombre: d.productos?.nombre || "",
+        cantidad: d.cantidad, precio: d.precio, bonificacion: d.bonificacion || 0
+      }))
+      const subtotalCalc = carritoReconstruido.reduce((acc: number, it: any) => {
+        const pagan = it.cantidad - (it.bonificacion || 0)
+        return acc + Math.max(0, pagan) * it.precio
+      }, 0)
+      const totalCalc = Number(venta.total)
+      const ivaRaw = subtotalCalc > 0 ? Math.round((totalCalc / subtotalCalc - 1) * 100) : 21
+      const ivaCalc = (ivaRaw >= 0 && ivaRaw <= 30) ? ivaRaw : 21
+      const nroParaImprimir = venta.nro_factura
+        ? (isNaN(parseInt(venta.nro_factura, 10)) ? venta.nro_factura : String(parseInt(venta.nro_factura, 10)).padStart(5, "0"))
+        : ""
+
+      if (tipo === "remito") {
+        // Remito: mantiene el formato propio de remito (sin precios, con firma)
         generarHTMLEImprimir({
           nroFactura: nroParaImprimir,
           clienteSeleccionado: clienteData || venta.clientes || {},
@@ -877,7 +868,21 @@ thead th:last-child{text-align:right}
           total: totalCalc,
           esCuentaCorriente: venta.estado === "cuenta_corriente",
           metodoCobro: venta.metodo_cobro,
-        }, tipo)
+        }, "remito")
+      } else {
+        // Presupuesto/Factura: usa el mismo formato actualizado del recibo
+        const fechaVenta = venta.fecha ? new Date(venta.fecha).toLocaleDateString("es-AR") : new Date().toLocaleDateString("es-AR")
+        generarReciboHTMLEImprimir({
+          nroFactura: nroParaImprimir,
+          clienteSeleccionado: clienteData || venta.clientes || {},
+          carrito: carritoReconstruido,
+          subtotal: subtotalCalc,
+          ivaNum: ivaCalc,
+          total: totalCalc,
+          esCuentaCorriente: venta.estado === "cuenta_corriente",
+          metodoCobro: venta.metodo_cobro,
+          fecha: fechaVenta,
+        })
       }
     } catch (e: any) {
       mostrarToast("Error al generar impresión: " + (e?.message || "error desconocido"), "error")
@@ -1076,14 +1081,21 @@ thead th:last-child{text-align:right}
       const { error: errorFI } = await supabase.from("facturas_impresion").insert([{ nro_factura: nroFacturaSave, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura: nroFacturaSave, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? null : metodoCobro } }])
       if (errorFI) console.error("Error guardando factura_impresion:", errorFI)
       mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : "✅ Venta confirmada", "ok")
-      // Imprimir recibo automáticamente con los datos actuales antes de resetear el formulario
-      const carritoParaRecibo = carritoEfectivo
-      const clienteParaRecibo = clienteSeleccionado
-      const fechaHoy = new Date().toLocaleDateString("es-AR")
-      generarReciboHTMLEImprimir({ nroFactura: nroFacturaSave, clienteSeleccionado: clienteParaRecibo, carrito: carritoParaRecibo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? undefined : metodoCobro, fecha: fechaHoy })
+      // Imprimir recibo automáticamente solo para ventas directas (no cuenta corriente)
+      if (!esCuentaCorriente) {
+        const carritoParaRecibo = carritoEfectivo
+        const clienteParaRecibo = clienteSeleccionado
+        const fechaHoy = new Date().toLocaleDateString("es-AR")
+        generarReciboHTMLEImprimir({ nroFactura: nroFacturaSave, clienteSeleccionado: clienteParaRecibo, carrito: carritoParaRecibo, subtotal, ivaNum, total, esCuentaCorriente: false, metodoCobro, fecha: fechaHoy })
+      }
       setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false)
       localStorage.removeItem("vetix_borrador")
-      cargar()
+      // Actualizar sin recargar toda la lista: incrementar nro de factura y descontar stock local
+      setNroFactura(String(parseInt(nroFacturaSave, 10) + 1).padStart(5, "0"))
+      setProductos(prev => prev.map(p => {
+        const vendido = carrito.find(i => i.producto_id === p.id)
+        return vendido ? { ...p, stock: Math.max(0, p.stock - vendido.cantidad) } : p
+      }))
     } catch (e: any) {
       mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
     } finally {
@@ -1647,15 +1659,21 @@ thead th:last-child{text-align:right}
                           return campo.includes(termino) || palabras.every((w: string) => campo.includes(w))
                         }).slice(0, 8)
                         if (!filtrados.length) return null
+                        const pctCliente = borrClienteObj?.porcentaje || 0
                         return (
                           <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 20, overflow: "hidden" }}>
-                            {filtrados.map((p: any) => (
-                              <div key={p.id} onMouseDown={() => agregarProductoABorrador(p)}
-                                style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                <span style={{ fontWeight: 600, color: "#111827" }}>{p.nombre}</span>
-                                <span style={{ fontSize: 12, color: "#6b7280" }}>{fmt(p.precio_venta)} · stock: {p.stock}</span>
-                              </div>
-                            ))}
+                            {filtrados.map((p: any) => {
+                              const precioMostrar = pctCliente > 0
+                                ? Math.round(p.precio_venta * (1 + pctCliente / 100) * 100) / 100
+                                : p.precio_venta
+                              return (
+                                <div key={p.id} onMouseDown={() => agregarProductoABorrador(p)}
+                                  style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f8fafc", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <span style={{ fontWeight: 600, color: "#111827" }}>{p.nombre}</span>
+                                  <span style={{ fontSize: 12, color: "#6b7280" }}>{fmt(precioMostrar)} · stock: {p.stock}</span>
+                                </div>
+                              )
+                            })}
                           </div>
                         )
                       })()}
@@ -1678,35 +1696,50 @@ thead th:last-child{text-align:right}
                 {/* Columna derecha: lista de items + acciones */}
                 <div style={{ position: "sticky", top: 20, display: "flex", flexDirection: "column", gap: 12 }}>
                   <div style={{ background: "white", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>Productos del pedido</p>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 1, textTransform: "uppercase", margin: 0 }}>Productos del pedido</p>
+                      {(borrClienteObj?.porcentaje || 0) > 0 && (
+                        <span style={{ fontSize: 10, fontWeight: 700, background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 6, padding: "2px 8px" }}>
+                          +{borrClienteObj.porcentaje}% recargo cliente
+                        </span>
+                      )}
+                    </div>
 
                     {borrItems.length === 0 ? (
                       <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", padding: "20px 0" }}>Buscá productos a la izquierda para agregarlos</p>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {borrItems.map((item: any, idx: number) => (
-                          <div key={item.producto_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.nombre}</div>
-                              <div style={{ fontSize: 12, color: "#6b7280" }}>{fmt(item.precio)} c/u</div>
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                              <button onClick={() => setBorrItems(prev => prev.map((i: any, ix: number) => ix === idx ? { ...i, cantidad: Math.max(1, i.cantidad - 1) } : i))}
-                                style={{ width: 26, height: 26, border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                              <span style={{ fontSize: 13, fontWeight: 700, minWidth: 24, textAlign: "center" }}>{item.cantidad}</span>
-                              <button onClick={() => setBorrItems(prev => prev.map((i: any, ix: number) => ix === idx ? { ...i, cantidad: i.cantidad + 1 } : i))}
-                                style={{ width: 26, height: 26, border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
-                            </div>
-                            <button onClick={() => setBorrItems(prev => prev.filter((_: any, ix: number) => ix !== idx))}
-                              style={{ width: 26, height: 26, border: "1px solid #fecaca", borderRadius: 6, background: "#fef2f2", cursor: "pointer", fontSize: 13, color: "#dc2626", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                    ) : (() => {
+                      const pct = borrClienteObj?.porcentaje || 0
+                      const calcPrecio = (p: number) => pct > 0 ? Math.round(p * (1 + pct / 100) * 100) / 100 : p
+                      const totalEstimado = borrItems.reduce((acc: number, i: any) => acc + calcPrecio(i.precio) * i.cantidad, 0)
+                      return (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {borrItems.map((item: any, idx: number) => {
+                            const precioMostrar = calcPrecio(item.precio)
+                            return (
+                              <div key={item.producto_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.nombre}</div>
+                                  <div style={{ fontSize: 12, color: "#6b7280" }}>{fmt(precioMostrar)} c/u</div>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                  <button onClick={() => setBorrItems(prev => prev.map((i: any, ix: number) => ix === idx ? { ...i, cantidad: Math.max(1, i.cantidad - 1) } : i))}
+                                    style={{ width: 26, height: 26, border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                                  <span style={{ fontSize: 13, fontWeight: 700, minWidth: 24, textAlign: "center" }}>{item.cantidad}</span>
+                                  <button onClick={() => setBorrItems(prev => prev.map((i: any, ix: number) => ix === idx ? { ...i, cantidad: i.cantidad + 1 } : i))}
+                                    style={{ width: 26, height: 26, border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                                </div>
+                                <button onClick={() => setBorrItems(prev => prev.filter((_: any, ix: number) => ix !== idx))}
+                                  style={{ width: 26, height: 26, border: "1px solid #fecaca", borderRadius: 6, background: "#fef2f2", cursor: "pointer", fontSize: 13, color: "#dc2626", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                              </div>
+                            )
+                          })}
+                          <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 10, marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ fontSize: 12, color: "#6b7280" }}>Total estimado</span>
+                            <span style={{ fontSize: 15, fontWeight: 800, color: "#111827" }}>{fmt(totalEstimado)}</span>
                           </div>
-                        ))}
-                        <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 10, marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontSize: 12, color: "#6b7280" }}>Total estimado</span>
-                          <span style={{ fontSize: 15, fontWeight: 800, color: "#111827" }}>{fmt(borrItems.reduce((acc: number, i: any) => acc + i.precio * i.cantidad, 0))}</span>
                         </div>
-                      </div>
-                    )}
+                      )
+                    })()}
                   </div>
 
                   {/* Botones de acción */}
@@ -1910,12 +1943,6 @@ thead th:last-child{text-align:right}
                 disabled={reimprimiendo || loadingDetalle}
                 style={{ flex: 1, minWidth: 110, padding: "10px", background: "linear-gradient(135deg, #1e40af, #3b82f6)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: reimprimiendo || loadingDetalle ? 0.6 : 1 }}>
                 {reimprimiendo ? "Generando..." : "🖨️ Presupuesto"}
-              </button>
-              <button
-                onClick={() => reimprimirRecibo(ventaDetalle, detalleItems.length ? detalleItems : undefined)}
-                disabled={reimprimiendo || loadingDetalle}
-                style={{ flex: 1, minWidth: 110, padding: "10px", background: "linear-gradient(135deg, #065f46, #059669)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: reimprimiendo || loadingDetalle ? 0.6 : 1 }}>
-                {reimprimiendo ? "Generando..." : "🧾 Recibo"}
               </button>
               <button
                 onClick={() => reimprimir(ventaDetalle, detalleItems.length ? detalleItems : undefined, "remito")}

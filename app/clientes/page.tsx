@@ -131,19 +131,33 @@ export default function Clientes() {
     return () => clearTimeout(w)
   }, [cargando])
 
+  // Avisar al layout cuando hay un modal de edición/alta abierto
+  useEffect(() => {
+    if (modalNuevo || modalEditar) {
+      sessionStorage.setItem("vetix_wip", "clientes")
+    } else {
+      sessionStorage.removeItem("vetix_wip")
+    }
+    return () => { sessionStorage.removeItem("vetix_wip") }
+  }, [modalNuevo, modalEditar])
+
   async function agregarCliente() {
     if (!formNuevo.nombre.trim() || !formNuevo.apellido.trim()) { mostrarToast("Nombre y apellido obligatorios", "error"); return }
     setGuardando(true)
     try {
-      const { error } = await supabase.from("clientes").insert([{
+      const { data: nuevoCliente, error } = await supabase.from("clientes").insert([{
         nombre: formNuevo.nombre.trim(), apellido: formNuevo.apellido.trim(),
         cuit: formNuevo.cuit.trim(), telefono: formNuevo.telefono.trim(),
         localidad: formNuevo.localidad.trim(), porcentaje: Number(formNuevo.porcentaje || 0)
-      }])
+      }]).select().single()
       if (error) { mostrarToast("Error: " + error.message, "error"); return }
       mostrarToast("✅ Cliente agregado", "ok")
+      // Actualización local instantánea — sin recargar toda la lista
+      if (nuevoCliente) {
+        setClientes(prev => [...prev, nuevoCliente].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")))
+      }
       setFormNuevo({ nombre: "", apellido: "", cuit: "", telefono: "", localidad: "", porcentaje: "" })
-      setModalNuevo(false); cargar()
+      setModalNuevo(false)
     } catch (e: any) {
       mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
     } finally {
@@ -162,7 +176,12 @@ export default function Clientes() {
       }).eq("id", modalEditar.id)
       if (error) { mostrarToast("Error: " + error.message, "error"); return }
       mostrarToast("✅ Cliente actualizado", "ok")
-      setModalEditar(null); cargar()
+      // Actualización local instantánea — sin recargar toda la lista
+      setClientes(prev => prev.map(c => c.id === modalEditar.id
+        ? { ...c, nombre: modalEditar.nombre, apellido: modalEditar.apellido, cuit: modalEditar.cuit, telefono: modalEditar.telefono, localidad: modalEditar.localidad, porcentaje: Number(modalEditar.porcentaje || 0) }
+        : c
+      ))
+      setModalEditar(null)
     } catch (e: any) {
       mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
     } finally {
@@ -176,7 +195,10 @@ export default function Clientes() {
       const { error } = await supabase.from("clientes").delete().eq("id", id)
       if (error) { mostrarToast("Error: " + error.message, "error"); return }
       mostrarToast("🗑️ Cliente eliminado", "ok")
-      setConfirmEliminar(null); cargar()
+      // Actualización local instantánea — sin recargar toda la lista
+      setClientes(prev => prev.filter(c => c.id !== id))
+      setDeudasPorCliente(prev => { const copia = { ...prev }; delete copia[id]; return copia })
+      setConfirmEliminar(null)
     } catch (e: any) {
       mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
     } finally {
@@ -193,13 +215,23 @@ export default function Clientes() {
     const { data: vv } = await supabase.from("ventas").select("id, total, estado, nro_factura, fecha").eq("cliente_id", clienteId).order("id", { ascending: false })
     if (!vv) { setVentas([]); return }
     const ventaIds = vv.map((v: any) => v.id)
-    // 2 queries batch en lugar de N×2
-    const [detallesRes, pagosRes] = await Promise.all([
-      ventaIds.length ? supabase.from("detalle_ventas").select("venta_id, cantidad, precio, bonificacion, productos(nombre)").in("venta_id", ventaIds) : { data: [] },
+    // 2 queries batch en lugar de N×2 (two-step para detalle: sin FK declarada)
+    const [detallesRaw, pagosRes] = await Promise.all([
+      ventaIds.length ? supabase.from("detalle_ventas").select("venta_id, producto_id, cantidad, precio, bonificacion").in("venta_id", ventaIds) : { data: [] },
       ventaIds.length ? supabase.from("pagos_cuenta_corriente").select("id, venta_id, monto, fecha, nota").in("venta_id", ventaIds).order("fecha", { ascending: true }) : { data: [] }
     ])
+    // Resolver nombres de productos en un solo query adicional
+    const prodIds = [...new Set((detallesRaw.data || []).map((d: any) => d.producto_id))]
+    const { data: prodsData } = prodIds.length
+      ? await supabase.from("productos").select("id, nombre").in("id", prodIds)
+      : { data: [] }
+    const prodsMap: Record<number, string> = {}
+    ;(prodsData || []).forEach((p: any) => { prodsMap[p.id] = p.nombre })
+    const detallesConNombre = (detallesRaw.data || []).map((d: any) => ({
+      ...d, productos: { nombre: prodsMap[d.producto_id] || "" }
+    }))
     const detallesMap: Record<number, any[]> = {}
-    detallesRes.data?.forEach((d: any) => { if (!detallesMap[d.venta_id]) detallesMap[d.venta_id] = []; detallesMap[d.venta_id].push(d) })
+    detallesConNombre.forEach((d: any) => { if (!detallesMap[d.venta_id]) detallesMap[d.venta_id] = []; detallesMap[d.venta_id].push(d) })
     const pagosMap: Record<number, any[]> = {}
     pagosRes.data?.forEach((p: any) => { if (!pagosMap[p.venta_id]) pagosMap[p.venta_id] = []; pagosMap[p.venta_id].push(p) })
     const conDetalle = vv.map((v: any) => {
@@ -233,8 +265,24 @@ export default function Clientes() {
     if (monto > ventaParaPagar.saldo) { mostrarToast("El monto supera el saldo pendiente", "error"); return }
     setGuardandoPago(true)
     try {
+      // Generar nro_recibo usando la secuencia atómica
+      let nroRecibo: string
+      const { data: nroData, error: nroError } = await supabase.rpc('get_next_nro_recibo')
+      if (nroError || nroData === null || nroData === undefined) {
+        // Fallback: buscar el último recibo y sumar 1
+        const { data: ultimoRecibo } = await supabase.from("pagos_cuenta_corriente").select("nro_recibo")
+          .not("nro_recibo", "is", null).order("id", { ascending: false }).limit(1).maybeSingle()
+        let nextNum = 6520
+        if (ultimoRecibo?.nro_recibo) {
+          const m = ultimoRecibo.nro_recibo.match(/(\d+)$/)
+          if (m) nextNum = parseInt(m[1], 10) + 1
+        }
+        nroRecibo = "001-" + String(nextNum).padStart(6, "0")
+      } else {
+        nroRecibo = "001-" + String(Number(nroData)).padStart(6, "0")
+      }
       const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
-        cliente_id: modalHistorial.id, venta_id: ventaParaPagar.id, monto, nota: notaPago || null
+        cliente_id: modalHistorial.id, venta_id: ventaParaPagar.id, monto, nota: notaPago || null, nro_recibo: nroRecibo
       }])
       if (error) { mostrarToast("Error: " + error.message, "error"); return }
       // Registrar movimiento en cuentas_corrientes para mantener el saldo sincronizado
@@ -252,7 +300,9 @@ export default function Clientes() {
       }
       mostrarToast("✅ Pago registrado", "ok")
       setModalPago(false); setVentaParaPagar(null)
-      await cargarVentasCliente(modalHistorial.id); await cargar()
+      // Recargar solo el historial del cliente y recalcular deudas (sin refetch de toda la lista)
+      await cargarVentasCliente(modalHistorial.id)
+      await cargarDeudas(clientes)
     } catch (e: any) {
       mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
     } finally {

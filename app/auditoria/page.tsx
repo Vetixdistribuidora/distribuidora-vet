@@ -38,7 +38,7 @@ export default function Auditoria() {
   useEffect(() => { cargar() }, [])
   useEffect(() => {
     if (!loading) return
-    const w = setTimeout(() => supabase.auth.signOut(), 60000)
+    const w = setTimeout(() => supabase.auth.signOut(), 300000) // 5 min
     return () => clearTimeout(w)
   }, [loading])
 

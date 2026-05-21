@@ -97,6 +97,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const emailCorto = usuario?.email ?? ""
 
   const [hayActualizacion, setHayActualizacion] = useState(false)
+  const [sinRed, setSinRed] = useState(false)
+
+  // ── Monitor de red offline ─────────────────────────────────────────────────
+  useEffect(() => {
+    const online  = () => setSinRed(false)
+    const offline = () => setSinRed(true)
+    window.addEventListener("online",  online)
+    window.addEventListener("offline", offline)
+    return () => { window.removeEventListener("online", online); window.removeEventListener("offline", offline) }
+  }, [])
 
   // ── Service Worker: registrar y detectar nuevas versiones ──────────────────
   useEffect(() => {
@@ -133,6 +143,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return () => navigator.serviceWorker.removeEventListener("message", onMessage)
   }, [])
 
+  // ── Refresh proactivo cada 10 minutos ────────────────────────────────────
+  // Evita que el token expire silenciosamente mientras el usuario trabaja despacio
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) return
+        // Si le quedan menos de 15 minutos de vida, forzar refresh ahora
+        const expiresAt = session.expires_at ?? 0
+        const ahoraEnSeg = Math.floor(Date.now() / 1000)
+        if (expiresAt - ahoraEnSeg < 900) {
+          await supabase.auth.refreshSession()
+        }
+      } catch { /* silencioso — el token refresh tiene su propio manejo de errores */ }
+    }, 10 * 60 * 1000) // cada 10 minutos
+    return () => clearInterval(interval)
+  }, [])
+
   // ── Visibilidad: refresh de sesión + reload tras inactividad larga ─────────
   useEffect(() => {
     let hiddenAt: number | null = null
@@ -142,14 +170,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       if (document.visibilityState === "hidden") {
         hiddenAt = Date.now()
       } else if (document.visibilityState === "visible") {
-        // Refrescar token siempre (evita "Cargando…" por token expirado)
-        await supabase.auth.getSession()
+        // Forzar refresh real del token (no solo leer caché) al volver a la pestaña
+        try { await supabase.auth.refreshSession() } catch { /* silencioso */ }
         // Si estuvo más de 30 min en background → recargar si no hay borrador activo
         if (hiddenAt && Date.now() - hiddenAt > INACTIVITY_MS) {
-          const borradorVentas = localStorage.getItem("vetix_borrador")
+          const borradorVentas  = localStorage.getItem("vetix_borrador")
           const borradorCompras = localStorage.getItem("vetix_borrador_compra")
-          const hayBorrador = borradorVentas || borradorCompras
-          if (hayBorrador) {
+          const trabajoEnCurso  = sessionStorage.getItem("vetix_wip") // edición/alta en curso en cualquier página
+          if (borradorVentas || borradorCompras || trabajoEnCurso) {
+            // Hay datos sin guardar → no recargar, solo mostrar botón de actualización
             setHayActualizacion(true)
           } else {
             window.location.reload()
@@ -415,6 +444,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </button>
             </div>
           </div>
+
+          {/* BANNER SIN RED */}
+          {sinRed && (
+            <div style={{
+              background: "#dc2626", color: "white", fontSize: 13, fontWeight: 700,
+              textAlign: "center", padding: "8px 16px", flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            }}>
+              ⚠️ Sin conexión a internet — las acciones no se guardarán hasta recuperar la red
+            </div>
+          )}
 
           {/* CONTENT */}
           <div className="main-content" style={{ padding: "30px", overflowY: "auto", flex: 1, background: "#f1f5f9" }}>

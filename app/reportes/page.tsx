@@ -227,7 +227,7 @@ export default function Reportes() {
   useEffect(() => { cargar() }, [desde, hasta])
   useEffect(() => {
     if (!cargando) return
-    const w = setTimeout(() => supabase.auth.signOut(), 60000)
+    const w = setTimeout(() => supabase.auth.signOut(), 300000) // 5 min — chunked queries pueden tomar tiempo
     return () => clearTimeout(w)
   }, [cargando])
 

@@ -404,6 +404,16 @@ export default function Productos() {
     return () => clearTimeout(w)
   }, [cargando])
 
+  // Avisar al layout que hay una edición/alta en curso → no recargar automáticamente
+  useEffect(() => {
+    if (editando || mostrarAgregar) {
+      sessionStorage.setItem("vetix_wip", "productos")
+    } else {
+      sessionStorage.removeItem("vetix_wip")
+    }
+    return () => { sessionStorage.removeItem("vetix_wip") }
+  }, [editando, mostrarAgregar])
+
   async function agregar() {
     if (!nombre || !costo || !margen || !stock) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
     if (Number(stock) < 0) { mostrarToast("⚠️ El stock no puede ser negativo", "error"); return }
@@ -418,8 +428,12 @@ export default function Productos() {
       if (error) { mostrarToast("❌ " + error.message, "error"); return }
       supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 }) // fire-and-forget
       mostrarToast("✅ Producto agregado", "ok")
+      // Actualización local instantánea — sin recargar toda la lista
+      if (data?.[0]) {
+        setProductos(prev => [...prev, data[0]].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")))
+      }
       setNombre(""); setCosto(""); setMargen(""); setFleteProducto(""); setStock(""); setCategoria(""); setLaboratorio("")
-      setMostrarAgregar(false); cargar()
+      setMostrarAgregar(false)
     } catch (e: any) {
       mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
     } finally {
@@ -439,7 +453,13 @@ export default function Productos() {
       if (error) { mostrarToast("❌ " + error.message, "error"); return }
       supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id }) // fire-and-forget
       mostrarToast("✅ Producto actualizado", "ok")
-      setEditando(null); cargar()
+      // Actualización local instantánea — sin recargar toda la lista
+      setProductos(prev => prev.map(p =>
+        p.id === editando.id
+          ? { ...p, nombre: editando.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(editando.stock), categoria: editando.categoria || "", laboratorio: editando.laboratorio || "" }
+          : p
+      ))
+      setEditando(null)
     } catch (e: any) {
       mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
     } finally {
@@ -449,11 +469,17 @@ export default function Productos() {
 
   async function confirmarEliminarFn() {
     if (!confirmEliminar) return
-    const { error } = await supabase.from("productos").delete().eq("id", confirmEliminar.id)
-    if (error) { mostrarToast("❌ " + error.message, "error"); setConfirmEliminar(null); return }
-    supabase.rpc("registrar_auditoria", { accion: "eliminar", tabla: "productos", registro_id: confirmEliminar.id }) // fire-and-forget
-    mostrarToast("🗑️ Producto eliminado", "ok")
-    setConfirmEliminar(null); cargar()
+    try {
+      const { error } = await supabase.from("productos").delete().eq("id", confirmEliminar.id)
+      if (error) { mostrarToast("❌ " + error.message, "error"); return }
+      supabase.rpc("registrar_auditoria", { accion: "eliminar", tabla: "productos", registro_id: confirmEliminar.id }) // fire-and-forget
+      mostrarToast("🗑️ Producto eliminado", "ok")
+      // Actualización local instantánea — sin recargar toda la lista
+      setProductos(prev => prev.filter(p => p.id !== confirmEliminar.id))
+      setConfirmEliminar(null)
+    } catch (e: any) {
+      mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
+    }
   }
 
   function parsePrecio(valor: any) {
@@ -654,25 +680,29 @@ export default function Productos() {
     const productoId = confirmEliminarLote.producto_id
     const loteId = confirmEliminarLote.id
     const cantidadLote = confirmEliminarLote.cantidad
+    try {
+      // Borrar lote PRIMERO — si falla no tocamos el stock
+      const { error } = await supabase.from("lotes").delete().eq("id", loteId)
+      if (error) { mostrarToast("❌ " + error.message, "error"); return }
 
-    // Borrar lote PRIMERO — si falla no tocamos el stock
-    const { error } = await supabase.from("lotes").delete().eq("id", loteId)
-    if (error) { mostrarToast("❌ " + error.message, "error"); setConfirmEliminarLote(null); return }
+      // Leer stock fresco y descontar
+      const { data: prodActual } = await supabase.from("productos").select("stock").eq("id", productoId).single()
+      const nuevoStock = Math.max(0, (prodActual?.stock ?? 0) - cantidadLote)
+      await supabase.from("productos").update({ stock: nuevoStock }).eq("id", productoId)
 
-    // Leer stock fresco y descontar
-    const { data: prodActual } = await supabase.from("productos").select("stock").eq("id", productoId).single()
-    const nuevoStock = Math.max(0, (prodActual?.stock ?? 0) - cantidadLote)
-    await supabase.from("productos").update({ stock: nuevoStock }).eq("id", productoId)
+      // Actualizar estado local inmediatamente (sin recargar todo)
+      setProductos(prev => prev.map(p => p.id === productoId ? { ...p, stock: nuevoStock } : p))
+      setLotesMap(prev => ({
+        ...prev,
+        [productoId]: (prev[productoId] || []).filter((l: any) => l.id !== loteId)
+      }))
 
-    // Actualizar estado local inmediatamente (sin recargar todo)
-    setProductos(prev => prev.map(p => p.id === productoId ? { ...p, stock: nuevoStock } : p))
-    setLotesMap(prev => ({
-      ...prev,
-      [productoId]: (prev[productoId] || []).filter((l: any) => l.id !== loteId)
-    }))
-
-    mostrarToast("🗑️ Lote eliminado", "ok")
-    setConfirmEliminarLote(null)
+      mostrarToast("🗑️ Lote eliminado", "ok")
+    } catch (e: any) {
+      mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setConfirmEliminarLote(null)
+    }
   }
 
   function toggleLotes(id: number) {

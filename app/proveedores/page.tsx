@@ -129,26 +129,44 @@ export default function ProveedoresPage() {
       telefono: form.telefono.trim() || null, email: form.email.trim() || null,
       direccion: form.direccion.trim() || null, notas: form.notas.trim() || null,
     };
-    let err;
-    if (editando) {
-      ({ error: err } = await supabase.from("proveedores").update(payload).eq("id", editando.id));
-    } else {
-      ({ error: err } = await supabase.from("proveedores").insert([payload]));
+    try {
+      let err;
+      if (editando) {
+        ({ error: err } = await supabase.from("proveedores").update(payload).eq("id", editando.id));
+      } else {
+        ({ error: err } = await supabase.from("proveedores").insert([payload]));
+      }
+      if (err) { setError("Error al guardar: " + err.message); return; }
+      if (editando) {
+        // Edición: actualizar localmente sin recargar la lista completa
+        setProveedores(prev => prev.map(p => p.id === editando.id ? { ...p, ...payload } : p))
+        cerrarModal()
+      } else {
+        // Alta nueva: necesita recargar para obtener ID y datos computados de la vista
+        cerrarModal(); cargarProveedores()
+      }
+    } catch (e: any) {
+      setError("Error: " + (e?.message || "error desconocido"));
+    } finally {
+      setGuardando(false);
     }
-    setGuardando(false);
-    if (err) { setError("Error al guardar: " + err.message); return; }
-    cerrarModal(); cargarProveedores();
   }
 
   async function eliminar(p: Proveedor) {
     setErrorEliminar(null);
-    const { error } = await supabase.from("proveedores").delete().eq("id", p.id);
-    if (error) {
-      setErrorEliminar(p.compras_pendientes > 0
-        ? `No se puede eliminar: ${p.nombre} tiene compras registradas.`
-        : "No se pudo eliminar: " + error.message);
-    } else {
-      setConfirmEliminar(null); setErrorEliminar(null); cargarProveedores();
+    try {
+      const { error } = await supabase.from("proveedores").delete().eq("id", p.id);
+      if (error) {
+        setErrorEliminar(p.compras_pendientes > 0
+          ? `No se puede eliminar: ${p.nombre} tiene compras registradas.`
+          : "No se pudo eliminar: " + error.message);
+      } else {
+        // Filtrar localmente — sin recargar toda la lista
+        setProveedores(prev => prev.filter(x => x.id !== p.id))
+        setConfirmEliminar(null); setErrorEliminar(null);
+      }
+    } catch (e: any) {
+      setErrorEliminar("Error: " + (e?.message || "error desconocido"));
     }
   }
 
