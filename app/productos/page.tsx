@@ -414,6 +414,32 @@ export default function Productos() {
     return () => { sessionStorage.removeItem("vetix_wip") }
   }, [editando, mostrarAgregar])
 
+  // ── Borrador del formulario "Agregar producto" ─────────────────────────────
+  // Guarda en localStorage cada vez que cambia un campo (solo cuando el form está abierto)
+  useEffect(() => {
+    if (!mostrarAgregar) return
+    const borrador = { nombre, costo, margen, fleteProducto, stock, categoria, laboratorio }
+    localStorage.setItem("vetix_borrador_producto", JSON.stringify(borrador))
+  }, [nombre, costo, margen, fleteProducto, stock, categoria, laboratorio, mostrarAgregar])
+
+  // Restaura el borrador cuando se abre el formulario
+  useEffect(() => {
+    if (!mostrarAgregar) return
+    const guardado = localStorage.getItem("vetix_borrador_producto")
+    if (!guardado) return
+    try {
+      const b = JSON.parse(guardado)
+      if (b.nombre)       setNombre(b.nombre)
+      if (b.costo)        setCosto(b.costo)
+      if (b.margen)       setMargen(b.margen)
+      if (b.fleteProducto) setFleteProducto(b.fleteProducto)
+      if (b.stock)        setStock(b.stock)
+      if (b.categoria)    setCategoria(b.categoria)
+      if (b.laboratorio)  setLaboratorio(b.laboratorio)
+    } catch { /* borrador corrupto, ignorar */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mostrarAgregar])
+
   async function agregar() {
     if (!nombre || !costo || !margen || !stock) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
     if (Number(stock) < 0) { mostrarToast("⚠️ El stock no puede ser negativo", "error"); return }
@@ -432,6 +458,7 @@ export default function Productos() {
       if (data?.[0]) {
         setProductos(prev => [...prev, data[0]].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")))
       }
+      localStorage.removeItem("vetix_borrador_producto")
       setNombre(""); setCosto(""); setMargen(""); setFleteProducto(""); setStock(""); setCategoria(""); setLaboratorio("")
       setMostrarAgregar(false)
     } catch (e: any) {
@@ -752,8 +779,11 @@ export default function Productos() {
           <b style={{ color: "#374151" }}>{productos.length}</b> productos
           {busqueda && <span style={{ color: "#9ca3af" }}> · <b style={{ color: "#374151" }}>{productosFiltrados.length}</b> resultados</span>}
         </span>
-        <button onClick={() => setMostrarAgregar(!mostrarAgregar)} style={btnSecundario}>
+        <button onClick={() => setMostrarAgregar(!mostrarAgregar)} style={{ ...btnSecundario, position: "relative" }}>
           {mostrarAgregar ? "✕ Cerrar" : "➕ Agregar"}
+          {!mostrarAgregar && typeof window !== "undefined" && localStorage.getItem("vetix_borrador_producto") && (
+            <span style={{ position: "absolute", top: -4, right: -4, width: 8, height: 8, background: "#f59e0b", borderRadius: "50%", display: "block" }} />
+          )}
         </button>
         <button onClick={() => setMostrarImport(!mostrarImport)} style={btnSecundario}>
           {mostrarImport ? "✕ Cerrar" : "📥 Importar"}
