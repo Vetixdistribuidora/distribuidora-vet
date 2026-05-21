@@ -51,30 +51,12 @@ const btnSecundario: React.CSSProperties = {
 }
 
 const responsiveStyles = `
-  @media (max-width: 1100px) {
-    .productos-add-grid {
-      grid-template-columns: 1fr 1fr 1fr 1fr !important;
-    }
-    .productos-add-grid > *:first-child {
-      grid-column: 1 / -1 !important;
-    }
-  }
-
   @media (max-width: 768px) {
     .productos-topbar { flex-wrap: wrap !important; }
     .productos-topbar input { min-width: 0 !important; width: 100% !important; }
     .productos-topbar span { order: 3 !important; width: 100% !important; }
 
     .productos-add-panel { padding: 16px !important; }
-    .productos-add-grid {
-      grid-template-columns: 1fr 1fr !important;
-    }
-    .productos-add-grid > *:first-child {
-      grid-column: 1 / -1 !important;
-    }
-    .productos-add-grid > *:last-child {
-      grid-column: 1 / -1 !important;
-    }
 
     .producto-item-main { flex-wrap: wrap !important; }
     .producto-item-foto { display: none !important; }
@@ -827,22 +809,22 @@ export default function Productos() {
       {mostrarAgregar && (
         <div className="productos-add-panel" style={{ background: "#0f172a", borderRadius: 14, padding: "20px 24px", marginBottom: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
           <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 }}>Nuevo producto</p>
-          <div className="productos-add-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end" }}>
             <input placeholder="Nombre del producto" value={nombre} onChange={e => setNombre(e.target.value)} type="text"
-              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+              style={{ flex: "3 1 200px", minWidth: 0, padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Laboratorio" value={laboratorio} onChange={e => setLaboratorio(e.target.value)} type="text"
-              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+              style={{ flex: "2 1 130px", minWidth: 0, padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Precio Neto" value={costo} onChange={e => setCosto(e.target.value)} type="number"
-              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+              style={{ flex: "1 1 110px", minWidth: 0, padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="% IVA" value={margen} onChange={e => setMargen(e.target.value)} type="number"
-              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+              style={{ flex: "1 1 90px", minWidth: 0, padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="% Flete" value={fleteProducto} onChange={e => setFleteProducto(e.target.value)} type="number"
-              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+              style={{ flex: "1 1 90px", minWidth: 0, padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Stock" value={stock} onChange={e => setStock(e.target.value)} type="number"
-              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+              style={{ flex: "1 1 90px", minWidth: 0, padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Categoría" value={categoria} onChange={e => setCategoria(e.target.value)} type="text"
-              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
-            <button onClick={agregar} style={btnPrimario}>Guardar</button>
+              style={{ flex: "2 1 130px", minWidth: 0, padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+            <button onClick={agregar} style={{ ...btnPrimario, flexShrink: 0 }}>Guardar</button>
           </div>
         </div>
       )}
