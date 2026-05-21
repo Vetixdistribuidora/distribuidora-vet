@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react"
 import { supabase } from "../../lib/supabase"
-import * as XLSX from "xlsx"
+// XLSX se carga de forma diferida (lazy) — solo cuando el usuario exporta
 
 function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
   return (
@@ -673,18 +673,18 @@ thead th:last-child{text-align:right}
 
   async function cargar() {
     try {
-      const { data: c } = await supabase.from("clientes").select("*").order("nombre")
-      let todosProductos: any[] = []
-      let desde = 0
-      while (true) {
-        const { data: p } = await supabase.from("productos").select("*").order("nombre").range(desde, desde + 999)
-        if (!p || p.length === 0) break
-        todosProductos = [...todosProductos, ...p]
-        if (p.length < 1000) break
-        desde += 1000
-      }
-      setClientes(c || []); setProductos(todosProductos)
-      const { data: ultima } = await supabase.from("ventas").select("nro_factura").order("id", { ascending: false }).limit(1).maybeSingle()
+      // Clientes, productos y último nro de factura en paralelo
+      const [{ data: c }, { data: p }, { data: ultima }] = await Promise.all([
+        supabase.from("clientes").select("*").order("nombre"),
+        // Solo columnas necesarias para el formulario de venta — sin costo, margen, imagen_url
+        supabase.from("productos")
+          .select("id, nombre, precio_venta, stock, categoria, laboratorio")
+          .order("nombre")
+          .range(0, 1999),
+        supabase.from("ventas").select("nro_factura").order("id", { ascending: false }).limit(1).maybeSingle(),
+      ])
+      setClientes(c || [])
+      setProductos(p || [])
       if (ultima?.nro_factura) {
         const num = parseInt(ultima.nro_factura, 10)
         if (!isNaN(num)) setNroFactura(String(num + 1).padStart(5, "0"))
@@ -927,7 +927,8 @@ thead th:last-child{text-align:right}
     }
   }
 
-  function exportarVentas() {
+  async function exportarVentas() {
+    const XLSX = await import("xlsx")
     const datos = ventasFiltradas.map(v => ({
       "N° Presupuesto": v.nro_factura,
       "Fecha": fechaLocal(v.fecha),

@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
-import * as XLSX from "xlsx"
+// XLSX se carga de forma diferida (lazy) — solo cuando el usuario hace click en exportar/importar
 
 function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
   return (
@@ -328,7 +328,8 @@ export default function Productos() {
     }
   }
 
-  function exportarStock() {
+  async function exportarStock() {
+    const XLSX = await import("xlsx")
     const data = productos.map(p => ({
       "Nombre": p.nombre,
       "Laboratorio": p.laboratorio || "",
@@ -347,7 +348,8 @@ export default function Productos() {
     XLSX.writeFile(wb, `stock_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
-  function exportarListaPrecios() {
+  async function exportarListaPrecios() {
+    const XLSX = await import("xlsx")
     const data = productos.filter(p => p.stock > 0).map(p => ({
       "Producto": p.nombre,
       "Precio Vet. ($)": Math.round(p.precio_venta * 1.30 * 100) / 100,
@@ -363,20 +365,17 @@ export default function Productos() {
   async function cargar() {
     setCargando(true)
     try {
-      // Productos y lotes en paralelo
+      // Productos y lotes en paralelo — una sola request cada uno
+      // range(0, 1999) garantiza hasta 2000 productos sin el overhead del while loop
       const [productosData, lotesData] = await Promise.all([
-        (async () => {
-          let todos: any[] = [], desde = 0
-          while (true) {
-            const { data } = await supabase.from("productos").select("*").order("nombre").range(desde, desde + 999)
-            if (!data?.length) break
-            todos = [...todos, ...data]
-            if (data.length < 1000) break
-            desde += 1000
-          }
-          return todos
-        })(),
-        supabase.from("lotes").select("*").gt("cantidad", 0)
+        supabase.from("productos")
+          .select("id, nombre, costo, margen, flete, precio_venta, stock, categoria, laboratorio, imagen_url")
+          .order("nombre")
+          .range(0, 1999)
+          .then(r => r.data || []),
+        supabase.from("lotes")
+          .select("id, producto_id, cantidad, fecha_vencimiento")
+          .gt("cantidad", 0)
           .order("fecha_vencimiento", { ascending: true })
           .then(r => r.data || [])
       ])
@@ -513,7 +512,8 @@ export default function Productos() {
     return isNaN(num) || num < 0 ? NaN : num
   }
 
-  function descargarPlantilla() {
+  async function descargarPlantilla() {
+    const XLSX = await import("xlsx")
     const ws = XLSX.utils.aoa_to_sheet([
       ["Nombre del producto", "Laboratorio", "Costo"],
       ["Ivermectina 1% x 50ml", "Laboratorio Richmond", "1500"],
@@ -533,6 +533,7 @@ export default function Productos() {
       const data = await file.arrayBuffer()
       let rows: any[] = []
       if (file.name.endsWith(".xlsx") || file.name.endsWith(".xls")) {
+        const XLSX = await import("xlsx")
         const wb2 = XLSX.read(data)
         const sheet = wb2.Sheets[wb2.SheetNames[0]]
         rows = XLSX.utils.sheet_to_json(sheet, { defval: "" })
@@ -737,15 +738,19 @@ export default function Productos() {
 
   if (cargando) return <p style={{ padding: 30, color: "#9ca3af" }}>⏳ Cargando productos...</p>
 
-  const terminoBusqProdPage = busqueda.trim().replace(/\s+/g, " ").toLowerCase()
-  const palabrasBusqProdPage = terminoBusqProdPage.split(" ").filter(Boolean)
-  const productosFiltrados = productos.filter(p => {
-    if (palabrasBusqProdPage.length > 0) {
-      const campo = p.nombre.toLowerCase() + " " + (p.laboratorio || "").toLowerCase()
-      if (!campo.includes(terminoBusqProdPage) && !palabrasBusqProdPage.every(w => campo.includes(w))) return false
-    }
-    return !filtroCategoria || p.categoria === filtroCategoria
-  })
+  // useMemo: solo recalcula cuando cambia la búsqueda, categoría o la lista base
+  const productosFiltrados = useMemo(() => {
+    const termino = busqueda.trim().replace(/\s+/g, " ").toLowerCase()
+    const palabras = termino.split(" ").filter(Boolean)
+    return productos.filter(p => {
+      if (palabras.length > 0) {
+        const campo = p.nombre.toLowerCase() + " " + (p.laboratorio || "").toLowerCase()
+        if (!campo.includes(termino) && !palabras.every((w: string) => campo.includes(w))) return false
+      }
+      return !filtroCategoria || p.categoria === filtroCategoria
+    })
+  }, [productos, busqueda, filtroCategoria])
+
   const productosVisibles = productosFiltrados.slice(0, pagina * 50)
 
   return (

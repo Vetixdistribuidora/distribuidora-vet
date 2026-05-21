@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import * as XLSX from "xlsx";
+// XLSX se carga de forma diferida (lazy) — solo cuando el usuario exporta
 
 interface Proveedor { id: number; nombre: string; }
 interface Producto { id: number; nombre: string; stock: number; laboratorio?: string; }
@@ -665,7 +665,8 @@ export default function ComprasPage() {
     return texto.includes(busqueda.toLowerCase()) && (filtroEstado === "todos" || c.estado === filtroEstado);
   });
 
-  function exportarCompras() {
+  async function exportarCompras() {
+    const XLSX = await import("xlsx")
     const datos = filtradas.map(c => ({
       "Fecha": c.fecha?.slice(0, 10) || "",
       "Proveedor": c.proveedores?.nombre || "",
