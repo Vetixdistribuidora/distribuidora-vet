@@ -76,6 +76,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/reportes")) return "Reportes"
     if (pathname.startsWith("/deudores")) return "Deudores"
     if (pathname.startsWith("/configuracion")) return "Configuración"
+    if (pathname.startsWith("/admin")) return "Panel Admin"
     return ""
   }
 
@@ -90,6 +91,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/reportes")) return "📊"
     if (pathname.startsWith("/deudores")) return "⚠️"
     if (pathname.startsWith("/configuracion")) return "⚙️"
+    if (pathname.startsWith("/admin")) return "⭐"
     return ""
   }
 
@@ -305,6 +307,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </svg>
             Configuración
           </Link>
+          {usuario?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL && (
+            <Link href="/admin" style={getItemStyle("/admin")} onClick={() => setSidebarAbierto(false)}>
+              <svg style={iconStyle("#f59e0b", pathname.startsWith("/admin"))} fill="none" strokeWidth="2" viewBox="0 0 24 24">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+              Admin
+            </Link>
+          )}
         </nav>
       </div>
 
