@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -24,47 +24,166 @@ function Toast({ mensaje, tipo }: { mensaje: string; tipo: "ok" | "error" }) {
 
 function StockChip({ stock }: { stock: number }) {
   const [color, bg, border] =
-    stock <= 0  ? ["#dc2626", "#fef2f2", "#fecaca"] :
-    stock <= 5  ? ["#d97706", "#fffbeb", "#fde68a"] :
-                  ["#16a34a", "#f0fdf4", "#bbf7d0"]
+    stock <= 0 ? ["#dc2626", "#fef2f2", "#fecaca"] :
+    stock <= 5 ? ["#d97706", "#fffbeb", "#fde68a"] :
+                 ["#16a34a", "#f0fdf4", "#bbf7d0"]
   return (
-    <span style={{ fontSize: 10, fontWeight: 700, color, background: bg,
-      border: `1px solid ${border}`, padding: "1px 7px", borderRadius: 8, whiteSpace: "nowrap" }}>
+    <span style={{
+      fontSize: 11, fontWeight: 700, color, background: bg,
+      border: `1px solid ${border}`, padding: "2px 8px", borderRadius: 8, whiteSpace: "nowrap"
+    }}>
       Stock: {stock}
     </span>
   )
 }
 
-// ─── page ───────────────────────────────────────────────────────────────────
+// ─── Componente: fila de item ────────────────────────────────────────────────
+function ItemPedido({ item, onCantidadChange, onNotasChange, onEliminar }: {
+  item: any
+  onCantidadChange: (item: any, cant: number) => void
+  onNotasChange: (item: any, notas: string) => void
+  onEliminar: (id: number) => void
+}) {
+  const [cantidad, setCantidad] = useState(String(item.cantidad))
+  const [verNotas, setVerNotas] = useState(!!item.notas)
+  const [notas, setNotas] = useState(item.notas || "")
+
+  useEffect(() => { setCantidad(String(item.cantidad)) }, [item.cantidad])
+
+  function handleBlur() {
+    const n = parseInt(cantidad, 10)
+    if (isNaN(n) || n < 1) { setCantidad(String(item.cantidad)); return }
+    if (n !== item.cantidad) onCantidadChange(item, n)
+  }
+
+  function sumar(delta: number) {
+    const n = Math.max(1, (parseInt(cantidad, 10) || 1) + delta)
+    setCantidad(String(n))
+    onCantidadChange(item, n)
+  }
+
+  const prod = item.productos || {}
+
+  return (
+    <div style={{
+      background: "white", border: "1px solid #e2e8f0", borderRadius: 12,
+      padding: "12px 16px", marginBottom: 8, boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {/* Info producto */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {prod.nombre || "—"}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+            {prod.laboratorio && (
+              <span style={{ fontSize: 12, color: "#64748b", background: "#f1f5f9", padding: "1px 8px", borderRadius: 6, border: "1px solid #e2e8f0" }}>
+                {prod.laboratorio}
+              </span>
+            )}
+            <StockChip stock={prod.stock ?? 0} />
+          </div>
+        </div>
+
+        {/* Cantidad */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          <button onClick={() => sumar(-1)}
+            style={{ width: 32, height: 32, border: "1px solid #e2e8f0", background: "#f8fafc", borderRadius: 8, color: "#374151", fontSize: 16, cursor: "pointer", fontWeight: 700 }}>
+            −
+          </button>
+          <input
+            type="number" min={1} value={cantidad}
+            onChange={e => setCantidad(e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={e => { if (e.key === "Enter") { handleBlur(); (e.target as HTMLElement).blur() } }}
+            style={{ width: 58, textAlign: "center", padding: "6px 4px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, color: "#0f172a", fontSize: 14, fontWeight: 800, outline: "none" }}
+          />
+          <button onClick={() => sumar(1)}
+            style={{ width: 32, height: 32, border: "1px solid #e2e8f0", background: "#f8fafc", borderRadius: 8, color: "#374151", fontSize: 16, cursor: "pointer", fontWeight: 700 }}>
+            +
+          </button>
+        </div>
+
+        {/* Atajos rápidos */}
+        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          {[5, 10, 20].map(n => (
+            <button key={n} onClick={() => { setCantidad(String(n)); onCantidadChange(item, n) }}
+              style={{
+                padding: "4px 9px", border: "1px solid #e2e8f0", borderRadius: 7,
+                background: cantidad === String(n) ? "#1e40af" : "#f8fafc",
+                color: cantidad === String(n) ? "white" : "#64748b",
+                fontSize: 12, cursor: "pointer", fontWeight: 700
+              }}>
+              {n}
+            </button>
+          ))}
+        </div>
+
+        {/* Nota + eliminar */}
+        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          <button onClick={() => setVerNotas(!verNotas)} title="Nota"
+            style={{
+              width: 32, height: 32, border: `1px solid ${verNotas ? "#fde68a" : "#e2e8f0"}`,
+              background: verNotas ? "#fffbeb" : "#f8fafc",
+              borderRadius: 8, color: verNotas ? "#d97706" : "#94a3b8", fontSize: 14, cursor: "pointer"
+            }}>
+            📝
+          </button>
+          <button onClick={() => onEliminar(item.id)}
+            style={{ width: 32, height: 32, border: "1px solid #fecaca", background: "#fef2f2", borderRadius: 8, color: "#dc2626", fontSize: 16, cursor: "pointer", fontWeight: 700 }}>
+            ×
+          </button>
+        </div>
+      </div>
+
+      {verNotas && (
+        <input
+          value={notas} onChange={e => setNotas(e.target.value)}
+          onBlur={() => onNotasChange(item, notas)}
+          placeholder="Nota para este producto…"
+          style={{
+            marginTop: 10, width: "100%", padding: "7px 12px",
+            background: "#fffbeb", border: "1px solid #fde68a",
+            borderRadius: 8, color: "#374151", fontSize: 13, outline: "none", boxSizing: "border-box"
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── PAGE ────────────────────────────────────────────────────────────────────
 export default function Pedidos() {
   const [pedidos,   setPedidos]   = useState<any[]>([])
   const [productos, setProductos] = useState<any[]>([])
-  const [cargando,  setCargando]  = useState(false)
+  const [cargando,  setCargando]  = useState(true)
   const [filtro,    setFiltro]    = useState<"todos" | "borrador" | "enviado">("todos")
   const [toast,     setToast]     = useState<any>(null)
 
-  // modal nuevo
-  const [modalNuevo,     setModalNuevo]     = useState(false)
-  const [nuevoProveedor, setNuevoProveedor] = useState("")
-  const [creando,        setCreando]        = useState(false)
-  const [showLabSuggest, setShowLabSuggest] = useState(false)
-
-  // modal editar
+  // editor (null = lista, "nuevo" = creando, pedido = editando)
+  const [vista,          setVista]          = useState<"lista" | "editor">("lista")
   const [pedidoActivo,   setPedidoActivo]   = useState<any | null>(null)
-  const [itemsPedido,    setItemsPedido]     = useState<any[]>([])
-  const [busqueda,       setBusqueda]        = useState("")
-  const [filtroLab,      setFiltroLab]       = useState("")
-  const [notasPedido,    setNotasPedido]     = useState("")
-  const [editandoNombre, setEditandoNombre]  = useState(false)
-  const [nuevoNombre,    setNuevoNombre]     = useState("")
-  const [guardandoNombre,setGuardandoNombre] = useState(false)
+  const [itemsPedido,    setItemsPedido]    = useState<any[]>([])
+  const [guardandoEstado, setGuardandoEstado] = useState(false)
+
+  // campos del editor
+  const [nombreProveedor, setNombreProveedor] = useState("")
+  const [guardandoNombre, setGuardandoNombre] = useState(false)
+  const [notasPedido,     setNotasPedido]     = useState("")
+
+  // búsqueda de productos
+  const [busqueda,  setBusqueda]  = useState("")
+  const [filtroLab, setFiltroLab] = useState("")
 
   // confirm eliminar
   const [confirmEliminar, setConfirmEliminar] = useState<any | null>(null)
   const [eliminando,       setEliminando]      = useState(false)
 
+  // creación
+  const [creando, setCreando] = useState(false)
+
   function mostrarToast(m: string, t: "ok" | "error") {
-    setToast({ mensaje: m, tipo: t }); setTimeout(() => setToast(null), 3000)
+    setToast({ mensaje: m, tipo: t }); setTimeout(() => setToast(null), 3200)
   }
 
   // ── Carga inicial ──────────────────────────────────────────────────────────
@@ -92,14 +211,11 @@ export default function Pedidos() {
     }
   }
 
-  // ── Laboratorios únicos ────────────────────────────────────────────────────
-  const laboratorios = [...new Set(
-    productos.map(p => p.laboratorio).filter(Boolean)
-  )].sort() as string[]
+  const laboratorios = [...new Set(productos.map(p => p.laboratorio).filter(Boolean))].sort() as string[]
 
   // ── Crear pedido ───────────────────────────────────────────────────────────
   async function crearPedido() {
-    const nombre = nuevoProveedor.trim()
+    const nombre = nombreProveedor.trim()
     if (!nombre) { mostrarToast("Ingresá el nombre del proveedor", "error"); return }
     setCreando(true)
     try {
@@ -107,29 +223,39 @@ export default function Pedidos() {
         .insert({ nombre_proveedor: nombre, estado: "borrador" })
         .select().single()
       if (error || !data) { mostrarToast("Error al crear pedido", "error"); return }
-      setModalNuevo(false)
-      setNuevoProveedor("")
       await cargar()
-      abrirPedido({ ...data, pedidos_items: [] })
+      abrirEditor({ ...data, pedidos_items: [], totalItems: 0, totalUnidades: 0 })
     } finally {
       setCreando(false)
     }
   }
 
-  // ── Abrir / cerrar pedido ──────────────────────────────────────────────────
-  async function abrirPedido(p: any) {
-    setPedidoActivo(p)
-    setNotasPedido(p.notas || "")
-    setEditandoNombre(false)
+  // ── Editor ─────────────────────────────────────────────────────────────────
+  function abrirNuevo() {
+    setPedidoActivo(null)
+    setNombreProveedor("")
+    setNotasPedido("")
+    setItemsPedido([])
     setBusqueda("")
     setFiltroLab("")
+    setVista("editor")
+  }
+
+  async function abrirEditor(p: any) {
+    setPedidoActivo(p)
+    setNombreProveedor(p.nombre_proveedor)
+    setNotasPedido(p.notas || "")
+    setBusqueda("")
+    setFiltroLab("")
+    setVista("editor")
     await cargarItems(p.id)
   }
 
-  function cerrarPedido() {
+  function volverALista() {
+    setVista("lista")
     setPedidoActivo(null)
     setItemsPedido([])
-    cargar()   // refresca los contadores de la lista
+    cargar()
   }
 
   async function cargarItems(pedidoId: number) {
@@ -141,11 +267,24 @@ export default function Pedidos() {
     setItemsPedido(data || [])
   }
 
-  // ── Items: agregar, cambiar cantidad, eliminar ─────────────────────────────
+  // ── Guardar nombre proveedor ───────────────────────────────────────────────
+  async function guardarNombreProveedor() {
+    if (!pedidoActivo || !nombreProveedor.trim()) return
+    if (nombreProveedor.trim() === pedidoActivo.nombre_proveedor) return
+    setGuardandoNombre(true)
+    const { error } = await supabase.from("pedidos")
+      .update({ nombre_proveedor: nombreProveedor.trim() }).eq("id", pedidoActivo.id)
+    if (!error) {
+      setPedidoActivo((p: any) => ({ ...p, nombre_proveedor: nombreProveedor.trim() }))
+      mostrarToast("Proveedor actualizado", "ok")
+    }
+    setGuardandoNombre(false)
+  }
+
+  // ── Items ──────────────────────────────────────────────────────────────────
   async function agregarProducto(prod: any) {
     if (!pedidoActivo) return
-    const existe = itemsPedido.find(i => i.producto_id === prod.id)
-    if (existe) {
+    if (itemsPedido.find(i => i.producto_id === prod.id)) {
       mostrarToast("Ya está en el pedido — modificá la cantidad", "error"); return
     }
     const { data, error } = await supabase.from("pedidos_items")
@@ -157,9 +296,7 @@ export default function Pedidos() {
 
   async function actualizarCantidad(item: any, nuevaCantidad: number) {
     if (isNaN(nuevaCantidad) || nuevaCantidad < 1) nuevaCantidad = 1
-    const { error } = await supabase.from("pedidos_items")
-      .update({ cantidad: nuevaCantidad }).eq("id", item.id)
-    if (error) { mostrarToast("Error al guardar cantidad", "error"); return }
+    await supabase.from("pedidos_items").update({ cantidad: nuevaCantidad }).eq("id", item.id)
     setItemsPedido(prev => prev.map(i => i.id === item.id ? { ...i, cantidad: nuevaCantidad } : i))
   }
 
@@ -173,36 +310,25 @@ export default function Pedidos() {
     setItemsPedido(prev => prev.filter(i => i.id !== itemId))
   }
 
-  // ── Guardar notas del pedido ───────────────────────────────────────────────
   async function guardarNotas() {
     if (!pedidoActivo) return
     await supabase.from("pedidos").update({ notas: notasPedido || null }).eq("id", pedidoActivo.id)
   }
 
-  // ── Renombrar proveedor ────────────────────────────────────────────────────
-  async function guardarNombreProveedor() {
-    if (!nuevoNombre.trim() || !pedidoActivo) return
-    setGuardandoNombre(true)
-    const { error } = await supabase.from("pedidos")
-      .update({ nombre_proveedor: nuevoNombre.trim() }).eq("id", pedidoActivo.id)
-    if (!error) {
-      setPedidoActivo((p: any) => ({ ...p, nombre_proveedor: nuevoNombre.trim() }))
-      setEditandoNombre(false)
-    }
-    setGuardandoNombre(false)
-  }
-
-  // ── Cambiar estado ─────────────────────────────────────────────────────────
+  // ── Toggle estado ──────────────────────────────────────────────────────────
   async function toggleEstado() {
     if (!pedidoActivo) return
+    setGuardandoEstado(true)
     const nuevoEstado = pedidoActivo.estado === "borrador" ? "enviado" : "borrador"
     const patch: any = { estado: nuevoEstado }
     if (nuevoEstado === "enviado") patch.fecha_envio = new Date().toISOString()
     else patch.fecha_envio = null
     const { error } = await supabase.from("pedidos").update(patch).eq("id", pedidoActivo.id)
-    if (error) { mostrarToast("Error al cambiar estado", "error"); return }
-    setPedidoActivo((p: any) => ({ ...p, ...patch }))
-    mostrarToast(nuevoEstado === "enviado" ? "✅ Marcado como enviado" : "📝 Vuelto a borrador", "ok")
+    if (!error) {
+      setPedidoActivo((p: any) => ({ ...p, ...patch }))
+      mostrarToast(nuevoEstado === "enviado" ? "✅ Marcado como enviado" : "📝 Vuelto a borrador", "ok")
+    }
+    setGuardandoEstado(false)
   }
 
   // ── Eliminar pedido ────────────────────────────────────────────────────────
@@ -212,9 +338,9 @@ export default function Pedidos() {
     try {
       const { error } = await supabase.from("pedidos").delete().eq("id", confirmEliminar.id)
       if (error) { mostrarToast("Error al eliminar", "error"); return }
-      mostrarToast("🗑️ Pedido eliminado", "ok")
+      mostrarToast("Pedido eliminado", "ok")
       setConfirmEliminar(null)
-      if (pedidoActivo?.id === confirmEliminar.id) cerrarPedido()
+      if (pedidoActivo?.id === confirmEliminar.id) volverALista()
       else cargar()
     } finally {
       setEliminando(false)
@@ -225,21 +351,18 @@ export default function Pedidos() {
   async function exportarExcel(pedido: any, items?: any[]) {
     const XLSX = await import("xlsx")
     const listaItems = items || itemsPedido
-
     if (!listaItems.length) { mostrarToast("El pedido no tiene productos", "error"); return }
 
     const datos = listaItems.map((it: any, idx: number) => ({
       "N°": idx + 1,
-      "Producto":       it.productos?.nombre || "",
-      "Laboratorio":    it.productos?.laboratorio || "",
-      "Stock actual":   it.productos?.stock ?? 0,
+      "Producto": it.productos?.nombre || "",
+      "Laboratorio": it.productos?.laboratorio || "",
+      "Stock actual": it.productos?.stock ?? 0,
       "Cantidad pedida": it.cantidad,
-      "Notas":          it.notas || "",
+      "Notas": it.notas || "",
     }))
 
     const ws = XLSX.utils.json_to_sheet([])
-
-    // Título
     XLSX.utils.sheet_add_aoa(ws, [
       [`Pedido a: ${pedido.nombre_proveedor}`],
       [`Fecha: ${fechaCorta(pedido.created_at)}${pedido.estado === "enviado" && pedido.fecha_envio ? `  |  Enviado: ${fechaCorta(pedido.fecha_envio)}` : ""}`],
@@ -247,29 +370,24 @@ export default function Pedidos() {
       [],
     ], { origin: "A1" })
 
-    const filaEncabezado = pedido.notas ? 5 : 4
-    XLSX.utils.sheet_add_json(ws, datos, { origin: `A${filaEncabezado}` })
+    const filaEnc = pedido.notas ? 5 : 4
+    XLSX.utils.sheet_add_json(ws, datos, { origin: `A${filaEnc}` })
 
-    // Totales
     const totalUnidades = listaItems.reduce((s: number, i: any) => s + i.cantidad, 0)
     XLSX.utils.sheet_add_aoa(ws, [
       [],
       [`Total productos: ${listaItems.length}`, "", "", "", `Total unidades: ${totalUnidades}`],
-    ], { origin: `A${filaEncabezado + listaItems.length + 1}` })
+    ], { origin: `A${filaEnc + listaItems.length + 1}` })
 
     ws["!cols"] = [{ wch: 5 }, { wch: 38 }, { wch: 18 }, { wch: 13 }, { wch: 16 }, { wch: 25 }]
-
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Pedido")
-    const nombre = `pedido_${pedido.nombre_proveedor.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.xlsx`
-    XLSX.writeFile(wb, nombre)
+    XLSX.writeFile(wb, `pedido_${pedido.nombre_proveedor.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.xlsx`)
     mostrarToast("📊 Excel exportado", "ok")
   }
 
-  // ── Filtros y búsqueda ─────────────────────────────────────────────────────
-  const pedidosFiltrados = pedidos.filter(p =>
-    (filtro === "todos" || p.estado === filtro)
-  )
+  // ── Filtros ────────────────────────────────────────────────────────────────
+  const pedidosFiltrados = pedidos.filter(p => filtro === "todos" || p.estado === filtro)
 
   const terminoBusq = busqueda.trim().toLowerCase()
   const productosFiltrados = productos.filter(p => {
@@ -279,130 +397,425 @@ export default function Pedidos() {
     const matchLab = !filtroLab || p.laboratorio === filtroLab
     const yaEsta = itemsPedido.some(i => i.producto_id === p.id)
     return match && matchLab && !yaEsta
-  }).slice(0, 40)
+  }).slice(0, 50)
 
   const totalUnidadesPedido = itemsPedido.reduce((s, i) => s + i.cantidad, 0)
 
-  // ── labsSugeridos para autocomplete del nuevo pedido ──────────────────────
+  // ── Labels para autocompletar proveedor desde labs existentes ──────────────
   const labsSugeridos = laboratorios.filter(l =>
-    nuevoProveedor.length > 0 &&
-    l.toLowerCase().includes(nuevoProveedor.toLowerCase()) &&
-    l.toLowerCase() !== nuevoProveedor.toLowerCase()
-  ).slice(0, 6)
+    nombreProveedor.length > 0 &&
+    l.toLowerCase().includes(nombreProveedor.toLowerCase()) &&
+    l.toLowerCase() !== nombreProveedor.toLowerCase()
+  ).slice(0, 5)
 
-  // ────────────────────────────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════════════════════
+  // VISTA EDITOR
+  // ════════════════════════════════════════════════════════════════════════════
+  if (vista === "editor") {
+    const esNuevo = !pedidoActivo
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "calc(100vh - 100px)", minHeight: 600 }}>
+        {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
+
+        {/* ── BARRA SUPERIOR ── */}
+        <div style={{
+          background: "white", border: "1px solid #e2e8f0", borderRadius: "14px 14px 0 0",
+          padding: "18px 24px", display: "flex", alignItems: "center", gap: 16,
+          boxShadow: "0 1px 4px rgba(0,0,0,0.05)", flexShrink: 0, flexWrap: "wrap"
+        }}>
+          {/* Volver */}
+          <button onClick={volverALista}
+            style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 9, padding: "8px 16px", color: "#374151", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            ← Volver
+          </button>
+
+          {/* Input proveedor */}
+          <div style={{ flex: 1, minWidth: 220, position: "relative" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
+              Proveedor
+            </div>
+            <input
+              autoFocus={esNuevo}
+              value={nombreProveedor}
+              onChange={e => setNombreProveedor(e.target.value)}
+              onBlur={() => { if (!esNuevo) guardarNombreProveedor() }}
+              onKeyDown={e => {
+                if (e.key === "Enter" && esNuevo) crearPedido()
+                if (e.key === "Enter" && !esNuevo) { guardarNombreProveedor(); (e.target as HTMLElement).blur() }
+              }}
+              placeholder="Nombre del proveedor o laboratorio…"
+              style={{
+                width: "100%", padding: "10px 14px", fontSize: 15, fontWeight: 700,
+                border: "2px solid #3b82f6", borderRadius: 10, outline: "none",
+                color: "#0f172a", background: "#f8fafc", boxSizing: "border-box"
+              }}
+            />
+            {/* Autocomplete */}
+            {labsSugeridos.length > 0 && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 20,
+                background: "white", border: "1px solid #e2e8f0", borderRadius: 10,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.1)", overflow: "hidden"
+              }}>
+                {labsSugeridos.map(lab => (
+                  <button key={lab} onClick={() => setNombreProveedor(lab)}
+                    style={{ display: "block", width: "100%", padding: "10px 14px", background: "none", border: "none", color: "#374151", fontSize: 14, cursor: "pointer", textAlign: "left", borderBottom: "1px solid #f1f5f9" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+                    🏭 {lab}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Estado + info (solo si ya existe el pedido) */}
+          {pedidoActivo && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+              <span style={{
+                fontSize: 12, fontWeight: 700, padding: "5px 14px", borderRadius: 20,
+                background: pedidoActivo.estado === "enviado" ? "#f0fdf4" : "#fffbeb",
+                color:      pedidoActivo.estado === "enviado" ? "#16a34a" : "#d97706",
+                border:     pedidoActivo.estado === "enviado" ? "1px solid #bbf7d0" : "1px solid #fde68a",
+              }}>
+                {pedidoActivo.estado === "enviado" ? "✓ Enviado" : "📝 Borrador"}
+              </span>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a" }}>
+                  {itemsPedido.length} prod · {totalUnidadesPedido} uds
+                </div>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>Creado {fechaCorta(pedidoActivo.created_at)}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Botón crear (solo si es nuevo) */}
+          {esNuevo && (
+            <button onClick={crearPedido} disabled={creando || !nombreProveedor.trim()}
+              style={{
+                padding: "10px 22px", background: "linear-gradient(135deg,#1e40af,#3b82f6)", border: "none",
+                borderRadius: 10, color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                opacity: creando || !nombreProveedor.trim() ? 0.5 : 1, flexShrink: 0
+              }}>
+              {creando ? "Creando…" : "Crear pedido →"}
+            </button>
+          )}
+
+          {/* Acciones (solo si existe) */}
+          {pedidoActivo && (
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <button onClick={() => exportarExcel(pedidoActivo)}
+                style={{ padding: "9px 16px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 9, color: "#16a34a", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                📊 Excel
+              </button>
+              <button onClick={toggleEstado} disabled={guardandoEstado}
+                style={{
+                  padding: "9px 16px", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer",
+                  background: pedidoActivo.estado === "borrador" ? "linear-gradient(135deg,#1e40af,#3b82f6)" : "#fffbeb",
+                  color: pedidoActivo.estado === "borrador" ? "white" : "#d97706",
+                  border: pedidoActivo.estado === "enviado" ? "1px solid #fde68a" : "none",
+                }}>
+                {pedidoActivo.estado === "borrador" ? "✅ Marcar enviado" : "📝 Borrador"}
+              </button>
+              <button onClick={() => setConfirmEliminar(pedidoActivo)}
+                style={{ padding: "9px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 9, color: "#dc2626", fontSize: 14, cursor: "pointer" }}>
+                🗑️
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── CUERPO: 2 columnas ── */}
+        {pedidoActivo ? (
+          <div style={{ flex: 1, display: "flex", gap: 0, minHeight: 0, background: "#f8fafc", border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 14px 14px", overflow: "hidden" }}>
+
+            {/* COLUMNA IZQUIERDA: buscar productos */}
+            <div style={{ width: 380, borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", background: "white", flexShrink: 0 }}>
+              {/* Buscador */}
+              <div style={{ padding: "18px 20px", borderBottom: "1px solid #f1f5f9" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>
+                  Agregar productos
+                </div>
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94a3b8", fontSize: 16 }}>🔍</span>
+                  <input
+                    value={busqueda}
+                    onChange={e => setBusqueda(e.target.value)}
+                    placeholder="Buscar por producto o laboratorio…"
+                    style={{
+                      width: "100%", padding: "11px 14px 11px 38px",
+                      border: "1.5px solid #e2e8f0", borderRadius: 10,
+                      fontSize: 14, color: "#0f172a", outline: "none",
+                      background: "#f8fafc", boxSizing: "border-box",
+                      transition: "border-color 0.15s"
+                    }}
+                    onFocus={e => (e.target.style.borderColor = "#3b82f6")}
+                    onBlur={e => (e.target.style.borderColor = "#e2e8f0")}
+                  />
+                </div>
+
+                {/* Chips de laboratorio */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+                  <button onClick={() => setFiltroLab("")}
+                    style={{
+                      padding: "5px 13px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700,
+                      background: filtroLab === "" ? "#1e40af" : "#f1f5f9",
+                      color: filtroLab === "" ? "white" : "#64748b"
+                    }}>
+                    Todos
+                  </button>
+                  {laboratorios.map(lab => (
+                    <button key={lab} onClick={() => setFiltroLab(filtroLab === lab ? "" : lab)}
+                      style={{
+                        padding: "5px 13px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                        background: filtroLab === lab ? "#1e40af" : "#f1f5f9",
+                        color: filtroLab === lab ? "white" : "#64748b",
+                        maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+                      }}>
+                      {lab}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Lista de productos */}
+              <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px" }}>
+                {productosFiltrados.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 16px", color: "#94a3b8", fontSize: 14 }}>
+                    {busqueda || filtroLab ? "Sin resultados para ese filtro" : "Todos los productos ya están en el pedido"}
+                  </div>
+                ) : productosFiltrados.map(prod => (
+                  <button key={prod.id} onClick={() => agregarProducto(prod)}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      width: "100%", padding: "10px 12px", background: "none", border: "none",
+                      borderBottom: "1px solid #f1f5f9", cursor: "pointer", textAlign: "left",
+                      borderRadius: 8, gap: 10, transition: "background 0.1s"
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {prod.nombre}
+                      </div>
+                      {prod.laboratorio && (
+                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{prod.laboratorio}</div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      <StockChip stock={prod.stock} />
+                      <span style={{ fontSize: 20, color: "#3b82f6", fontWeight: 700, lineHeight: 1 }}>+</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* COLUMNA DERECHA: lista del pedido */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+              <div style={{ padding: "18px 22px 14px", borderBottom: "1px solid #e2e8f0", flexShrink: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Lista del pedido
+                  {itemsPedido.length > 0 && (
+                    <span style={{ marginLeft: 8, background: "#1e40af", color: "white", borderRadius: 99, fontSize: 11, padding: "1px 8px", fontWeight: 800 }}>
+                      {itemsPedido.length}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ flex: 1, overflowY: "auto", padding: "12px 18px" }}>
+                {itemsPedido.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "60px 20px", color: "#94a3b8" }}>
+                    <div style={{ fontSize: 48, marginBottom: 12 }}>📦</div>
+                    <div style={{ fontWeight: 600, fontSize: 15 }}>Sin productos todavía</div>
+                    <div style={{ fontSize: 13, marginTop: 4 }}>Buscá y agregá desde el panel izquierdo</div>
+                  </div>
+                ) : (
+                  itemsPedido.map(item => (
+                    <ItemPedido
+                      key={item.id} item={item}
+                      onCantidadChange={actualizarCantidad}
+                      onNotasChange={actualizarNotasItem}
+                      onEliminar={eliminarItem}
+                    />
+                  ))
+                )}
+              </div>
+
+              {/* Notas generales */}
+              <div style={{ padding: "14px 18px", borderTop: "1px solid #e2e8f0", background: "white", flexShrink: 0 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.4, display: "block", marginBottom: 6 }}>
+                  Notas del pedido
+                </label>
+                <textarea
+                  value={notasPedido} onChange={e => setNotasPedido(e.target.value)} onBlur={guardarNotas}
+                  placeholder="Ej: urgente, confirmar precio antes de enviar…"
+                  rows={2}
+                  style={{ width: "100%", padding: "9px 12px", background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: 9, color: "#374151", fontSize: 13, resize: "none", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Estado: pedido aún no creado */
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "white", border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 14px 14px" }}>
+            <div style={{ textAlign: "center", color: "#94a3b8" }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: "#374151", marginBottom: 4 }}>
+                Ingresá el proveedor y presioná "Crear pedido"
+              </div>
+              <div style={{ fontSize: 13 }}>Después podrás agregar productos</div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal confirmar eliminar */}
+        {confirmEliminar && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 }}
+            onClick={() => setConfirmEliminar(null)}>
+            <div style={{ background: "white", borderRadius: 18, padding: "32px 28px", maxWidth: 380, width: "100%", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}
+              onClick={e => e.stopPropagation()}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>🗑️</div>
+              <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700, color: "#0f172a" }}>¿Eliminar pedido?</h2>
+              <p style={{ color: "#64748b", fontSize: 14, margin: "0 0 24px" }}>
+                Pedido a <b style={{ color: "#0f172a" }}>{confirmEliminar.nombre_proveedor}</b>.
+                Esta acción no se puede deshacer.
+              </p>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setConfirmEliminar(null)}
+                  style={{ flex: 1, padding: "11px", background: "#f1f5f9", border: "none", borderRadius: 10, color: "#374151", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+                  Cancelar
+                </button>
+                <button onClick={eliminarPedido} disabled={eliminando}
+                  style={{ flex: 1, padding: "11px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: eliminando ? 0.6 : 1 }}>
+                  {eliminando ? "Eliminando…" : "Eliminar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // VISTA LISTA
+  // ════════════════════════════════════════════════════════════════════════════
   return (
     <div>
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} />}
 
-      {/* ── HEADER ── */}
+      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0f172a" }}>Pedidos a proveedores</h1>
-          <p style={{ margin: "3px 0 0", fontSize: 13, color: "#6b7280" }}>
-            {pedidos.length} pedido{pedidos.length !== 1 ? "s" : ""} ·{" "}
-            <span style={{ color: "#d97706", fontWeight: 600 }}>{pedidos.filter(p => p.estado === "borrador").length} en borrador</span>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>Pedidos a proveedores</h1>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
+            {pedidos.length} pedido{pedidos.length !== 1 ? "s" : ""}{" "}
+            {pedidos.filter(p => p.estado === "borrador").length > 0 && (
+              <span style={{ color: "#d97706", fontWeight: 600 }}>· {pedidos.filter(p => p.estado === "borrador").length} en borrador</span>
+            )}
             {pedidos.filter(p => p.estado === "enviado").length > 0 && (
               <span style={{ color: "#16a34a", fontWeight: 600 }}> · {pedidos.filter(p => p.estado === "enviado").length} enviados</span>
             )}
           </p>
         </div>
-        <button onClick={() => { setModalNuevo(true); setNuevoProveedor("") }}
-          style={{ background: "linear-gradient(135deg, #1e40af, #3b82f6)", color: "white", border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 8px rgba(59,130,246,0.3)", display: "flex", alignItems: "center", gap: 6 }}>
+        <button onClick={abrirNuevo}
+          style={{ background: "linear-gradient(135deg,#1e40af,#3b82f6)", color: "white", border: "none", borderRadius: 11, padding: "11px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 8px rgba(59,130,246,0.3)", display: "flex", alignItems: "center", gap: 7 }}>
           + Nuevo pedido
         </button>
       </div>
 
-      {/* ── TABS FILTRO ── */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 20, background: "white", padding: 4, borderRadius: 10, border: "1px solid #e2e8f0", width: "fit-content", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 20, background: "white", padding: 4, borderRadius: 11, border: "1px solid #e2e8f0", width: "fit-content", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
         {([
-          { key: "todos",    label: "Todos",       count: pedidos.length },
-          { key: "borrador", label: "📝 Borradores", count: pedidos.filter(p => p.estado === "borrador").length },
-          { key: "enviado",  label: "✅ Enviados",   count: pedidos.filter(p => p.estado === "enviado").length },
+          { key: "todos",    label: "Todos",         count: pedidos.length },
+          { key: "borrador", label: "📝 Borradores",  count: pedidos.filter(p => p.estado === "borrador").length },
+          { key: "enviado",  label: "✅ Enviados",    count: pedidos.filter(p => p.estado === "enviado").length },
         ] as const).map(t => (
           <button key={t.key} onClick={() => setFiltro(t.key)} style={{
-            padding: "7px 16px", borderRadius: 8, border: "none", cursor: "pointer",
+            padding: "8px 18px", borderRadius: 9, border: "none", cursor: "pointer",
             fontSize: 13, fontWeight: 700, transition: "all 0.15s",
             background: filtro === t.key ? "#0f172a" : "transparent",
-            color: filtro === t.key ? "white" : "#6b7280",
+            color: filtro === t.key ? "white" : "#64748b",
           }}>
-            {t.label} {t.count > 0 && <span style={{ marginLeft: 4, background: filtro === t.key ? "rgba(255,255,255,0.2)" : "#e2e8f0", color: filtro === t.key ? "white" : "#374151", borderRadius: 99, fontSize: 11, padding: "1px 7px", fontWeight: 800 }}>{t.count}</span>}
+            {t.label}
+            {t.count > 0 && (
+              <span style={{ marginLeft: 5, background: filtro === t.key ? "rgba(255,255,255,0.2)" : "#e2e8f0", color: filtro === t.key ? "white" : "#374151", borderRadius: 99, fontSize: 11, padding: "1px 7px", fontWeight: 800 }}>
+                {t.count}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
-      {/* ── LISTA DE PEDIDOS ── */}
+      {/* Lista */}
       {cargando ? (
-        <div style={{ textAlign: "center", padding: 60, color: "#9ca3af" }}>⏳ Cargando pedidos...</div>
+        <div style={{ textAlign: "center", padding: 80, color: "#9ca3af", fontSize: 15 }}>⏳ Cargando pedidos…</div>
       ) : pedidosFiltrados.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 60, background: "white", borderRadius: 16, border: "1px solid #e2e8f0" }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>📋</div>
-          <div style={{ fontWeight: 700, fontSize: 15, color: "#374151" }}>
+        <div style={{ textAlign: "center", padding: 80, background: "white", borderRadius: 16, border: "1px solid #e2e8f0" }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
+          <div style={{ fontWeight: 700, fontSize: 16, color: "#374151" }}>
             {filtro === "todos" ? "No hay pedidos todavía" : filtro === "borrador" ? "No hay borradores" : "No hay pedidos enviados"}
           </div>
-          <div style={{ color: "#9ca3af", fontSize: 13, marginTop: 4 }}>
-            {filtro === "todos" && "Creá tu primer pedido con el botón de arriba"}
-          </div>
+          {filtro === "todos" && <div style={{ color: "#9ca3af", fontSize: 13, marginTop: 4 }}>Creá tu primer pedido con el botón de arriba</div>}
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
           {pedidosFiltrados.map(p => (
             <div key={p.id} style={{
-              background: "white", borderRadius: 14,
+              background: "white", borderRadius: 16,
               border: p.estado === "enviado" ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
-              boxShadow: "0 1px 6px rgba(0,0,0,0.06)", overflow: "hidden",
-              transition: "box-shadow 0.15s",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.06)", overflow: "hidden"
             }}>
-              {/* Color stripe */}
-              <div style={{ height: 4, background: p.estado === "enviado" ? "linear-gradient(90deg,#16a34a,#22c55e)" : "linear-gradient(90deg,#2563eb,#3b82f6)" }} />
-              <div style={{ padding: "16px 18px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+              <div style={{ height: 5, background: p.estado === "enviado" ? "linear-gradient(90deg,#16a34a,#22c55e)" : "linear-gradient(90deg,#2563eb,#3b82f6)" }} />
+              <div style={{ padding: "18px 20px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 800, fontSize: 15, color: "#0f172a", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ fontWeight: 800, fontSize: 16, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {p.nombre_proveedor}
                     </div>
-                    <div style={{ fontSize: 11, color: "#9ca3af" }}>{fechaCorta(p.created_at)}</div>
+                    <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{fechaCorta(p.created_at)}</div>
                   </div>
                   <span style={{
                     fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, flexShrink: 0, marginLeft: 8,
                     background: p.estado === "enviado" ? "#f0fdf4" : "#fffbeb",
-                    color:      p.estado === "enviado" ? "#16a34a"  : "#d97706",
+                    color:      p.estado === "enviado" ? "#16a34a" : "#d97706",
                     border:     p.estado === "enviado" ? "1px solid #bbf7d0" : "1px solid #fde68a",
                   }}>
                     {p.estado === "enviado" ? "✓ Enviado" : "📝 Borrador"}
                   </span>
                 </div>
 
-                {/* Stats */}
-                <div style={{ display: "flex", gap: 14, marginBottom: 12 }}>
-                  <div style={{ background: "#f8fafc", borderRadius: 8, padding: "6px 12px", flex: 1, textAlign: "center" }}>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a" }}>{p.totalItems}</div>
-                    <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 600 }}>PRODUCTOS</div>
+                <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+                  <div style={{ background: "#f8fafc", borderRadius: 10, padding: "8px 0", flex: 1, textAlign: "center", border: "1px solid #f1f5f9" }}>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a" }}>{p.totalItems}</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, letterSpacing: 0.3 }}>PRODUCTOS</div>
                   </div>
-                  <div style={{ background: "#f8fafc", borderRadius: 8, padding: "6px 12px", flex: 1, textAlign: "center" }}>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a" }}>{p.totalUnidades}</div>
-                    <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 600 }}>UNIDADES</div>
+                  <div style={{ background: "#f8fafc", borderRadius: 10, padding: "8px 0", flex: 1, textAlign: "center", border: "1px solid #f1f5f9" }}>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a" }}>{p.totalUnidades}</div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, letterSpacing: 0.3 }}>UNIDADES</div>
                   </div>
                 </div>
+
                 {p.notas && (
-                  <div style={{ fontSize: 11, color: "#6b7280", background: "#f8fafc", borderRadius: 6, padding: "5px 10px", marginBottom: 10, fontStyle: "italic" }}>
-                    📝 {p.notas.length > 60 ? p.notas.slice(0, 60) + "…" : p.notas}
+                  <div style={{ fontSize: 12, color: "#64748b", background: "#f8fafc", borderRadius: 8, padding: "6px 10px", marginBottom: 12, fontStyle: "italic" }}>
+                    📝 {p.notas.length > 70 ? p.notas.slice(0, 70) + "…" : p.notas}
                   </div>
                 )}
 
-                {/* Acciones */}
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => abrirPedido(p)} style={{ flex: 1, padding: "8px", background: "linear-gradient(135deg, #1e40af, #3b82f6)", border: "none", borderRadius: 8, color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  <button onClick={() => abrirEditor(p)}
+                    style={{ flex: 1, padding: "9px", background: "linear-gradient(135deg,#1e40af,#3b82f6)", border: "none", borderRadius: 9, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                     ✏️ Ver / Editar
                   </button>
-                  <button onClick={async () => { await abrirPedido(p); setTimeout(() => exportarExcel(p), 400) }}
-                    title="Exportar Excel"
-                    style={{ padding: "8px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, color: "#16a34a", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  <button onClick={() => exportarExcel(p)} title="Exportar Excel"
+                    style={{ padding: "9px 13px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 9, color: "#16a34a", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                     📊
                   </button>
-                  <button onClick={() => setConfirmEliminar(p)}
-                    title="Eliminar"
-                    style={{ padding: "8px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, color: "#dc2626", fontSize: 12, cursor: "pointer" }}>
+                  <button onClick={() => setConfirmEliminar(p)} title="Eliminar"
+                    style={{ padding: "9px 13px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 9, color: "#dc2626", fontSize: 14, cursor: "pointer" }}>
                     🗑️
                   </button>
                 </div>
@@ -412,343 +825,30 @@ export default function Pedidos() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          MODAL — NUEVO PEDIDO
-      ══════════════════════════════════════════════════════════════════════ */}
-      {modalNuevo && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
-          onClick={() => setModalNuevo(false)}>
-          <div style={{ background: "#0f172a", borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 420, boxShadow: "0 24px 64px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.08)" }}
-            onClick={e => e.stopPropagation()}>
-            <h2 style={{ color: "white", margin: "0 0 6px", fontSize: 18, fontWeight: 700 }}>Nuevo pedido</h2>
-            <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 24px" }}>Ingresá el nombre del proveedor</p>
-
-            <div style={{ position: "relative" }}>
-              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" }}>
-                Proveedor / Laboratorio
-              </label>
-              <input
-                autoFocus
-                value={nuevoProveedor}
-                onChange={e => { setNuevoProveedor(e.target.value); setShowLabSuggest(true) }}
-                onKeyDown={e => { if (e.key === "Enter") crearPedido(); if (e.key === "Escape") setModalNuevo(false) }}
-                onFocus={() => setShowLabSuggest(true)}
-                placeholder="Ej: Vetoquinol, Bayer, Purina…"
-                style={{ width: "100%", padding: "10px 14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "white", fontSize: 14, outline: "none", boxSizing: "border-box" }}
-              />
-              {/* Autocomplete de laboratorios */}
-              {showLabSuggest && labsSugeridos.length > 0 && (
-                <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, overflow: "hidden", zIndex: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
-                  {labsSugeridos.map(lab => (
-                    <button key={lab} onClick={() => { setNuevoProveedor(lab); setShowLabSuggest(false) }}
-                      style={{ display: "block", width: "100%", padding: "10px 14px", background: "none", border: "none", color: "#e2e8f0", fontSize: 13, cursor: "pointer", textAlign: "left", borderBottom: "1px solid rgba(255,255,255,0.05)" }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "none")}>
-                      🏭 {lab}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Chips de labs más usados */}
-            {laboratorios.length > 0 && (
-              <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 }}>O elegí uno rápido:</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {laboratorios.slice(0, 8).map(lab => (
-                    <button key={lab} onClick={() => { setNuevoProveedor(lab); setShowLabSuggest(false) }}
-                      style={{ padding: "4px 10px", background: nuevoProveedor === lab ? "#3b82f6" : "rgba(255,255,255,0.06)", border: nuevoProveedor === lab ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.1)", borderRadius: 20, color: nuevoProveedor === lab ? "white" : "#9ca3af", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
-                      {lab}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
-              <button onClick={() => setModalNuevo(false)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
-              <button onClick={crearPedido} disabled={creando || !nuevoProveedor.trim()} style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, #1e40af, #3b82f6)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: creando || !nuevoProveedor.trim() ? 0.5 : 1 }}>
-                {creando ? "Creando…" : "Crear pedido →"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════════
-          MODAL — EDITAR PEDIDO
-      ══════════════════════════════════════════════════════════════════════ */}
-      {pedidoActivo && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "stretch", justifyContent: "flex-end", zIndex: 50 }}
-          onClick={cerrarPedido}>
-          <div style={{ background: "#0f172a", width: "100%", maxWidth: 860, display: "flex", flexDirection: "column", boxShadow: "-8px 0 40px rgba(0,0,0,0.5)", overflowY: "auto" }}
-            onClick={e => e.stopPropagation()}>
-
-            {/* ── Header del modal ── */}
-            <div style={{ padding: "24px 28px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)", flexShrink: 0 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  {editandoNombre ? (
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <input autoFocus value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter") guardarNombreProveedor(); if (e.key === "Escape") setEditandoNombre(false) }}
-                        style={{ flex: 1, background: "rgba(255,255,255,0.08)", border: "1px solid #3b82f6", borderRadius: 8, color: "white", fontSize: 18, fontWeight: 700, padding: "6px 12px", outline: "none" }} />
-                      <button onClick={guardarNombreProveedor} disabled={guardandoNombre} style={{ padding: "6px 14px", background: "#3b82f6", border: "none", borderRadius: 8, color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✓</button>
-                      <button onClick={() => setEditandoNombre(false)} style={{ padding: "6px 10px", background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 8, color: "#9ca3af", fontSize: 12, cursor: "pointer" }}>✕</button>
-                    </div>
-                  ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <h2 style={{ margin: 0, color: "white", fontSize: 20, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {pedidoActivo.nombre_proveedor}
-                      </h2>
-                      <button onClick={() => { setNuevoNombre(pedidoActivo.nombre_proveedor); setEditandoNombre(true) }}
-                        title="Renombrar" style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 14, padding: 2 }}>✏️</button>
-                    </div>
-                  )}
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
-                    <span style={{ fontSize: 12, color: "#6b7280" }}>Creado: {fechaCorta(pedidoActivo.created_at)}</span>
-                    {pedidoActivo.estado === "enviado" && pedidoActivo.fecha_envio && (
-                      <span style={{ fontSize: 12, color: "#4ade80" }}>· Enviado: {fechaCorta(pedidoActivo.fecha_envio)}</span>
-                    )}
-                    <span style={{
-                      fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20,
-                      background: pedidoActivo.estado === "enviado" ? "rgba(74,222,128,0.15)" : "rgba(251,191,36,0.15)",
-                      color:      pedidoActivo.estado === "enviado" ? "#4ade80"  : "#fbbf24",
-                      border:     pedidoActivo.estado === "enviado" ? "1px solid rgba(74,222,128,0.3)" : "1px solid rgba(251,191,36,0.3)",
-                    }}>
-                      {pedidoActivo.estado === "enviado" ? "✓ Enviado" : "📝 Borrador"}
-                    </span>
-                  </div>
-                </div>
-                <button onClick={cerrarPedido} style={{ background: "rgba(255,255,255,0.08)", border: "none", color: "white", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16, flexShrink: 0 }}>✕</button>
-              </div>
-
-              {/* Stats rápidos */}
-              <div style={{ display: "flex", gap: 12, marginTop: 14 }}>
-                <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 8, padding: "8px 16px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <span style={{ fontSize: 18, fontWeight: 800, color: "white" }}>{itemsPedido.length}</span>
-                  <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 6 }}>productos</span>
-                </div>
-                <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 8, padding: "8px 16px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <span style={{ fontSize: 18, fontWeight: 800, color: "white" }}>{totalUnidadesPedido}</span>
-                  <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 6 }}>unidades</span>
-                </div>
-              </div>
-            </div>
-
-            {/* ── Contenido dividido ── */}
-            <div style={{ flex: 1, display: "flex", gap: 0, minHeight: 0, overflow: "hidden" }}>
-
-              {/* Panel izquierdo: agregar productos */}
-              <div style={{ width: 340, borderRight: "1px solid rgba(255,255,255,0.08)", flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div style={{ padding: "16px 18px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Agregar productos</div>
-                  <input value={busqueda} onChange={e => setBusqueda(e.target.value)}
-                    placeholder="🔍 Buscar por nombre o laboratorio…"
-                    style={{ width: "100%", padding: "9px 12px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 9, color: "white", fontSize: 13, outline: "none", boxSizing: "border-box", marginBottom: 10 }} />
-                  {/* Chips de labs */}
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                    <button onClick={() => setFiltroLab("")}
-                      style={{ padding: "3px 10px", borderRadius: 20, border: filtroLab === "" ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.1)", background: filtroLab === "" ? "#3b82f6" : "transparent", color: filtroLab === "" ? "white" : "#9ca3af", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
-                      Todos
-                    </button>
-                    {laboratorios.slice(0, 6).map(lab => (
-                      <button key={lab} onClick={() => setFiltroLab(filtroLab === lab ? "" : lab)}
-                        style={{ padding: "3px 10px", borderRadius: 20, border: filtroLab === lab ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.1)", background: filtroLab === lab ? "#3b82f6" : "transparent", color: filtroLab === lab ? "white" : "#9ca3af", fontSize: 11, cursor: "pointer", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 100 }}>
-                        {lab}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Lista de productos */}
-                <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px" }}>
-                  {productosFiltrados.length === 0 ? (
-                    <div style={{ textAlign: "center", padding: "30px 16px", color: "#6b7280", fontSize: 13 }}>
-                      {busqueda ? "Sin resultados" : "Todos los productos ya están en el pedido"}
-                    </div>
-                  ) : productosFiltrados.map(prod => (
-                    <button key={prod.id} onClick={() => agregarProducto(prod)}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "9px 10px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer", textAlign: "left", borderRadius: 6, transition: "background 0.1s", gap: 8 }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "none")}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "white", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{prod.nombre}</div>
-                        {prod.laboratorio && <div style={{ fontSize: 10, color: "#6b7280", marginTop: 1 }}>{prod.laboratorio}</div>}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                        <StockChip stock={prod.stock} />
-                        <span style={{ fontSize: 16, color: "#3b82f6" }}>+</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Panel derecho: items del pedido */}
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
-                <div style={{ padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5 }}>
-                    Lista del pedido
-                  </div>
-                </div>
-
-                <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px" }}>
-                  {itemsPedido.length === 0 ? (
-                    <div style={{ textAlign: "center", padding: "50px 20px", color: "#4b5563" }}>
-                      <div style={{ fontSize: 36, marginBottom: 10 }}>📦</div>
-                      <div style={{ fontWeight: 600, color: "#6b7280" }}>Sin productos aún</div>
-                      <div style={{ fontSize: 12, color: "#4b5563", marginTop: 4 }}>Buscá y agregá desde el panel izquierdo</div>
-                    </div>
-                  ) : itemsPedido.map(item => (
-                    <ItemPedido key={item.id} item={item}
-                      onCantidadChange={actualizarCantidad}
-                      onNotasChange={actualizarNotasItem}
-                      onEliminar={eliminarItem} />
-                  ))}
-                </div>
-
-                {/* Notas generales */}
-                <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                  <label style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4, display: "block", marginBottom: 5 }}>Notas del pedido (opcional)</label>
-                  <textarea value={notasPedido} onChange={e => setNotasPedido(e.target.value)} onBlur={guardarNotas}
-                    placeholder="Ej: urgente, confirmar precio antes de enviar…"
-                    rows={2}
-                    style={{ width: "100%", padding: "8px 12px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, color: "white", fontSize: 12, resize: "none", outline: "none", boxSizing: "border-box" }} />
-                </div>
-              </div>
-            </div>
-
-            {/* ── Footer con acciones ── */}
-            <div style={{ padding: "16px 24px", borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", gap: 10, flexShrink: 0, flexWrap: "wrap" }}>
-              <button onClick={() => exportarExcel(pedidoActivo)}
-                style={{ flex: 1, minWidth: 140, padding: "11px 16px", background: "linear-gradient(135deg, #15803d, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                📊 Exportar Excel
-              </button>
-              <button onClick={toggleEstado}
-                style={{ flex: 1, minWidth: 160, padding: "11px 16px", background: pedidoActivo.estado === "borrador" ? "linear-gradient(135deg,#1e40af,#3b82f6)" : "rgba(251,191,36,0.15)", border: pedidoActivo.estado === "enviado" ? "1px solid rgba(251,191,36,0.3)" : "none", borderRadius: 10, color: pedidoActivo.estado === "borrador" ? "white" : "#fbbf24", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                {pedidoActivo.estado === "borrador" ? "✅ Marcar como enviado" : "📝 Volver a borrador"}
-              </button>
-              <button onClick={cerrarPedido}
-                style={{ padding: "11px 20px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, color: "#9ca3af", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════════
-          MODAL — CONFIRMAR ELIMINAR
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* Modal confirmar eliminar */}
       {confirmEliminar && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 }}
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 }}
           onClick={() => setConfirmEliminar(null)}>
-          <div style={{ background: "#0f172a", borderRadius: 20, padding: "36px 32px", width: "100%", maxWidth: 360, border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
+          <div style={{ background: "white", borderRadius: 18, padding: "32px 28px", maxWidth: 380, width: "100%", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}
             onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>🗑️</div>
-            <h2 style={{ color: "white", margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>¿Eliminar pedido?</h2>
-            <p style={{ color: "#9ca3af", fontSize: 13, margin: "0 0 24px" }}>
-              Pedido a <b style={{ color: "white" }}>{confirmEliminar.nombre_proveedor}</b> con{" "}
-              <b style={{ color: "white" }}>{confirmEliminar.totalItems} productos</b>.{" "}
-              Esta acción no se puede deshacer.
+            <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700, color: "#0f172a" }}>¿Eliminar pedido?</h2>
+            <p style={{ color: "#64748b", fontSize: 14, margin: "0 0 24px" }}>
+              Pedido a <b style={{ color: "#0f172a" }}>{confirmEliminar.nombre_proveedor}</b> con{" "}
+              <b>{confirmEliminar.totalItems} productos</b>. Esta acción no se puede deshacer.
             </p>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setConfirmEliminar(null)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
-              <button onClick={eliminarPedido} disabled={eliminando} style={{ flex: 1, padding: "11px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: eliminando ? 0.6 : 1 }}>
+              <button onClick={() => setConfirmEliminar(null)}
+                style={{ flex: 1, padding: "11px", background: "#f1f5f9", border: "none", borderRadius: 10, color: "#374151", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+                Cancelar
+              </button>
+              <button onClick={eliminarPedido} disabled={eliminando}
+                style={{ flex: 1, padding: "11px", background: "#dc2626", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: eliminando ? 0.6 : 1 }}>
                 {eliminando ? "Eliminando…" : "Eliminar"}
               </button>
             </div>
           </div>
         </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Componente: fila de item en el pedido ──────────────────────────────────
-function ItemPedido({ item, onCantidadChange, onNotasChange, onEliminar }: {
-  item: any
-  onCantidadChange: (item: any, cant: number) => void
-  onNotasChange: (item: any, notas: string) => void
-  onEliminar: (id: number) => void
-}) {
-  const [cantidad, setCantidad] = useState(String(item.cantidad))
-  const [verNotas, setVerNotas] = useState(!!item.notas)
-  const [notas,    setNotas]    = useState(item.notas || "")
-
-  // Sincronizar si cambia desde afuera
-  useEffect(() => { setCantidad(String(item.cantidad)) }, [item.cantidad])
-
-  function handleBlurCantidad() {
-    const n = parseInt(cantidad, 10)
-    if (isNaN(n) || n < 1) { setCantidad(String(item.cantidad)); return }
-    if (n !== item.cantidad) onCantidadChange(item, n)
-  }
-
-  function sumar(delta: number) {
-    const n = Math.max(1, (parseInt(cantidad, 10) || 1) + delta)
-    setCantidad(String(n))
-    onCantidadChange(item, n)
-  }
-
-  const prod = item.productos || {}
-
-  return (
-    <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        {/* Info producto */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "white", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{prod.nombre || "—"}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
-            {prod.laboratorio && <span style={{ fontSize: 10, color: "#6b7280" }}>{prod.laboratorio}</span>}
-            <StockChip stock={prod.stock ?? 0} />
-          </div>
-        </div>
-
-        {/* Controles cantidad */}
-        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-          <button onClick={() => sumar(-1)}
-            style={{ width: 28, height: 28, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", borderRadius: 6, color: "white", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-          <input type="number" min={1} value={cantidad}
-            onChange={e => setCantidad(e.target.value)}
-            onBlur={handleBlurCantidad}
-            onKeyDown={e => { if (e.key === "Enter") { handleBlurCantidad(); (e.target as HTMLElement).blur() } }}
-            style={{ width: 52, textAlign: "center", padding: "5px 4px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, color: "white", fontSize: 13, fontWeight: 700, outline: "none" }} />
-          <button onClick={() => sumar(1)}
-            style={{ width: 28, height: 28, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", borderRadius: 6, color: "white", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
-        </div>
-
-        {/* Atajos rápidos */}
-        <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
-          {[5, 10, 20].map(n => (
-            <button key={n} onClick={() => { setCantidad(String(n)); onCantidadChange(item, n) }}
-              style={{ padding: "3px 7px", border: "1px solid rgba(255,255,255,0.08)", background: cantidad === String(n) ? "#3b82f6" : "transparent", borderRadius: 6, color: cantidad === String(n) ? "white" : "#6b7280", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
-              {n}
-            </button>
-          ))}
-        </div>
-
-        {/* Acciones */}
-        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-          <button onClick={() => setVerNotas(!verNotas)}
-            title="Notas" style={{ width: 28, height: 28, border: `1px solid ${verNotas ? "rgba(251,191,36,0.4)" : "rgba(255,255,255,0.08)"}`, background: verNotas ? "rgba(251,191,36,0.1)" : "transparent", borderRadius: 6, color: verNotas ? "#fbbf24" : "#6b7280", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            📝
-          </button>
-          <button onClick={() => onEliminar(item.id)}
-            style={{ width: 28, height: 28, border: "1px solid rgba(239,68,68,0.2)", background: "rgba(239,68,68,0.05)", borderRadius: 6, color: "#ef4444", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            ×
-          </button>
-        </div>
-      </div>
-
-      {/* Notas del item */}
-      {verNotas && (
-        <input value={notas} onChange={e => setNotas(e.target.value)}
-          onBlur={() => onNotasChange(item, notas)}
-          placeholder="Nota para este producto…"
-          style={{ marginTop: 8, width: "100%", padding: "6px 10px", background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.2)", borderRadius: 6, color: "#e2e8f0", fontSize: 12, outline: "none", boxSizing: "border-box" }} />
       )}
     </div>
   )
