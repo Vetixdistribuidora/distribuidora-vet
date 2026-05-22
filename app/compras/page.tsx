@@ -367,7 +367,6 @@ export default function ComprasPage() {
           producto_id: it.producto_id,
           cantidad,
           precio_unitario: precioUnit,
-          subtotal: subtotalItem,
           monto_iva: ivaItem,
           monto_flete: fleteItem,
         });
