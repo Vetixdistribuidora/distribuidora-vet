@@ -1101,12 +1101,22 @@ thead th:last-child{text-align:right}
       const { error: errorFI } = await supabase.from("facturas_impresion").insert([{ nro_factura: nroFacturaSave, cliente_id: Number(clienteId), venta_id: venta.id, datos: { nroFactura: nroFacturaSave, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro: esCuentaCorriente ? null : metodoCobro } }])
       if (errorFI) console.error("Error guardando factura_impresion:", errorFI)
       mostrarToast(esCuentaCorriente ? "✅ Guardado en cuenta corriente" : "✅ Venta confirmada", "ok")
-      // Imprimir recibo automáticamente solo para ventas directas (no cuenta corriente)
+      // Para ventas directas: registrar pago en pagos_cuenta_corriente (habilita reimpresión desde historial)
+      // y luego imprimir el recibo automáticamente
       if (!esCuentaCorriente) {
-        const carritoParaRecibo = carritoEfectivo
-        const clienteParaRecibo = clienteSeleccionado
+        let nroRecibo: string
+        const { data: nroRData, error: nroRError } = await supabase.rpc('get_next_nro_recibo')
+        if (nroRError || !nroRData) {
+          const { data: ultimoR } = await supabase.from("pagos_cuenta_corriente").select("nro_recibo").not("nro_recibo", "is", null).order("id", { ascending: false }).limit(1).maybeSingle()
+          let nextNum = 6520
+          if (ultimoR?.nro_recibo) { const m = ultimoR.nro_recibo.match(/(\d+)$/); if (m) nextNum = parseInt(m[1], 10) + 1 }
+          nroRecibo = "001-" + String(nextNum).padStart(6, "0")
+        } else {
+          nroRecibo = "001-" + String(Number(nroRData)).padStart(6, "0")
+        }
+        await supabase.from("pagos_cuenta_corriente").insert([{ cliente_id: Number(clienteId), venta_id: venta.id, monto: total, nota: metodoCobro || null, nro_recibo: nroRecibo }])
         const fechaHoy = new Date().toLocaleDateString("es-AR")
-        generarReciboHTMLEImprimir({ nroFactura: nroFacturaSave, clienteSeleccionado: clienteParaRecibo, carrito: carritoParaRecibo, subtotal, ivaNum, total, esCuentaCorriente: false, metodoCobro, fecha: fechaHoy })
+        generarReciboHTMLEImprimir({ nroFactura: nroFacturaSave, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente: false, metodoCobro, fecha: fechaHoy })
       }
       setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false)
       localStorage.removeItem("vetix_borrador")
