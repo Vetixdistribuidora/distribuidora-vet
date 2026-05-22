@@ -222,7 +222,7 @@ export default function Productos() {
   const [margen, setMargen] = useState("")
   const [stock, setStock] = useState("")
   const [categoria, setCategoria] = useState("")
-  const [editando, setEditando] = useState<any | null>(null)
+  const [editando, setEditando] = useState<Record<number, any>>({})
   const [archivo, setArchivo] = useState<File | null>(null)
   const [margenImportacion, setMargenImportacion] = useState("")
   const [fleteImportacion, setFleteImportacion] = useState("")
@@ -256,7 +256,7 @@ export default function Productos() {
   const [ajusteValor, setAjusteValor] = useState("")
   const [ajusteAplica, setAjusteAplica] = useState<"costos" | "precios">("costos")
   const [aplicandoPrecios, setAplicandoPrecios] = useState(false)
-  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
+  const [guardandoEdicion, setGuardandoEdicion] = useState<number | null>(null)
   const [guardandoAgregar, setGuardandoAgregar] = useState(false)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
@@ -408,7 +408,7 @@ export default function Productos() {
 
   // Avisar al layout que hay una edición/alta en curso → no recargar automáticamente
   useEffect(() => {
-    if (editando || mostrarAgregar) {
+    if (Object.keys(editando).length > 0 || mostrarAgregar) {
       sessionStorage.setItem("vetix_wip", "productos")
     } else {
       sessionStorage.removeItem("vetix_wip")
@@ -470,29 +470,30 @@ export default function Productos() {
     }
   }
 
-  async function guardarEdicion() {
-    if (!editando.nombre || !editando.costo || !editando.margen) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
-    setGuardandoEdicion(true)
+  async function guardarEdicion(productoId: number) {
+    const e = editando[productoId]
+    if (!e) return
+    if (!e.nombre || !e.costo || !e.margen) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
+    setGuardandoEdicion(productoId)
     try {
-      const costoNum = Number(editando.costo)
-      const ivaNum = Number(editando.margen)
-      const fleteNum = Number(editando.flete) || 0
+      const costoNum = Number(e.costo)
+      const ivaNum = Number(e.margen)
+      const fleteNum = Number(e.flete) || 0
       const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * 100) / 100
-      const { error } = await supabase.from("productos").update({ nombre: editando.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(editando.stock), categoria: editando.categoria || "", laboratorio: editando.laboratorio || "" }).eq("id", editando.id)
+      const { error } = await supabase.from("productos").update({ nombre: e.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(e.stock), categoria: e.categoria || "", laboratorio: e.laboratorio || "" }).eq("id", productoId)
       if (error) { mostrarToast("❌ " + error.message, "error"); return }
-      supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: editando.id }) // fire-and-forget
+      supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: productoId }) // fire-and-forget
       mostrarToast("✅ Producto actualizado", "ok")
-      // Actualización local instantánea — sin recargar toda la lista
       setProductos(prev => prev.map(p =>
-        p.id === editando.id
-          ? { ...p, nombre: editando.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(editando.stock), categoria: editando.categoria || "", laboratorio: editando.laboratorio || "" }
+        p.id === productoId
+          ? { ...p, nombre: e.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(e.stock), categoria: e.categoria || "", laboratorio: e.laboratorio || "" }
           : p
       ))
-      setEditando(null)
-    } catch (e: any) {
-      mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
+      setEditando(prev => { const n = { ...prev }; delete n[productoId]; return n })
+    } catch (err: any) {
+      mostrarToast("❌ Error: " + (err?.message || "error desconocido"), "error")
     } finally {
-      setGuardandoEdicion(false)
+      setGuardandoEdicion(null)
     }
   }
 
@@ -1028,9 +1029,10 @@ export default function Productos() {
         {productosVisibles.map(p => {
           const lotes = lotesMap[p.id] || []
           const lotesVisible = lotesAbiertos.has(p.id)
-          const costoNum = Number(editando?.costo || 0)
-          const margenNum = Number(editando?.margen || 0)
-          const fleteEditNum = Number(editando?.flete || 0)
+          const ep = editando[p.id]
+          const costoNum = Number(ep?.costo || 0)
+          const margenNum = Number(ep?.margen || 0)
+          const fleteEditNum = Number(ep?.flete || 0)
           const precioEstimado = Math.round(costoNum * (1 + margenNum / 100) * (1 + fleteEditNum / 100) * 100) / 100
 
           let badgeLote = null
@@ -1050,7 +1052,7 @@ export default function Productos() {
             <div key={p.id} style={{ background: "white", borderRadius: 10, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
 
               {/* MODO EDICIÓN */}
-              {editando?.id === p.id ? (
+              {p.id in editando ? (
                 <div style={{ background: "#0f172a", borderRadius: 10, padding: 18, border: "1px solid rgba(255,255,255,0.08)" }}>
                   <p style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>
                     Editando: <span style={{ color: "white" }}>{p.nombre}</span>
@@ -1065,8 +1067,8 @@ export default function Productos() {
                     ].map(f => (
                       <div key={f.key}>
                         <label style={labelStyle}>{f.label}</label>
-                        <input type={f.type} value={editando[f.key] ?? ""}
-                          onChange={e => setEditando({ ...editando, [f.key]: e.target.value })}
+                        <input type={f.type} value={ep?.[f.key] ?? ""}
+                          onChange={e => setEditando(prev => ({ ...prev, [p.id]: { ...prev[p.id], [f.key]: e.target.value } }))}
                           placeholder={f.key === "flete" ? "0" : ""}
                           style={inputStyle} />
                       </div>
@@ -1075,14 +1077,14 @@ export default function Productos() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
                     <div>
                       <label style={labelStyle}>Laboratorio</label>
-                      <input type="text" placeholder="Ej: Laboratorio Richmond" value={editando?.laboratorio ?? ""}
-                        onChange={e => setEditando({ ...editando, laboratorio: e.target.value })}
+                      <input type="text" placeholder="Ej: Laboratorio Richmond" value={ep?.laboratorio ?? ""}
+                        onChange={e => setEditando(prev => ({ ...prev, [p.id]: { ...prev[p.id], laboratorio: e.target.value } }))}
                         style={inputStyle} />
                     </div>
                     <div>
                       <label style={labelStyle}>Categoría</label>
-                      <input type="text" placeholder="Ej: Antiparasitarios" value={editando?.categoria ?? ""}
-                        onChange={e => setEditando({ ...editando, categoria: e.target.value })}
+                      <input type="text" placeholder="Ej: Antiparasitarios" value={ep?.categoria ?? ""}
+                        onChange={e => setEditando(prev => ({ ...prev, [p.id]: { ...prev[p.id], categoria: e.target.value } }))}
                         style={inputStyle} />
                     </div>
                   </div>
@@ -1092,8 +1094,8 @@ export default function Productos() {
                       <span style={{ color: "#6b7280", fontSize: 11 }}> = Neto × (1+IVA{margenNum > 0 ? " " + margenNum + "%" : ""}) × (1+Flete{fleteEditNum > 0 ? " " + fleteEditNum + "%" : ""})</span>
                     </span>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={guardarEdicion} style={{ background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>💾 Guardar</button>
-                      <button onClick={() => setEditando(null)} style={{ background: "rgba(255,255,255,0.07)", color: "#9ca3af", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
+                      <button onClick={() => guardarEdicion(p.id)} disabled={guardandoEdicion === p.id} style={{ background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardandoEdicion === p.id ? 0.6 : 1 }}>💾 Guardar</button>
+                      <button onClick={() => setEditando(prev => { const n = { ...prev }; delete n[p.id]; return n })} style={{ background: "rgba(255,255,255,0.07)", color: "#9ca3af", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>Cancelar</button>
                     </div>
                   </div>
                 </div>
@@ -1160,7 +1162,7 @@ export default function Productos() {
                         background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0",
                         borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600
                       }}>+ Lote</button>
-                      <button onClick={() => setEditando({ ...p })} style={{ background: "#f1f5f9", color: "#374151", border: "1px solid #e2e8f0", borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>✏️</button>
+                      <button onClick={() => setEditando(prev => ({ ...prev, [p.id]: { ...p } }))} style={{ background: p.id in editando ? "#eff6ff" : "#f1f5f9", color: p.id in editando ? "#2563eb" : "#374151", border: `1px solid ${p.id in editando ? "#bfdbfe" : "#e2e8f0"}`, borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>✏️</button>
                       <button onClick={() => setConfirmEliminar(p)} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>🗑️</button>
                     </div>
                   </div>
