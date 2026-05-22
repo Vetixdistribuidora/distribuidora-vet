@@ -169,14 +169,27 @@ export default function Pedidos() {
     }
   }
 
-  // Carga productos por separado — sin límite para traer todos
+  // Carga productos con paginación (igual que página de productos)
   async function cargarProductos() {
-    const { data } = await supabase
+    const primera = await supabase
       .from("productos")
       .select("id, nombre, laboratorio, categoria, stock")
       .order("nombre")
-      .limit(10000)
-    if (data && data.length > 0) setProductos(data)
+      .range(0, 999)
+    let todos = primera.data || []
+    let desde = 1000
+    while ((primera.data?.length ?? 0) === 1000) {
+      const { data } = await supabase
+        .from("productos")
+        .select("id, nombre, laboratorio, categoria, stock")
+        .order("nombre")
+        .range(desde, desde + 999)
+      if (!data?.length) break
+      todos = [...todos, ...data]
+      if (data.length < 1000) break
+      desde += 1000
+    }
+    if (todos.length > 0) setProductos(todos)
   }
 
   useEffect(() => { cargarProductos() }, [])
@@ -348,8 +361,11 @@ export default function Pedidos() {
 
   const terminoBusq = busqueda.trim().toLowerCase()
   const productosFiltrados = productos.filter(p => {
-    const match = !terminoBusq || p.nombre.toLowerCase().includes(terminoBusq) || (p.laboratorio || "").toLowerCase().includes(terminoBusq)
-    const matchLab = !filtroLab || p.laboratorio === filtroLab
+    const match = !terminoBusq ||
+      p.nombre.toLowerCase().includes(terminoBusq) ||
+      (p.laboratorio || "").toLowerCase().includes(terminoBusq)
+    // Si hay texto escrito, busca en todos los labs ignorando el chip seleccionado
+    const matchLab = terminoBusq ? true : (!filtroLab || p.laboratorio === filtroLab)
     const yaEsta = itemsPedido.some(i => i.producto_id === p.id)
     return match && matchLab && !yaEsta
   })
