@@ -242,8 +242,10 @@ export default function Pedidos() {
     setItemsPedido([])
     setBusqueda("")
     setFiltroLab("")
+    setPaginaProd(1)
     setVista("editor")
-    cargarProductos()   // siempre refresca al abrir
+    // Solo carga si todavía no hay productos en memoria
+    if (productos.length === 0) cargarProductos()
   }
 
   async function abrirEditor(p: any) {
@@ -253,8 +255,10 @@ export default function Pedidos() {
     setNotasPedido(p.notas || "")
     setBusqueda("")
     setFiltroLab("")
+    setPaginaProd(1)
     setVista("editor")
-    cargarProductos()   // siempre refresca al abrir
+    // Solo carga si todavía no hay productos en memoria
+    if (productos.length === 0) cargarProductos()
     await cargarItems(p.id)
   }
 
