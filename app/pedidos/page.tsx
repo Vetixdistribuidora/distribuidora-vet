@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useMemo, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -137,8 +137,10 @@ export default function Pedidos() {
   const provInputRef = useRef<HTMLInputElement>(null)
 
   // búsqueda de productos
-  const [busqueda,  setBusqueda]  = useState("")
-  const [filtroLab, setFiltroLab] = useState("")
+  const [busqueda,        setBusqueda]        = useState("")
+  const [busquedaDebounced, setBusquedaDebounced] = useState("")
+  const [filtroLab,       setFiltroLab]       = useState("")
+  const [paginaProd,      setPaginaProd]      = useState(1)
 
   // confirm eliminar
   const [confirmEliminar, setConfirmEliminar] = useState<any | null>(null)
@@ -147,6 +149,15 @@ export default function Pedidos() {
   function mostrarToast(m: string, t: "ok" | "error") {
     setToast({ mensaje: m, tipo: t }); setTimeout(() => setToast(null), 3200)
   }
+
+  // Debounce: actualiza la búsqueda efectiva 150ms después de que el usuario deja de tipear
+  useEffect(() => {
+    const t = setTimeout(() => setBusquedaDebounced(busqueda), 150)
+    return () => clearTimeout(t)
+  }, [busqueda])
+
+  // Resetear paginación al cambiar filtros
+  useEffect(() => { setPaginaProd(1) }, [busquedaDebounced, filtroLab])
 
   // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => { cargar() }, [])
@@ -359,16 +370,29 @@ export default function Pedidos() {
   // ── Filtros ────────────────────────────────────────────────────────────────
   const pedidosFiltrados = pedidos.filter(p => filtro === "todos" || p.estado === filtro)
 
-  const terminoBusq = busqueda.trim().toLowerCase()
-  const productosFiltrados = productos.filter(p => {
-    const match = !terminoBusq ||
-      p.nombre.toLowerCase().includes(terminoBusq) ||
-      (p.laboratorio || "").toLowerCase().includes(terminoBusq)
-    // Si hay texto escrito, busca en todos los labs ignorando el chip seleccionado
-    const matchLab = terminoBusq ? true : (!filtroLab || p.laboratorio === filtroLab)
-    const yaEsta = itemsPedido.some(i => i.producto_id === p.id)
-    return match && matchLab && !yaEsta
-  })
+  // Búsqueda multi-palabra con useMemo (igual que página de productos)
+  const productosFiltrados = useMemo(() => {
+    const termino = busquedaDebounced.trim().replace(/\s+/g, " ").toLowerCase()
+    const palabras = termino.split(" ").filter(Boolean)
+    return productos.filter(p => {
+      const yaEsta = itemsPedido.some(i => i.producto_id === p.id)
+      if (yaEsta) return false
+      if (palabras.length > 0) {
+        const campo = p.nombre.toLowerCase() + " " + (p.laboratorio || "").toLowerCase() + " " + (p.categoria || "").toLowerCase()
+        // Coincide si contiene la frase exacta O contiene todas las palabras individualmente
+        if (!campo.includes(termino) && !palabras.every((w: string) => campo.includes(w))) return false
+      }
+      // Chip de lab: solo aplica cuando no hay texto escrito
+      if (!termino && filtroLab && p.laboratorio !== filtroLab) return false
+      return true
+    })
+  }, [productos, busquedaDebounced, filtroLab, itemsPedido])
+
+  // Paginación virtual: muestra de a 60, expande con "Ver más"
+  const productosVisibles = useMemo(
+    () => productosFiltrados.slice(0, paginaProd * 60),
+    [productosFiltrados, paginaProd]
+  )
 
   const totalUnidadesPedido = itemsPedido.reduce((s, i) => s + i.cantidad, 0)
 
@@ -523,7 +547,7 @@ export default function Pedidos() {
                     Agregar productos
                   </label>
                   <span style={{ fontSize: 11, color: "#94a3b8" }}>
-                    {productosFiltrados.length} de {productos.length - itemsPedido.length} disponibles
+                    {productosFiltrados.length} resultado{productosFiltrados.length !== 1 ? "s" : ""}
                   </span>
                 </div>
 
@@ -565,23 +589,33 @@ export default function Pedidos() {
               <div style={{ flex: 1, overflowY: "auto" }}>
                 {productosFiltrados.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "40px 16px", color: "#94a3b8", fontSize: 13 }}>
-                    {busqueda || filtroLab ? "Sin resultados" : "Todos los productos ya están en el pedido"}
+                    {busqueda || filtroLab ? "Sin resultados para esa búsqueda" : "Todos los productos ya están en el pedido"}
                   </div>
-                ) : productosFiltrados.map(prod => (
-                  <button key={prod.id} onClick={() => agregarProducto(prod)}
-                    style={{ display: "flex", alignItems: "center", width: "100%", padding: "10px 18px", background: "none", border: "none", borderBottom: "1px solid #f8fafc", cursor: "pointer", textAlign: "left", gap: 10, transition: "background 0.1s" }}
-                    onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
-                    onMouseLeave={e => (e.currentTarget.style.background = "none")}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{prod.nombre}</div>
-                      {prod.laboratorio && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{prod.laboratorio}</div>}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                      <StockChip stock={prod.stock} />
-                      <span style={{ width: 24, height: 24, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: "#2563eb", fontSize: 16, fontWeight: 700 }}>+</span>
-                    </div>
-                  </button>
-                ))}
+                ) : (
+                  <>
+                    {productosVisibles.map(prod => (
+                      <button key={prod.id} onClick={() => agregarProducto(prod)}
+                        style={{ display: "flex", alignItems: "center", width: "100%", padding: "10px 18px", background: "none", border: "none", borderBottom: "1px solid #f8fafc", cursor: "pointer", textAlign: "left", gap: 10, transition: "background 0.1s" }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{prod.nombre}</div>
+                          {prod.laboratorio && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{prod.laboratorio}</div>}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                          <StockChip stock={prod.stock} />
+                          <span style={{ width: 24, height: 24, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: "#2563eb", fontSize: 16, fontWeight: 700 }}>+</span>
+                        </div>
+                      </button>
+                    ))}
+                    {productosFiltrados.length > productosVisibles.length && (
+                      <button onClick={() => setPaginaProd(p => p + 1)}
+                        style={{ width: "100%", padding: "12px", background: "none", border: "none", borderTop: "1px solid #f1f5f9", color: "#3b82f6", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                        Ver {Math.min(60, productosFiltrados.length - productosVisibles.length)} más de {productosFiltrados.length - productosVisibles.length} restantes ↓
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
 
