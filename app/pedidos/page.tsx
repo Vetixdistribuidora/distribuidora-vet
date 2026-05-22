@@ -213,6 +213,9 @@ export default function Pedidos() {
 
   const laboratorios = [...new Set(productos.map(p => p.laboratorio).filter(Boolean))].sort() as string[]
 
+  // Proveedores ya usados en pedidos anteriores (para autocomplete)
+  const proveedoresExistentes = [...new Set(pedidos.map(p => p.nombre_proveedor).filter(Boolean))].sort() as string[]
+
   // ── Crear pedido ───────────────────────────────────────────────────────────
   async function crearPedido() {
     const nombre = nombreProveedor.trim()
@@ -401,12 +404,12 @@ export default function Pedidos() {
 
   const totalUnidadesPedido = itemsPedido.reduce((s, i) => s + i.cantidad, 0)
 
-  // ── Labels para autocompletar proveedor desde labs existentes ──────────────
-  const labsSugeridos = laboratorios.filter(l =>
+  // ── Autocompletar proveedor desde pedidos anteriores ──────────────────────
+  const proveedoresSugeridos = proveedoresExistentes.filter(p =>
     nombreProveedor.length > 0 &&
-    l.toLowerCase().includes(nombreProveedor.toLowerCase()) &&
-    l.toLowerCase() !== nombreProveedor.toLowerCase()
-  ).slice(0, 5)
+    p.toLowerCase().includes(nombreProveedor.toLowerCase()) &&
+    p.toLowerCase() !== nombreProveedor.toLowerCase()
+  ).slice(0, 6)
 
   // ════════════════════════════════════════════════════════════════════════════
   // VISTA EDITOR
@@ -451,19 +454,19 @@ export default function Pedidos() {
                 color: "#0f172a", background: "#f8fafc", boxSizing: "border-box"
               }}
             />
-            {/* Autocomplete */}
-            {labsSugeridos.length > 0 && (
+            {/* Autocomplete desde pedidos anteriores */}
+            {proveedoresSugeridos.length > 0 && (
               <div style={{
                 position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 20,
                 background: "white", border: "1px solid #e2e8f0", borderRadius: 10,
                 boxShadow: "0 8px 24px rgba(0,0,0,0.1)", overflow: "hidden"
               }}>
-                {labsSugeridos.map(lab => (
-                  <button key={lab} onClick={() => setNombreProveedor(lab)}
+                {proveedoresSugeridos.map(prov => (
+                  <button key={prov} onClick={() => setNombreProveedor(prov)}
                     style={{ display: "block", width: "100%", padding: "10px 14px", background: "none", border: "none", color: "#374151", fontSize: 14, cursor: "pointer", textAlign: "left", borderBottom: "1px solid #f1f5f9" }}
                     onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
                     onMouseLeave={e => (e.currentTarget.style.background = "none")}>
-                    🏭 {lab}
+                    📦 {prov}
                   </button>
                 ))}
               </div>
