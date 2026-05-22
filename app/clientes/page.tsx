@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
-import { generarHTMLEImprimir } from "@/lib/impresion"
+import { generarHTMLEImprimir, imprimirReciboCC } from "@/lib/impresion"
 
 function fmt(num: number) {
   return "$" + Number(num).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -294,7 +294,14 @@ export default function Clientes() {
       if (monto >= ventaParaPagar.saldo) {
         await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaParaPagar.id)
       }
-      mostrarToast("✅ Pago registrado", "ok")
+      mostrarToast("✅ Pago registrado — Recibo " + nroRecibo, "ok")
+      // Imprimir recibo automáticamente
+      imprimirReciboCC(
+        { monto, nota: notaPago || null, nro_recibo: nroRecibo, fecha: new Date().toISOString() },
+        ventaParaPagar,
+        modalHistorial,
+        ventaParaPagar.saldo
+      )
       setModalPago(false); setVentaParaPagar(null)
       // Recargar solo el historial del cliente y recalcular deudas (sin refetch de toda la lista)
       await cargarVentasCliente(modalHistorial.id)
@@ -307,14 +314,8 @@ export default function Clientes() {
   }
 
   function imprimirRecibo(pago: any, venta: any) {
-    const logoUrl = window.location.origin + "/logo.png"
-    const fecha = pago.fecha ? fechaCorta(pago.fecha) : new Date().toLocaleDateString("es-AR")
     const saldoAnterior = Number(venta.total) - (Number(venta.totalPagado) - Number(pago.monto))
-    const saldoRestante = Math.max(0, saldoAnterior - Number(pago.monto))
-    const html = `<!DOCTYPE html><html><head><style>@page{margin:20px;size:A5}body{font-family:Arial;padding:20px;box-sizing:border-box}.logo{height:80px}.header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1971c2;padding-bottom:12px;margin-bottom:16px}.titulo{font-size:22px;font-weight:bold;color:#1971c2}.sub{font-size:12px;color:#555}.row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:14px}.pagado{background:#d3f9d8;border:1px solid #2f9e44;border-radius:6px;padding:10px;margin-top:14px;font-size:16px;font-weight:bold;text-align:center;color:#2f9e44}.saldo{background:#fff3cd;border:1px solid #e67700;border-radius:6px;padding:10px;margin-top:8px;font-size:13px;font-weight:bold;color:#e67700}.footer{margin-top:40px;font-size:11px;color:#aaa;text-align:center;border-top:1px solid #eee;padding-top:10px}</style></head><body><div class="header"><img src="${logoUrl}" class="logo"/><div style="text-align:right"><div class="titulo">RECIBO DE PAGO</div><div class="sub">Fecha: ${fecha}</div></div></div><div class="row"><span><b>Cliente:</b></span><span>${modalHistorial.nombre} ${modalHistorial.apellido}</span></div><div class="row"><span><b>CUIT:</b></span><span>${modalHistorial.cuit || "-"}</span></div><div class="row"><span><b>Tel:</b></span><span>${modalHistorial.telefono || "-"}</span></div><div class="row"><span><b>Factura N°:</b></span><span>${venta.nro_factura || venta.id}</span></div><div class="row"><span><b>Total factura:</b></span><span>${fmt(Number(venta.total))}</span></div><div class="row"><span><b>Saldo anterior:</b></span><span>${fmt(saldoAnterior)}</span></div>${pago.nota ? `<div class="row"><span><b>Nota:</b></span><span>${pago.nota}</span></div>` : ""}<div class="pagado">Monto pagado: ${fmt(Number(pago.monto))}</div><div class="saldo">${saldoRestante > 0 ? "Saldo restante: " + fmt(saldoRestante) : "✓ Factura saldada completamente"}</div><div class="footer">VETIX Distribuidora — Almirante Brown 620 — Tel: 2604518157</div></body></html>`
-    const w = window.open("", "_blank")
-    if (!w) { alert("Habilitá ventanas emergentes"); return }
-    w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500)
+    imprimirReciboCC(pago, venta, modalHistorial, saldoAnterior)
   }
 
   async function reimprimirFactura(venta: any) {

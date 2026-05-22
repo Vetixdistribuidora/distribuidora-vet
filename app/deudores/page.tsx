@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { imprimirReciboCobroMasivo } from "@/lib/impresion"
 
 function fmt(num: number) {
   return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -183,6 +184,15 @@ export default function Deudores() {
       const totalCobrado = afectadas.reduce((s: number, f: any) => s + f.pago, 0)
       const saldadas = afectadas.filter((f: any) => f.resultado === "pagado").length
       const parciales = afectadas.filter((f: any) => f.resultado === "parcial").length
+
+      // Imprimir recibo automáticamente
+      imprimirReciboCobroMasivo(
+        totalCobrado,
+        nroReciboBase,
+        afectadas,
+        { nombre: modalCobro.nombre, apellido: modalCobro.apellido, telefono: modalCobro.telefono },
+        notaCobro.trim() || undefined
+      )
 
       setExitoCobro(
         `✅ ${fmt(totalCobrado)} cobrado.` +
