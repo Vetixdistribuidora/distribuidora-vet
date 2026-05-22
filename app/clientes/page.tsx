@@ -214,7 +214,7 @@ export default function Clientes() {
     // 2 queries batch en lugar de N×2 (two-step para detalle: sin FK declarada)
     const [detallesRaw, pagosRes] = await Promise.all([
       ventaIds.length ? supabase.from("detalle_ventas").select("venta_id, producto_id, cantidad, precio, bonificacion").in("venta_id", ventaIds) : { data: [] },
-      ventaIds.length ? supabase.from("pagos_cuenta_corriente").select("id, venta_id, monto, fecha, nota").in("venta_id", ventaIds).order("fecha", { ascending: true }) : { data: [] }
+      ventaIds.length ? supabase.from("pagos_cuenta_corriente").select("id, venta_id, monto, fecha, nota, nro_recibo").in("venta_id", ventaIds).order("fecha", { ascending: true }) : { data: [] }
     ])
     // Resolver nombres de productos en un solo query adicional
     const prodIds = [...new Set((detallesRaw.data || []).map((d: any) => d.producto_id))]
