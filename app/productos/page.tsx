@@ -249,6 +249,8 @@ export default function Productos() {
   const [modalLote, setModalLote] = useState<{ productoId: number, productoNombre: string } | null>(null)
   const [guardandoLote, setGuardandoLote] = useState(false)
   const [confirmEliminarLote, setConfirmEliminarLote] = useState<any | null>(null)
+  const [editandoCantidadLote, setEditandoCantidadLote] = useState<{ id: number, valor: string } | null>(null)
+  const [guardandoCantidadLote, setGuardandoCantidadLote] = useState(false)
   const [modalPrecios, setModalPrecios] = useState(false)
   const [ajusteTipo, setAjusteTipo] = useState<"porcentaje" | "pesos" | "recalcular">("porcentaje")
   const [ajusteValor, setAjusteValor] = useState("")
@@ -734,6 +736,35 @@ export default function Productos() {
     }
   }
 
+  async function guardarCantidadLote(lote: any, nuevaCantidadStr: string) {
+    const nuevaCantidad = parseInt(nuevaCantidadStr, 10)
+    if (isNaN(nuevaCantidad) || nuevaCantidad < 0) { mostrarToast("⚠️ Cantidad inválida", "error"); setEditandoCantidadLote(null); return }
+    if (nuevaCantidad === lote.cantidad) { setEditandoCantidadLote(null); return }
+    setGuardandoCantidadLote(true)
+    try {
+      const diff = nuevaCantidad - lote.cantidad
+      // 1. Actualizar cantidad del lote
+      const { error } = await supabase.from("lotes").update({ cantidad: nuevaCantidad }).eq("id", lote.id)
+      if (error) { mostrarToast("❌ " + error.message, "error"); return }
+      // 2. Leer stock fresco y ajustar con la diferencia
+      const { data: prodActual } = await supabase.from("productos").select("stock").eq("id", lote.producto_id).single()
+      const nuevoStock = Math.max(0, (prodActual?.stock ?? 0) + diff)
+      await supabase.from("productos").update({ stock: nuevoStock }).eq("id", lote.producto_id)
+      // 3. Actualizar estado local inmediatamente
+      setProductos(prev => prev.map(p => p.id === lote.producto_id ? { ...p, stock: nuevoStock } : p))
+      setLotesMap(prev => ({
+        ...prev,
+        [lote.producto_id]: (prev[lote.producto_id] || []).map((l: any) => l.id === lote.id ? { ...l, cantidad: nuevaCantidad } : l)
+      }))
+      setEditandoCantidadLote(null)
+      mostrarToast("✅ Cantidad actualizada", "ok")
+    } catch (e: any) {
+      mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
+    } finally {
+      setGuardandoCantidadLote(false)
+    }
+  }
+
   function toggleLotes(id: number) {
     setLotesAbiertos(prev => {
       const nuevo = new Set(prev)
@@ -1162,7 +1193,30 @@ export default function Productos() {
                                     <td style={{ padding: "4px 8px" }}>
                                       <span style={{ background: est.bg, color: est.color, padding: "1px 7px", borderRadius: 5, fontWeight: 700, fontSize: 11 }}>{est.label}</span>
                                     </td>
-                                    <td style={{ padding: "4px 8px", color: "#374151" }}>{l.cantidad} u.</td>
+                                    <td style={{ padding: "4px 8px" }}>
+                                      {editandoCantidadLote?.id === l.id ? (
+                                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                          <input
+                                            type="number" min={0} autoFocus
+                                            value={editandoCantidadLote.valor}
+                                            onChange={e => setEditandoCantidadLote({ id: l.id, valor: e.target.value })}
+                                            onKeyDown={e => {
+                                              if (e.key === "Enter") guardarCantidadLote(l, editandoCantidadLote.valor)
+                                              if (e.key === "Escape") setEditandoCantidadLote(null)
+                                            }}
+                                            onBlur={() => guardarCantidadLote(l, editandoCantidadLote.valor)}
+                                            disabled={guardandoCantidadLote}
+                                            style={{ width: 64, padding: "3px 6px", borderRadius: 6, border: "1px solid #3b82f6", fontSize: 12, outline: "none", textAlign: "center" }}
+                                          />
+                                        </div>
+                                      ) : (
+                                        <span
+                                          onClick={() => setEditandoCantidadLote({ id: l.id, valor: String(l.cantidad) })}
+                                          title="Clic para editar"
+                                          style={{ color: "#374151", cursor: "pointer", borderBottom: "1px dashed #94a3b8", paddingBottom: 1 }}
+                                        >{l.cantidad} u.</span>
+                                      )}
+                                    </td>
                                     <td style={{ textAlign: "right" }}>
                                       <button onClick={() => setConfirmEliminarLote(l)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 13 }}>🗑️</button>
                                     </td>
