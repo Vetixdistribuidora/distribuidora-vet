@@ -154,22 +154,31 @@ export default function Pedidos() {
   async function cargar() {
     setCargando(true)
     try {
-      const [{ data: peds }, { data: prods }, { data: provs }] = await Promise.all([
+      const [resPeds, resProvs] = await Promise.all([
         supabase.from("pedidos").select("*, pedidos_items(id, cantidad)").order("created_at", { ascending: false }),
-        supabase.from("productos").select("id, nombre, laboratorio, categoria, stock").order("nombre"),
         supabase.from("proveedores").select("id, nombre").order("nombre"),
       ])
-      setPedidos((peds || []).map(p => ({
+      setPedidos((resPeds.data || []).map((p: any) => ({
         ...p,
         totalItems:    (p.pedidos_items || []).length,
         totalUnidades: (p.pedidos_items || []).reduce((s: number, i: any) => s + i.cantidad, 0),
       })))
-      setProductos(prods || [])
-      setProveedores(provs || [])
+      setProveedores(resProvs.data || [])
     } finally {
       setCargando(false)
     }
   }
+
+  // Carga productos por separado (siempre funciona aunque falle pedidos)
+  async function cargarProductos() {
+    const { data } = await supabase
+      .from("productos")
+      .select("id, nombre, laboratorio, categoria, stock")
+      .order("nombre")
+    if (data && data.length > 0) setProductos(data)
+  }
+
+  useEffect(() => { cargarProductos() }, [])
 
   const laboratorios = [...new Set(productos.map(p => p.laboratorio).filter(Boolean))].sort() as string[]
 
@@ -209,6 +218,7 @@ export default function Pedidos() {
     setBusqueda("")
     setFiltroLab("")
     setVista("editor")
+    cargarProductos()   // siempre refresca al abrir
   }
 
   async function abrirEditor(p: any) {
@@ -219,6 +229,7 @@ export default function Pedidos() {
     setBusqueda("")
     setFiltroLab("")
     setVista("editor")
+    cargarProductos()   // siempre refresca al abrir
     await cargarItems(p.id)
   }
 
@@ -490,9 +501,14 @@ export default function Pedidos() {
 
               {/* Buscador estilo ventas/productos */}
               <div style={{ padding: "16px 18px", borderBottom: "1px solid #f1f5f9" }}>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
-                  Agregar productos al pedido
-                </label>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    Agregar productos
+                  </label>
+                  <span style={{ fontSize: 11, color: "#94a3b8" }}>
+                    {productosFiltrados.length} de {productos.length - itemsPedido.length} disponibles
+                  </span>
+                </div>
 
                 {/* Input de búsqueda */}
                 <div style={{ position: "relative", marginBottom: 10 }}>
@@ -511,18 +527,20 @@ export default function Pedidos() {
                   )}
                 </div>
 
-                {/* Chips de laboratorio */}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                  <button onClick={() => setFiltroLab("")}
-                    style={{ padding: "4px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, background: filtroLab === "" ? "#1e40af" : "#f1f5f9", color: filtroLab === "" ? "white" : "#64748b" }}>
-                    Todos
-                  </button>
-                  {laboratorios.map(lab => (
-                    <button key={lab} onClick={() => setFiltroLab(filtroLab === lab ? "" : lab)}
-                      style={{ padding: "4px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: filtroLab === lab ? "#1e40af" : "#f1f5f9", color: filtroLab === lab ? "white" : "#64748b", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {lab}
+                {/* Chips de laboratorio — scroll horizontal */}
+                <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+                  <div style={{ display: "flex", gap: 5, width: "max-content" }}>
+                    <button onClick={() => setFiltroLab("")}
+                      style={{ padding: "4px 11px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", background: filtroLab === "" ? "#1e40af" : "#f1f5f9", color: filtroLab === "" ? "white" : "#64748b" }}>
+                      Todos
                     </button>
-                  ))}
+                    {laboratorios.map(lab => (
+                      <button key={lab} onClick={() => setFiltroLab(filtroLab === lab ? "" : lab)}
+                        style={{ padding: "4px 11px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", background: filtroLab === lab ? "#1e40af" : "#f1f5f9", color: filtroLab === lab ? "white" : "#64748b" }}>
+                        {lab}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
