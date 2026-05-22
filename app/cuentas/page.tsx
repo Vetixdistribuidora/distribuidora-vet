@@ -476,6 +476,15 @@ export default function CuentasCorrientes() {
                                   ))}
                                 </div>
                               )}
+                              {/* Fallback: cobrada sin registros de pago (ventas anteriores al sistema de recibos) */}
+                              {cobrada && v.pagos.length === 0 && (
+                                <button onClick={() => imprimirRecibo(
+                                  { monto: v.total, nota: null, nro_recibo: undefined, fecha: v.fecha },
+                                  { ...v, totalPagado: v.total }
+                                )} style={{ marginTop: 8, background: "rgba(74,222,128,0.1)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                                  🖨️ Recibo
+                                </button>
+                              )}
                             </div>
                           )
                         })}

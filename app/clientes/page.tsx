@@ -607,7 +607,16 @@ export default function Clientes() {
                           ))}
                         </div>
                       )}
-                      <button onClick={() => reimprimirFactura(v)} style={{ marginTop: 10, background: "rgba(59,130,246,0.15)", color: "#3b82f6", border: "none", borderRadius: 7, padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      {/* Fallback para ventas cobradas sin registro de pago (ventas anteriores al sistema de recibos) */}
+                      {v.estado === "cobrada" && (!v.pagos || v.pagos.length === 0) && (
+                        <button onClick={() => imprimirReciboCC(
+                          { monto: Number(v.total), nota: null, nro_recibo: undefined, fecha: v.fecha },
+                          v, modalHistorial, Number(v.total)
+                        )} style={{ marginTop: 8, background: "rgba(74,222,128,0.1)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                          🖨️ Recibo
+                        </button>
+                      )}
+                      <button onClick={() => reimprimirFactura(v)} style={{ marginTop: 10, marginLeft: v.estado === "cobrada" && (!v.pagos || v.pagos.length === 0) ? 6 : 0, background: "rgba(59,130,246,0.15)", color: "#3b82f6", border: "none", borderRadius: 7, padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                         🖨️ Presupuesto
                       </button>
                     </div>
