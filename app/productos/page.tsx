@@ -1200,13 +1200,14 @@ export default function Productos() {
                                         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                                           <input
                                             type="number" min={0} autoFocus
-                                            value={editandoCantidadLote.valor}
+                                            value={editandoCantidadLote!.valor}
                                             onChange={e => setEditandoCantidadLote({ id: l.id, valor: e.target.value })}
                                             onKeyDown={e => {
-                                              if (e.key === "Enter") guardarCantidadLote(l, editandoCantidadLote.valor)
+                                              const val = editandoCantidadLote?.valor ?? ""
+                                              if (e.key === "Enter") guardarCantidadLote(l, val)
                                               if (e.key === "Escape") setEditandoCantidadLote(null)
                                             }}
-                                            onBlur={() => guardarCantidadLote(l, editandoCantidadLote.valor)}
+                                            onBlur={() => { const val = editandoCantidadLote?.valor ?? ""; guardarCantidadLote(l, val) }}
                                             disabled={guardandoCantidadLote}
                                             style={{ width: 64, padding: "3px 6px", borderRadius: 6, border: "1px solid #3b82f6", fontSize: 12, outline: "none", textAlign: "center" }}
                                           />
