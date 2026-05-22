@@ -180,13 +180,17 @@ export default function Pedidos() {
 
   // ── Crear pedido ───────────────────────────────────────────────────────────
   async function crearPedido() {
-    if (!proveedorSelec) { mostrarToast("Seleccioná un proveedor de la lista", "error"); return }
+    const nombre = proveedorSelec?.nombre || busqProveedor.trim()
+    if (!nombre) { mostrarToast("Ingresá el nombre del proveedor", "error"); return }
     setCreando(true)
     try {
       const { data, error } = await supabase.from("pedidos")
-        .insert({ nombre_proveedor: proveedorSelec.nombre, estado: "borrador" })
+        .insert({ nombre_proveedor: nombre, estado: "borrador" })
         .select().single()
-      if (error || !data) { mostrarToast("Error al crear pedido", "error"); return }
+      if (error || !data) {
+        mostrarToast(error?.message || "Error al crear pedido", "error")
+        return
+      }
       await cargar()
       abrirEditor({ ...data, pedidos_items: [], totalItems: 0, totalUnidades: 0 })
     } finally {
@@ -453,7 +457,7 @@ export default function Pedidos() {
           {/* Botón crear (nuevo) */}
           {esNuevo && (
             <button onClick={crearPedido} disabled={creando || !proveedorSelec}
-              style={{ padding: "10px 22px", background: "linear-gradient(135deg,#1e40af,#3b82f6)", border: "none", borderRadius: 10, color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: creando || !proveedorSelec ? 0.5 : 1, flexShrink: 0, alignSelf: "flex-end" }}>
+              style={{ padding: "10px 22px", background: "linear-gradient(135deg,#1e40af,#3b82f6)", border: "none", borderRadius: 10, color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: creando || !busqProveedor.trim() ? 0.5 : 1, flexShrink: 0, alignSelf: "flex-end" }}>
               {creando ? "Creando…" : "Crear pedido →"}
             </button>
           )}
