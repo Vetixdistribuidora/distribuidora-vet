@@ -40,6 +40,7 @@ export default function Deudores() {
   const [procesando, setProcesando] = useState(false)
   const [errorCobro, setErrorCobro] = useState<string | null>(null)
   const [exitoCobro, setExitoCobro] = useState<string | null>(null)
+  const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string } | null>(null)
 
   useEffect(() => { cargarDeudores() }, [])
 
@@ -106,6 +107,7 @@ export default function Deudores() {
     setNotaCobro("")
     setErrorCobro(null)
     setExitoCobro(null)
+    setUltimoRecibo(null)
   }
 
   function calcularPreview(facturas: any[], monto: number) {
@@ -184,6 +186,16 @@ export default function Deudores() {
       const totalCobrado = afectadas.reduce((s: number, f: any) => s + f.pago, 0)
       const saldadas = afectadas.filter((f: any) => f.resultado === "pagado").length
       const parciales = afectadas.filter((f: any) => f.resultado === "parcial").length
+
+      // Guardar datos del recibo para poder reimprimir
+      const datosRecibo = {
+        totalCobrado,
+        nroReciboBase,
+        afectadas,
+        cliente: { nombre: modalCobro.nombre, apellido: modalCobro.apellido, telefono: modalCobro.telefono },
+        nota: notaCobro.trim() || undefined
+      }
+      setUltimoRecibo(datosRecibo)
 
       // Imprimir recibo automáticamente
       imprimirReciboCobroMasivo(
@@ -381,8 +393,15 @@ export default function Deudores() {
 
             {/* Éxito */}
             {exitoCobro && (
-              <div style={{ background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", color: "#4ade80", fontSize: 13, padding: "10px 14px", borderRadius: 8, marginBottom: 16 }}>
-                {exitoCobro}
+              <div style={{ background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: 8, marginBottom: 16, overflow: "hidden" }}>
+                <div style={{ color: "#4ade80", fontSize: 13, padding: "10px 14px" }}>{exitoCobro}</div>
+                {ultimoRecibo && (
+                  <button
+                    onClick={() => imprimirReciboCobroMasivo(ultimoRecibo.totalCobrado, ultimoRecibo.nroReciboBase, ultimoRecibo.afectadas, ultimoRecibo.cliente, ultimoRecibo.nota)}
+                    style={{ width: "100%", padding: "8px 14px", background: "rgba(34,197,94,0.15)", border: "none", borderTop: "1px solid rgba(34,197,94,0.2)", color: "#4ade80", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "center" }}>
+                    🖨️ Reimprimir recibo
+                  </button>
+                )}
               </div>
             )}
 

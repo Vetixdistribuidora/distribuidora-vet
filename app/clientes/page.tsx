@@ -592,8 +592,23 @@ export default function Clientes() {
                       {(v.detalle_ventas || []).map((d: any, i: number) => (
                         <div key={i} style={{ fontSize: 12, color: "#9ca3af" }}>· {d.productos?.nombre} × {d.cantidad}</div>
                       ))}
+                      {v.pagos && v.pagos.length > 0 && (
+                        <div style={{ marginTop: 8, background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "6px 10px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 5, textTransform: "uppercase", letterSpacing: 0.4 }}>Recibos de pago:</div>
+                          {v.pagos.map((p: any, i: number) => (
+                            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "3px 0", borderBottom: i < v.pagos.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+                              <span style={{ color: "#9ca3af", flex: 1, minWidth: 0 }}>
+                                {fechaCorta(p.fecha)} — <b style={{ color: "#4ade80" }}>{fmt(p.monto)}</b>
+                                {p.nro_recibo && <span style={{ color: "#6b7280" }}> · {p.nro_recibo}</span>}
+                                {p.nota ? <span style={{ color: "#6b7280" }}> ({p.nota})</span> : ""}
+                              </span>
+                              <button onClick={() => imprimirRecibo(p, v)} style={{ background: "rgba(59,130,246,0.15)", color: "#3b82f6", border: "none", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600, flexShrink: 0, marginLeft: 8 }}>🖨️ Recibo</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       <button onClick={() => reimprimirFactura(v)} style={{ marginTop: 10, background: "rgba(59,130,246,0.15)", color: "#3b82f6", border: "none", borderRadius: 7, padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                        🖨️ Reimprimir
+                        🖨️ Presupuesto
                       </button>
                     </div>
                   ))}
