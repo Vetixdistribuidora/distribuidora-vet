@@ -169,12 +169,13 @@ export default function Pedidos() {
     }
   }
 
-  // Carga productos por separado (siempre funciona aunque falle pedidos)
+  // Carga productos por separado — sin límite para traer todos
   async function cargarProductos() {
     const { data } = await supabase
       .from("productos")
       .select("id, nombre, laboratorio, categoria, stock")
       .order("nombre")
+      .limit(10000)
     if (data && data.length > 0) setProductos(data)
   }
 
@@ -351,7 +352,7 @@ export default function Pedidos() {
     const matchLab = !filtroLab || p.laboratorio === filtroLab
     const yaEsta = itemsPedido.some(i => i.producto_id === p.id)
     return match && matchLab && !yaEsta
-  }).slice(0, 60)
+  })
 
   const totalUnidadesPedido = itemsPedido.reduce((s, i) => s + i.cantidad, 0)
 
