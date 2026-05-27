@@ -9,6 +9,7 @@ interface Producto { id: number; nombre: string; stock: number; laboratorio?: st
 interface ItemForm {
   producto_id: number; nombre: string;
   cantidad: string; precio_unitario: string; fecha_vencimiento: string;
+  bonificadas: string;   // unidades gratis (5+1, 3+1, etc.) — no se cobran pero entran al stock
 }
 interface Compra {
   id: number; proveedor_id: number; fecha: string; numero_remito: string | null;
@@ -254,7 +255,7 @@ export default function ComprasPage() {
 
   function agregarItem(prod: Producto) {
     if (items.find(i => i.producto_id === prod.id)) return;
-    setItems([...items, { producto_id: prod.id, nombre: prod.nombre, cantidad: "1", precio_unitario: "", fecha_vencimiento: "" }]);
+    setItems([...items, { producto_id: prod.id, nombre: prod.nombre, cantidad: "1", precio_unitario: "", fecha_vencimiento: "", bonificadas: "" }]);
     setBusquedaProducto(""); setProductoDropdown(false); setProductoIndiceCompras(-1);
   }
 
@@ -356,8 +357,10 @@ export default function ComprasPage() {
     try {
       await Promise.all(items.map(async (it) => {
         const cantidad = parseFloat(it.cantidad) || 1;
+        const bonificadas = parseInt(it.bonificadas || "0") || 0;
+        const cantidadTotal = cantidad + bonificadas;   // unidades reales que entran al stock
         const precioUnit = parseFloat(it.precio_unitario) || 0;
-        const subtotalItem = cantidad * precioUnit;
+        const subtotalItem = cantidad * precioUnit;     // precio solo sobre las unidades pagadas
         const proporcion = subtotalBase > 0 ? subtotalItem / subtotalBase : 0;
         const ivaItem = form.incluye_iva ? Math.round(montoIva * proporcion * 100) / 100 : 0;
         const fleteItem = form.incluye_flete ? Math.round(montoFlete * proporcion * 100) / 100 : 0;
@@ -365,7 +368,7 @@ export default function ComprasPage() {
         const { error: errorDetalle } = await supabase.from("compras_detalle").insert({
           compra_id: compra.id,
           producto_id: it.producto_id,
-          cantidad,
+          cantidad: cantidadTotal,       // guardamos el total real recibido
           precio_unitario: precioUnit,
           monto_iva: ivaItem,
           monto_flete: fleteItem,
@@ -374,14 +377,14 @@ export default function ComprasPage() {
 
         await supabase.from("lotes").insert({
           producto_id: it.producto_id,
-          cantidad,
+          cantidad: cantidadTotal,       // lote con todas las unidades recibidas
           fecha_vencimiento: it.fecha_vencimiento || null,
           compra_id: compra.id,
           nro_remito: form.numero_remito || null,
         });
 
         const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single();
-        await supabase.from("productos").update({ stock: (prod?.stock ?? 0) + cantidad }).eq("id", it.producto_id);
+        await supabase.from("productos").update({ stock: (prod?.stock ?? 0) + cantidadTotal }).eq("id", it.producto_id);
       }));
     } catch (errItems: any) {
       // Cleanup: borrar todo lo generado para esta compra
@@ -912,8 +915,8 @@ export default function ComprasPage() {
                       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680 }}>
                         <thead>
                           <tr style={{ background: "rgba(255,255,255,0.04)" }}>
-                            {["Producto", "Cant.", "P. unitario", "Venc.", "Subtotal", "IVA", "Flete", "Total ítem", ""].map((h, i) => (
-                              <th key={i} style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, color: "#6b7280", textAlign: i >= 4 && i <= 7 ? "right" : i === 8 ? "center" : "left", letterSpacing: 0.5, textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                            {["Producto", "Cant.", "Bon. 🎁", "P. unitario", "Venc.", "Subtotal", "IVA", "Flete", "Total ítem", ""].map((h, i) => (
+                              <th key={i} style={{ padding: "10px 10px", fontSize: 11, fontWeight: 700, color: i === 2 ? "#4ade80" : "#6b7280", textAlign: i >= 5 && i <= 8 ? "right" : i === 9 ? "center" : "left", letterSpacing: 0.5, textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                             ))}
                           </tr>
                         </thead>
@@ -925,6 +928,22 @@ export default function ComprasPage() {
                                 <input type="number" min="1" value={it.cantidad}
                                   onChange={e => setItems(items.map((item, i) => i === idx ? { ...item, cantidad: e.target.value } : item))}
                                   style={{ width: 62, padding: "5px 8px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", textAlign: "center" }} />
+                              </td>
+                              {/* Bonificadas: unidades gratis que entran al stock sin costo */}
+                              <td style={{ padding: "9px 10px" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                  <span style={{ color: "#4ade80", fontSize: 11, fontWeight: 700 }}>+</span>
+                                  <input type="number" min="0" value={it.bonificadas ?? ""}
+                                    onChange={e => setItems(items.map((item, i) => i === idx ? { ...item, bonificadas: e.target.value } : item))}
+                                    placeholder="0"
+                                    title="Unidades bonificadas (gratis)"
+                                    style={{ width: 52, padding: "5px 6px", background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 8, color: "#4ade80", fontSize: 13, outline: "none", textAlign: "center" }} />
+                                </div>
+                                {(parseInt(it.bonificadas || "0") || 0) > 0 && (
+                                  <div style={{ fontSize: 10, color: "#4ade80", marginTop: 2, textAlign: "center", fontWeight: 700 }}>
+                                    {it.cantidad}+{it.bonificadas}
+                                  </div>
+                                )}
                               </td>
                               <td style={{ padding: "9px 10px" }}>
                                 <input type="number" min="0" step="0.01" value={it.precio_unitario}
