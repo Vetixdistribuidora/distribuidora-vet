@@ -678,6 +678,8 @@ export default function MermasPage() {
                     )}
                   </div>
                 )}
+              </div>
+
               {/* Indicador stock */}
               {form.producto_nombre.trim() && (
                 <div style={{
