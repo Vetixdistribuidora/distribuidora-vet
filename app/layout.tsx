@@ -87,6 +87,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/reportes")) return "Reportes"
     if (pathname.startsWith("/deudores")) return "Deudores"
     if (pathname.startsWith("/pedidos")) return "Pedidos"
+    if (pathname.startsWith("/cheques")) return "Cheques"
     if (pathname.startsWith("/configuracion")) return "Configuración"
     if (pathname.startsWith("/admin")) return "Panel Admin"
     return ""
@@ -103,6 +104,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/reportes")) return "📊"
     if (pathname.startsWith("/deudores")) return "⚠️"
     if (pathname.startsWith("/pedidos")) return "📋"
+    if (pathname.startsWith("/cheques")) return "🏦"
     if (pathname.startsWith("/configuracion")) return "⚙️"
     if (pathname.startsWith("/admin")) return "⭐"
     return ""
@@ -294,6 +296,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <path d="M9 12h6M9 16h4" />
             </svg>
             Pedidos
+          </Link>
+          <Link href="/cheques" style={getItemStyle("/cheques")} onClick={() => setSidebarAbierto(false)}>
+            <svg style={iconStyle("#34d399", pathname.startsWith("/cheques"))} fill="none" strokeWidth="2" viewBox="0 0 24 24">
+              <rect x="2" y="5" width="20" height="14" rx="2" />
+              <path d="M2 10h20" />
+              <path d="M6 15h4M14 15h2" />
+            </svg>
+            Cheques
           </Link>
           <Link href="/configuracion" style={getItemStyle("/configuracion")} onClick={() => setSidebarAbierto(false)}>
             <svg style={iconStyle("#94a3b8", pathname.startsWith("/configuracion"))} fill="none" strokeWidth="2" viewBox="0 0 24 24">
