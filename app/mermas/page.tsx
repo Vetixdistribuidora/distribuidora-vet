@@ -116,14 +116,33 @@ export default function MermasPage() {
   // ── Carga inicial ────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    Promise.all([
-      supabase.from("mermas").select("*").order("fecha", { ascending: false }).order("created_at", { ascending: false }),
-      supabase.from("productos").select("id, nombre, costo, precio_venta").order("nombre").range(0, 999),
-    ]).then(([mRes, pRes]) => {
+    async function cargar() {
+      // Cargar mermas y primera página de productos en paralelo
+      const [mRes, primeraPage] = await Promise.all([
+        supabase.from("mermas").select("*").order("fecha", { ascending: false }).order("created_at", { ascending: false }),
+        supabase.from("productos").select("id, nombre, costo, precio_venta").order("nombre").range(0, 999),
+      ]);
       if (mRes.data) setMermas(mRes.data);
-      if (pRes.data) setProductos(pRes.data);
+
+      // Paginar el resto de productos si hay más de 1000
+      let todos = primeraPage.data || [];
+      let desde = 1000;
+      while ((primeraPage.data?.length ?? 0) === 1000 || desde > 1000) {
+        if (desde === 1000 && (primeraPage.data?.length ?? 0) < 1000) break;
+        const { data } = await supabase
+          .from("productos")
+          .select("id, nombre, costo, precio_venta")
+          .order("nombre")
+          .range(desde, desde + 999);
+        if (!data?.length) break;
+        todos = [...todos, ...data];
+        if (data.length < 1000) break;
+        desde += 1000;
+      }
+      setProductos(todos);
       setLoading(false);
-    });
+    }
+    cargar();
   }, []);
 
   // ── Toast ────────────────────────────────────────────────────────────────────
@@ -138,8 +157,13 @@ export default function MermasPage() {
   function onProdInput(val: string) {
     setForm(f => ({ ...f, producto_nombre: val, producto_id: "" }));
     if (val.length < 1) { setProdSuggestions([]); setShowSugg(false); return; }
-    const q = val.toLowerCase();
-    const sugs = productos.filter(p => p.nombre.toLowerCase().includes(q)).slice(0, 8);
+    const termino = val.trim().replace(/\s+/g, " ").toLowerCase();
+    const palabras = termino.split(" ").filter(Boolean);
+    const sugs = productos.filter(p => {
+      const campo = p.nombre.toLowerCase();
+      // Coincidencia exacta de frase O todas las palabras presentes (en cualquier orden)
+      return campo.includes(termino) || palabras.every(w => campo.includes(w));
+    }).slice(0, 10);
     setProdSuggestions(sugs);
     setShowSugg(sugs.length > 0);
   }
