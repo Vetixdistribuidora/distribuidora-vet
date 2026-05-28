@@ -239,6 +239,16 @@ export default function MermasPage() {
 
   // ── CRUD ──────────────────────────────────────────────────────────────────────
 
+  // Ajusta el stock de un producto: delta positivo = reduce stock, negativo = restaura
+  async function ajustarStock(productoId: number, delta: number) {
+    if (!productoId || delta === 0) return;
+    const { data: prod } = await supabase
+      .from("productos").select("stock").eq("id", productoId).single();
+    if (!prod) return;
+    const nuevoStock = Math.max(0, Number(prod.stock) - delta);
+    await supabase.from("productos").update({ stock: nuevoStock }).eq("id", productoId);
+  }
+
   function abrirCrear() {
     setEditandoId(null);
     setForm({ ...EMPTY_FORM, fecha: new Date().toISOString().slice(0, 10) });
@@ -270,10 +280,13 @@ export default function MermasPage() {
 
     setGuardando(true);
     try {
+      const nuevoProdId = form.producto_id !== "" ? Number(form.producto_id) : null;
+      const nuevaCant   = Number(form.cantidad);
+
       const payload = {
-        producto_id: form.producto_id !== "" ? Number(form.producto_id) : null,
+        producto_id: nuevoProdId,
         producto_nombre: form.producto_nombre.trim(),
-        cantidad: Number(form.cantidad),
+        cantidad: nuevaCant,
         motivo: form.motivo,
         fecha: form.fecha,
         costo_unitario: Number(form.costo_unitario) || 0,
@@ -283,16 +296,35 @@ export default function MermasPage() {
       };
 
       if (editandoId !== null) {
+        // ── Edición: calcular ajuste de stock necesario ──────────────────────
+        const original = mermas.find(m => m.id === editandoId);
+        const viejoProdId = original?.producto_id ?? null;
+        const viejaCant   = original?.cantidad ?? 0;
+
         const { error } = await supabase.from("mermas").update(payload).eq("id", editandoId);
         if (error) throw error;
+
+        if (viejoProdId && nuevoProdId && viejoProdId === nuevoProdId) {
+          // Mismo producto: ajustar solo la diferencia
+          await ajustarStock(nuevoProdId, nuevaCant - viejaCant);
+        } else {
+          // Producto cambió o fue removido/agregado
+          if (viejoProdId) await ajustarStock(viejoProdId, -viejaCant); // restaurar viejo
+          if (nuevoProdId) await ajustarStock(nuevoProdId, nuevaCant);  // descontar nuevo
+        }
+
         setMermas(prev => prev.map(m => m.id === editandoId ? { ...m, ...payload } as Merma : m));
-        mostrarToast("✅ Merma actualizada", "ok");
+        mostrarToast(nuevoProdId ? "✅ Merma actualizada · Stock ajustado" : "✅ Merma actualizada", "ok");
+
       } else {
+        // ── Creación ─────────────────────────────────────────────────────────
         const { data, error } = await supabase.from("mermas").insert([payload]).select();
         if (error) throw error;
+        if (nuevoProdId) await ajustarStock(nuevoProdId, nuevaCant);
         if (data?.[0]) setMermas(prev => [data[0], ...prev]);
-        mostrarToast("✅ Merma registrada", "ok");
+        mostrarToast(nuevoProdId ? "✅ Merma registrada · Stock descontado" : "✅ Merma registrada", "ok");
       }
+
       setModalAbierto(false);
     } catch (err: any) {
       mostrarToast("❌ " + (err?.message || "Error al guardar"), "error");
@@ -302,11 +334,14 @@ export default function MermasPage() {
   }
 
   async function eliminar(id: number) {
+    const merma = mermas.find(m => m.id === id);
     const { error } = await supabase.from("mermas").delete().eq("id", id);
     if (error) { mostrarToast("❌ " + error.message, "error"); return; }
+    // Restaurar stock si estaba vinculado a un producto del catálogo
+    if (merma?.producto_id) await ajustarStock(merma.producto_id, -merma.cantidad);
     setMermas(prev => prev.filter(m => m.id !== id));
     setConfirmId(null);
-    mostrarToast("✅ Merma eliminada", "ok");
+    mostrarToast(merma?.producto_id ? "✅ Merma eliminada · Stock restaurado" : "✅ Merma eliminada", "ok");
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────────
@@ -472,6 +507,15 @@ export default function MermasPage() {
                       <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {m.producto_nombre}
                       </div>
+                      {m.producto_id ? (
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", marginTop: 2 }}>
+                          📦 stock descontado
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>
+                          externo al sistema
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: "9px 12px" }}>
                       <span style={{
@@ -634,7 +678,20 @@ export default function MermasPage() {
                     )}
                   </div>
                 )}
-              </div>
+              {/* Indicador stock */}
+              {form.producto_nombre.trim() && (
+                <div style={{
+                  gridColumn: "1 / -1",
+                  padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                  background: form.producto_id !== "" ? "#f0fdf4" : "#fef9c3",
+                  color: form.producto_id !== "" ? "#16a34a" : "#92400e",
+                  border: `1px solid ${form.producto_id !== "" ? "#bbf7d0" : "#fde68a"}`,
+                }}>
+                  {form.producto_id !== ""
+                    ? "📦 Al guardar se descontará automáticamente del stock"
+                    : "⚠️ Nombre libre — no descuenta stock (el producto no está en el catálogo)"}
+                </div>
+              )}
 
               {/* Fecha */}
               <div>
