@@ -406,26 +406,25 @@ export default function ChequesPage() {
           overflowX: "auto", boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
         }}>
           <div>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1060 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 920 }}>
               <thead>
                 <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
                   {[
-                    { h: "Dueño del cheque", right: false },
-                    { h: "Número / Tipo",    right: false },
-                    { h: "Fecha",            right: false },
-                    { h: "Banco",            right: false },
-                    { h: "Quién entregó",    right: false },
-                    { h: "Egresado",         right: true  },
-                    { h: "Ingresado",        right: true  },
-                    { h: "Saldo acum.",      right: true  },
-                    { h: "Entregada a",      right: false },
-                    { h: "Estado",           right: false },
-                    { h: "",                 right: false },
+                    { h: "Dueño",        right: false },
+                    { h: "N° / Tipo",    right: false },
+                    { h: "Fecha",        right: false },
+                    { h: "Banco",        right: false },
+                    { h: "Quién entregó",right: false },
+                    { h: "Egresado",     right: true  },
+                    { h: "Ingresado",    right: true  },
+                    { h: "Saldo",        right: true  },
+                    { h: "Entregada a",  right: false },
+                    { h: "Acciones",     right: false },
                   ].map((col, i) => (
                     <th key={i} style={{
-                      padding: "10px 14px", fontSize: 10, fontWeight: 700, color: "#9ca3af",
+                      padding: "8px 10px", fontSize: 10, fontWeight: 700, color: "#9ca3af",
                       textAlign: col.right ? "right" : "left",
-                      whiteSpace: "nowrap", textTransform: "uppercase", letterSpacing: 0.5,
+                      whiteSpace: "nowrap", textTransform: "uppercase", letterSpacing: 0.4,
                     }}>{col.h}</th>
                   ))}
                 </tr>
@@ -437,111 +436,115 @@ export default function ChequesPage() {
                     <tr key={c.id} style={{ borderBottom: "1px solid #f1f5f9", background: rowBg(c, i) }}>
 
                       {/* Dueño */}
-                      <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151", maxWidth: 150, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151", maxWidth: 120, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {c.dueno || <span style={{ color: "#d1d5db" }}>—</span>}
                       </td>
 
                       {/* Número + tipo */}
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                           <span style={{
-                            fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 5,
+                            fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 4,
                             background: ts.bg, color: ts.color, border: `1px solid ${ts.border}`,
-                            letterSpacing: 0.3,
+                            letterSpacing: 0.2, flexShrink: 0,
                           }}>{TIPO_LABELS[c.tipo] || c.tipo}</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{c.numero}</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>{c.numero}</span>
                         </div>
-                        {c.notas && (
-                          <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {c.notas}
-                          </div>
-                        )}
                       </td>
 
                       {/* Fecha */}
-                      <td style={{ padding: "10px 14px", fontSize: 13, color: "#4b5563", whiteSpace: "nowrap" }}>
+                      <td style={{ padding: "7px 10px", fontSize: 12, color: "#4b5563", whiteSpace: "nowrap" }}>
                         {c.fecha ? new Date(c.fecha + "T12:00:00").toLocaleDateString("es-AR") : "—"}
                       </td>
 
                       {/* Banco */}
-                      <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151", whiteSpace: "nowrap" }}>{c.banco || "—"}</td>
+                      <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151", whiteSpace: "nowrap", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis" }}>{c.banco || "—"}</td>
 
                       {/* Quien entregó */}
-                      <td style={{ padding: "10px 14px", fontSize: 12, color: "#374151", maxWidth: 150, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151", maxWidth: 130, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {c.quien_entrego || "—"}
                       </td>
 
                       {/* Egresado */}
-                      <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, fontSize: 13, color: Number(c.monto_egresado) > 0 ? "#dc2626" : "#d1d5db", whiteSpace: "nowrap" }}>
+                      <td style={{ padding: "7px 10px", textAlign: "right", fontWeight: 700, fontSize: 12, color: Number(c.monto_egresado) > 0 ? "#dc2626" : "#d1d5db", whiteSpace: "nowrap" }}>
                         {Number(c.monto_egresado) > 0 ? fmt(Number(c.monto_egresado)) : "—"}
                       </td>
 
                       {/* Ingresado */}
-                      <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, fontSize: 13, color: Number(c.monto_ingresado) > 0 ? "#15803d" : "#d1d5db", whiteSpace: "nowrap" }}>
+                      <td style={{ padding: "7px 10px", textAlign: "right", fontWeight: 700, fontSize: 12, color: Number(c.monto_ingresado) > 0 ? "#15803d" : "#d1d5db", whiteSpace: "nowrap" }}>
                         {Number(c.monto_ingresado) > 0 ? fmt(Number(c.monto_ingresado)) : "—"}
                       </td>
 
                       {/* Saldo acumulado */}
-                      <td style={{ padding: "10px 14px", textAlign: "right", fontSize: 13, fontWeight: 800, whiteSpace: "nowrap", color: (saldoMap[c.id] ?? 0) >= 0 ? "#1d4ed8" : "#dc2626" }}>
+                      <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", color: (saldoMap[c.id] ?? 0) >= 0 ? "#1d4ed8" : "#dc2626" }}>
                         {fmt(saldoMap[c.id] ?? 0)}
                       </td>
 
                       {/* Entregada a */}
-                      <td style={{ padding: "10px 14px" }}>
+                      <td style={{ padding: "7px 10px" }}>
                         {c.entregada_a ? (() => {
                           const cm = chipColor(c.entregada_a);
                           return (
-                            <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: cm.bg, color: cm.color, border: `1px solid ${cm.border}`, whiteSpace: "nowrap" }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: cm.bg, color: cm.color, border: `1px solid ${cm.border}`, whiteSpace: "nowrap" }}>
                               {c.entregada_a}
                             </span>
                           );
-                        })() : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                        })() : <span style={{ color: "#d1d5db", fontSize: 11 }}>—</span>}
                       </td>
 
-                      {/* Estado: toggle pagado */}
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                      {/* Acciones: pagado + rechazar + editar + eliminar en una sola columna compacta */}
+                      <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          {/* Toggle pagado */}
                           <button
                             onClick={() => togglePagado(c)}
-                            title={c.pagado ? "Quitar marca de pagado" : "Marcar como pagado"}
+                            title={c.pagado ? "Quitar pagado" : "Marcar como pagado"}
                             style={{
-                              width: 26, height: 26, borderRadius: 7, border: "2px solid",
+                              width: 24, height: 24, borderRadius: 6, border: "2px solid",
                               borderColor: c.pagado ? "#16a34a" : "#d1d5db",
                               background: c.pagado ? "#16a34a" : "white",
                               cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                              fontSize: 13, color: "white", flexShrink: 0, transition: "all 0.15s",
+                              fontSize: 12, color: "white", flexShrink: 0, transition: "all 0.15s",
                             }}
                           >{c.pagado ? "✓" : ""}</button>
+
+                          {/* Estado badge mini */}
                           <span style={{
-                            fontSize: 11, fontWeight: 700,
+                            fontSize: 10, fontWeight: 700, minWidth: 52,
                             color: c.rechazado ? "#dc2626" : c.pagado ? "#15803d" : "#d97706",
                           }}>
                             {c.rechazado ? "Rechazado" : c.pagado ? "Pagado" : "Pendiente"}
                           </span>
-                        </div>
-                      </td>
 
-                      {/* Acciones */}
-                      <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
-                        <div style={{ display: "flex", gap: 4 }}>
+                          {/* Separador */}
+                          <span style={{ color: "#e2e8f0", fontSize: 14 }}>│</span>
+
+                          {/* Rechazar / Reactivar — solo icono */}
                           <button
                             onClick={() => toggleRechazado(c)}
                             title={c.rechazado ? "Reactivar cheque" : "Marcar como rechazado"}
                             style={{
-                              padding: "4px 8px", borderRadius: 6, border: "1px solid",
+                              width: 24, height: 24, borderRadius: 6, border: "1px solid",
                               borderColor: c.rechazado ? "#fecaca" : "#e2e8f0",
                               background: c.rechazado ? "#fef2f2" : "#f8fafc",
                               color: c.rechazado ? "#dc2626" : "#9ca3af",
-                              fontSize: 11, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
+                              fontSize: 12, fontWeight: 700, cursor: "pointer",
+                              display: "flex", alignItems: "center", justifyContent: "center",
                             }}
-                          >{c.rechazado ? "↺ Reactivar" : "✕ Rechazar"}</button>
-                          <button onClick={() => abrirEditar(c)} style={{
-                            padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0",
+                          >{c.rechazado ? "↺" : "✕"}</button>
+
+                          {/* Editar */}
+                          <button onClick={() => abrirEditar(c)} title="Editar" style={{
+                            width: 24, height: 24, borderRadius: 6, border: "1px solid #e2e8f0",
                             background: "#f8fafc", color: "#374151", fontSize: 12, cursor: "pointer",
+                            display: "flex", alignItems: "center", justifyContent: "center",
                           }}>✏️</button>
-                          <button onClick={() => setConfirmElim(c)} style={{
-                            padding: "4px 8px", borderRadius: 6, border: "1px solid #fecaca",
+
+                          {/* Eliminar */}
+                          <button onClick={() => setConfirmElim(c)} title="Eliminar" style={{
+                            width: 24, height: 24, borderRadius: 6, border: "1px solid #fecaca",
                             background: "#fef2f2", color: "#dc2626", fontSize: 12, cursor: "pointer",
+                            display: "flex", alignItems: "center", justifyContent: "center",
                           }}>🗑️</button>
                         </div>
                       </td>
@@ -553,19 +556,19 @@ export default function ChequesPage() {
               {/* Fila de totales */}
               <tfoot>
                 <tr style={{ background: "#f8fafc", borderTop: "2px solid #e2e8f0" }}>
-                  <td colSpan={5} style={{ padding: "10px 14px", fontSize: 12, fontWeight: 700, color: "#6b7280" }}>
+                  <td colSpan={5} style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, color: "#6b7280" }}>
                     TOTALES ({chequesFiltrados.length} cheques)
                   </td>
-                  <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 800, fontSize: 13, color: "#dc2626", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 800, fontSize: 12, color: "#dc2626", whiteSpace: "nowrap" }}>
                     {fmt(filtEgr)}
                   </td>
-                  <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 800, fontSize: 13, color: "#15803d", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 800, fontSize: 12, color: "#15803d", whiteSpace: "nowrap" }}>
                     {fmt(filtIng)}
                   </td>
-                  <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 800, fontSize: 14, color: (filtIng - filtEgr) >= 0 ? "#1d4ed8" : "#dc2626", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 800, fontSize: 13, color: (filtIng - filtEgr) >= 0 ? "#1d4ed8" : "#dc2626", whiteSpace: "nowrap" }}>
                     {fmt(filtIng - filtEgr)}
                   </td>
-                  <td colSpan={3} />
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
             </table>
