@@ -20,7 +20,7 @@ interface Cheque {
   created_at: string;
 }
 
-const TIPO_LABELS: Record<string, string> = { CH: "CH", ECHEQ: "ECHEQ", F_CHEQ: "F CHEQ" };
+const TIPO_LABELS: Record<string, string> = { CH: "CH", ECHEQ: "ECHEQ" };
 const BANCOS_COMUNES = [
   "NACION ARG", "GALICIA", "SANTANDER", "ICBC", "MACRO",
   "SUPERVIELLE", "CREDICOOP", "BCO PROVINCIA", "BCO ENTRE RIOS", "BNA",
@@ -247,14 +247,12 @@ export default function ChequesPage() {
     if (c.rechazado)        return i % 2 === 0 ? "#fff1f1" : "#fff5f5";
     if (c.pagado)           return i % 2 === 0 ? "#f0fdf4" : "#f7fef9";
     if (c.tipo === "ECHEQ") return i % 2 === 0 ? "#fffbeb" : "#fefce8";
-    if (c.tipo === "F_CHEQ") return i % 2 === 0 ? "#f5f3ff" : "#faf5ff";
     return i % 2 === 0 ? "white" : "#fafafa";
   }
 
   // ── Tipo chip style ───────────────────────────────────────────────────────
   function tipoStyle(tipo: string) {
-    if (tipo === "ECHEQ")  return { bg: "#fef3c7", color: "#d97706", border: "#fde68a" };
-    if (tipo === "F_CHEQ") return { bg: "#ede9fe", color: "#6d28d9", border: "#ddd6fe" };
+    if (tipo === "ECHEQ") return { bg: "#fef3c7", color: "#d97706", border: "#fde68a" };
     return { bg: "#f1f5f9", color: "#475569", border: "#e2e8f0" };
   }
 
@@ -315,7 +313,6 @@ export default function ChequesPage() {
         {[
           { label: "CH (físico)",   bg: "white",   border: "#e2e8f0", color: "#475569" },
           { label: "ECHEQ",         bg: "#fffbeb",  border: "#fde68a", color: "#d97706" },
-          { label: "F CHEQ",        bg: "#f5f3ff",  border: "#ddd6fe", color: "#6d28d9" },
           { label: "Pagado",        bg: "#f0fdf4",  border: "#bbf7d0", color: "#15803d" },
           { label: "Rechazado",     bg: "#fef2f2",  border: "#fecaca", color: "#dc2626" },
         ].map(l => (
@@ -336,8 +333,8 @@ export default function ChequesPage() {
 
         {/* Tipo */}
         <div style={{ display: "flex", gap: 3, background: "#f1f5f9", borderRadius: 10, padding: 3, border: "1px solid #e2e8f0" }}>
-          {["todos", "CH", "ECHEQ", "F_CHEQ"].map(t => {
-            const labels: Record<string, string> = { todos: "Todos", CH: "CH", ECHEQ: "ECHEQ", F_CHEQ: "F CHEQ" };
+          {["todos", "CH", "ECHEQ"].map(t => {
+            const labels: Record<string, string> = { todos: "Todos", CH: "CH", ECHEQ: "ECHEQ" };
             const active = filtroTipo === t;
             return (
               <button key={t} onClick={() => setFiltroTipo(t)} style={{
@@ -603,7 +600,6 @@ export default function ChequesPage() {
                     style={{ ...inputLight, cursor: "pointer" }}>
                     <option value="CH">CH (físico)</option>
                     <option value="ECHEQ">ECHEQ (electrónico)</option>
-                    <option value="F_CHEQ">F CHEQ</option>
                   </select>
                 </div>
                 <div>
