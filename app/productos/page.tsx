@@ -236,6 +236,7 @@ export default function Productos() {
   const [rawRows, setRawRows] = useState<any[]>([])
   const [laboratorio, setLaboratorio] = useState("")
   const [fleteProducto, setFleteProducto] = useState("")
+  const [perdidaProducto, setPerdidaProducto] = useState("")
   const [confirmEliminar, setConfirmEliminar] = useState<any | null>(null)
   const [subiendoFoto, setSubiendoFoto] = useState<number | null>(null)
   const inputFotoRef = useRef<HTMLInputElement>(null)
@@ -269,9 +270,10 @@ export default function Productos() {
       // Modo recalcular: aplica la fórmula Precio Neto × (1+IVA%) × (1+Flete%) a todos los productos
       if (ajusteTipo === "recalcular") {
         const updates = productos.map(p => {
-          const fleteNum = Number(p.flete) || 0
-          const margenNum = Number(p.margen) || 0
-          const nuevoPrecio = Math.round(p.costo * (1 + margenNum / 100) * (1 + fleteNum / 100) * 100) / 100
+          const margenNum  = Number(p.margen)  || 0
+          const fleteNum   = Number(p.flete)   || 0
+          const perdidaNum = Number(p.perdida) || 0
+          const nuevoPrecio = Math.round(p.costo * (1 + margenNum / 100) * (1 + fleteNum / 100) * (1 + perdidaNum / 100) * 100) / 100
           return { id: p.id, precio_venta: nuevoPrecio }
         })
         const CHUNK = 50
@@ -294,9 +296,10 @@ export default function Productos() {
         let nuevoMargen = p.margen
         if (ajusteAplica === "costos") {
           nuevoCosto = ajusteTipo === "porcentaje" ? p.costo * (1 + valor / 100) : p.costo + valor
-          const fleteNum = Number(p.flete) || 0
-          const margenNum = Number(p.margen) || 0
-          const nuevoPrecio = Math.round(nuevoCosto * (1 + margenNum / 100) * (1 + fleteNum / 100) * 100) / 100
+          const margenNum  = Number(p.margen)  || 0
+          const fleteNum   = Number(p.flete)   || 0
+          const perdidaNum = Number(p.perdida) || 0
+          const nuevoPrecio = Math.round(nuevoCosto * (1 + margenNum / 100) * (1 + fleteNum / 100) * (1 + perdidaNum / 100) * 100) / 100
           return { id: p.id, costo: Math.round(nuevoCosto * 100) / 100, margen: nuevoMargen, precio_venta: nuevoPrecio }
         } else {
           // Ajuste directo de precio_venta: no modificar margen (IVA%) ni costo
@@ -362,7 +365,7 @@ export default function Productos() {
       // Luego el while loop sigue pidiendo el resto de productos mientras lotes ya está listo
       const [primeraPageData, lotesData] = await Promise.all([
         supabase.from("productos")
-          .select("id, nombre, costo, margen, flete, precio_venta, stock, categoria, laboratorio, imagen_url")
+          .select("id, nombre, costo, margen, flete, perdida, precio_venta, stock, categoria, laboratorio, imagen_url")
           .order("nombre")
           .range(0, 999)
           .then(r => r.data || []),
@@ -379,7 +382,7 @@ export default function Productos() {
       while (primeraPageData.length === 1000) {
         const { data } = await supabase
           .from("productos")
-          .select("id, nombre, costo, margen, flete, precio_venta, stock, categoria, laboratorio, imagen_url")
+          .select("id, nombre, costo, margen, flete, perdida, precio_venta, stock, categoria, laboratorio, imagen_url")
           .order("nombre")
           .range(desde, desde + 999)
         if (!data?.length) break
@@ -420,9 +423,9 @@ export default function Productos() {
   // Guarda en localStorage cada vez que cambia un campo (solo cuando el form está abierto)
   useEffect(() => {
     if (!mostrarAgregar) return
-    const borrador = { nombre, costo, margen, fleteProducto, stock, categoria, laboratorio }
+    const borrador = { nombre, costo, margen, fleteProducto, perdidaProducto, stock, categoria, laboratorio }
     localStorage.setItem("vetix_borrador_producto", JSON.stringify(borrador))
-  }, [nombre, costo, margen, fleteProducto, stock, categoria, laboratorio, mostrarAgregar])
+  }, [nombre, costo, margen, fleteProducto, perdidaProducto, stock, categoria, laboratorio, mostrarAgregar])
 
   // Restaura el borrador cuando se abre el formulario
   useEffect(() => {
@@ -431,28 +434,30 @@ export default function Productos() {
     if (!guardado) return
     try {
       const b = JSON.parse(guardado)
-      if (b.nombre)       setNombre(b.nombre)
-      if (b.costo)        setCosto(b.costo)
-      if (b.margen)       setMargen(b.margen)
-      if (b.fleteProducto) setFleteProducto(b.fleteProducto)
-      if (b.stock)        setStock(b.stock)
-      if (b.categoria)    setCategoria(b.categoria)
-      if (b.laboratorio)  setLaboratorio(b.laboratorio)
+      if (b.nombre)         setNombre(b.nombre)
+      if (b.costo)          setCosto(b.costo)
+      if (b.margen)         setMargen(b.margen)
+      if (b.fleteProducto)  setFleteProducto(b.fleteProducto)
+      if (b.perdidaProducto) setPerdidaProducto(b.perdidaProducto)
+      if (b.stock)          setStock(b.stock)
+      if (b.categoria)      setCategoria(b.categoria)
+      if (b.laboratorio)    setLaboratorio(b.laboratorio)
     } catch { /* borrador corrupto, ignorar */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mostrarAgregar])
 
   async function agregar() {
-    if (!nombre || !costo || !margen || !stock) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
+    if (!nombre.trim() || costo === "" || margen === "" || stock === "") { mostrarToast("⚠️ Completá todos los campos", "error"); return }
     if (Number(stock) < 0) { mostrarToast("⚠️ El stock no puede ser negativo", "error"); return }
     if (Number(costo) < 0) { mostrarToast("⚠️ El precio neto no puede ser negativo", "error"); return }
     setGuardandoAgregar(true)
     try {
-      const costoNum = Number(costo)
-      const ivaNum = Number(margen)
-      const fleteNum = Number(fleteProducto) || 0
-      const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * 100) / 100
-      const { data, error } = await supabase.from("productos").insert([{ nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(stock), categoria: categoria.trim(), laboratorio: laboratorio.trim() }]).select()
+      const costoNum   = Number(costo)
+      const ivaNum     = Number(margen)
+      const fleteNum   = Number(fleteProducto) || 0
+      const perdidaNum = Number(perdidaProducto) || 0
+      const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * (1 + perdidaNum / 100) * 100) / 100
+      const { data, error } = await supabase.from("productos").insert([{ nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, perdida: perdidaNum, precio_venta: precioVenta, stock: Number(stock), categoria: categoria.trim(), laboratorio: laboratorio.trim() }]).select()
       if (error) { mostrarToast("❌ " + error.message, "error"); return }
       supabase.rpc("registrar_auditoria", { accion: "crear", tabla: "productos", registro_id: data?.[0]?.id || 0 }) // fire-and-forget
       mostrarToast("✅ Producto agregado", "ok")
@@ -461,7 +466,7 @@ export default function Productos() {
         setProductos(prev => [...prev, data[0]].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")))
       }
       localStorage.removeItem("vetix_borrador_producto")
-      setNombre(""); setCosto(""); setMargen(""); setFleteProducto(""); setStock(""); setCategoria(""); setLaboratorio("")
+      setNombre(""); setCosto(""); setMargen(""); setFleteProducto(""); setPerdidaProducto(""); setStock(""); setCategoria(""); setLaboratorio("")
       setMostrarAgregar(false)
     } catch (e: any) {
       mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
@@ -473,20 +478,21 @@ export default function Productos() {
   async function guardarEdicion(productoId: number) {
     const e = editando[productoId]
     if (!e) return
-    if (!e.nombre || !e.costo || !e.margen) { mostrarToast("⚠️ Completá todos los campos", "error"); return }
+    if (!e.nombre?.trim() || e.costo === "" || e.costo === null || e.costo === undefined) { mostrarToast("⚠️ Completá nombre y precio neto", "error"); return }
     setGuardandoEdicion(productoId)
     try {
-      const costoNum = Number(e.costo)
-      const ivaNum = Number(e.margen)
-      const fleteNum = Number(e.flete) || 0
-      const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * 100) / 100
-      const { error } = await supabase.from("productos").update({ nombre: e.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(e.stock), categoria: e.categoria || "", laboratorio: e.laboratorio || "" }).eq("id", productoId)
+      const costoNum   = Number(e.costo)
+      const ivaNum     = Number(e.margen)  || 0
+      const fleteNum   = Number(e.flete)   || 0
+      const perdidaNum = Number(e.perdida) || 0
+      const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * (1 + perdidaNum / 100) * 100) / 100
+      const { error } = await supabase.from("productos").update({ nombre: e.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, perdida: perdidaNum, precio_venta: precioVenta, stock: Number(e.stock) || 0, categoria: e.categoria || "", laboratorio: e.laboratorio || "" }).eq("id", productoId)
       if (error) { mostrarToast("❌ " + error.message, "error"); return }
       supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: productoId }) // fire-and-forget
       mostrarToast("✅ Producto actualizado", "ok")
       setProductos(prev => prev.map(p =>
         p.id === productoId
-          ? { ...p, nombre: e.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, precio_venta: precioVenta, stock: Number(e.stock), categoria: e.categoria || "", laboratorio: e.laboratorio || "" }
+          ? { ...p, nombre: e.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, perdida: perdidaNum, precio_venta: precioVenta, stock: Number(e.stock) || 0, categoria: e.categoria || "", laboratorio: e.laboratorio || "" }
           : p
       ))
       setEditando(prev => { const n = { ...prev }; delete n[productoId]; return n })
@@ -852,6 +858,8 @@ export default function Productos() {
               style={{ flex: "1 1 90px", minWidth: 0, padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="% Flete" value={fleteProducto} onChange={e => setFleteProducto(e.target.value)} type="number"
               style={{ flex: "1 1 90px", minWidth: 0, padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
+            <input placeholder="% Pérdida" value={perdidaProducto} onChange={e => setPerdidaProducto(e.target.value)} type="number"
+              style={{ flex: "1 1 90px", minWidth: 0, padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Stock" value={stock} onChange={e => setStock(e.target.value)} type="number"
               style={{ flex: "1 1 90px", minWidth: 0, padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "white", fontSize: 13, outline: "none" }} />
             <input placeholder="Categoría" value={categoria} onChange={e => setCategoria(e.target.value)} type="text"
@@ -955,7 +963,7 @@ export default function Productos() {
                   <input type="number" placeholder="ej: 5" value={fleteImportacion}
                     onChange={e => setFleteImportacion(e.target.value)}
                     style={{ width: "100%", padding: "9px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
-                  <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>Costo = Precio Neto × (1+IVA) × (1+Flete)</div>
+                  <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>Precio = Neto × (1+IVA) × (1+Flete)</div>
                 </div>
               </div>
             </div>
@@ -1030,10 +1038,11 @@ export default function Productos() {
           const lotes = lotesMap[p.id] || []
           const lotesVisible = lotesAbiertos.has(p.id)
           const ep = editando[p.id]
-          const costoNum = Number(ep?.costo || 0)
-          const margenNum = Number(ep?.margen || 0)
-          const fleteEditNum = Number(ep?.flete || 0)
-          const precioEstimado = Math.round(costoNum * (1 + margenNum / 100) * (1 + fleteEditNum / 100) * 100) / 100
+          const costoNum     = Number(ep?.costo   || 0)
+          const margenNum    = Number(ep?.margen  || 0)
+          const fleteEditNum = Number(ep?.flete   || 0)
+          const perdidaEditNum = Number(ep?.perdida || 0)
+          const precioEstimado = Math.round(costoNum * (1 + margenNum / 100) * (1 + fleteEditNum / 100) * (1 + perdidaEditNum / 100) * 100) / 100
 
           let badgeLote = null
           if (lotes.length > 0) {
@@ -1057,19 +1066,20 @@ export default function Productos() {
                   <p style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>
                     Editando: <span style={{ color: "white" }}>{p.nombre}</span>
                   </p>
-                  <div className="producto-edit-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 12 }}>
+                  <div className="producto-edit-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr", gap: 12 }}>
                     {[
-                      { label: "Nombre",      key: "nombre", type: "text" },
-                      { label: "Precio Neto", key: "costo",  type: "number" },
-                      { label: "% IVA",       key: "margen", type: "number" },
-                      { label: "% Flete",     key: "flete",  type: "number" },
-                      { label: "Stock",       key: "stock",  type: "number" },
+                      { label: "Nombre",      key: "nombre",  type: "text" },
+                      { label: "Precio Neto", key: "costo",   type: "number" },
+                      { label: "% IVA",       key: "margen",  type: "number" },
+                      { label: "% Flete",     key: "flete",   type: "number" },
+                      { label: "% Pérdida",   key: "perdida", type: "number" },
+                      { label: "Stock",       key: "stock",   type: "number" },
                     ].map(f => (
                       <div key={f.key}>
                         <label style={labelStyle}>{f.label}</label>
                         <input type={f.type} value={ep?.[f.key] ?? ""}
                           onChange={e => setEditando(prev => ({ ...prev, [p.id]: { ...prev[p.id], [f.key]: e.target.value } }))}
-                          placeholder={f.key === "flete" ? "0" : ""}
+                          placeholder={f.key === "flete" || f.key === "perdida" ? "0" : ""}
                           style={inputStyle} />
                       </div>
                     ))}
@@ -1090,8 +1100,8 @@ export default function Productos() {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 10 }}>
                     <span style={{ color: "#93c5fd", fontSize: 13 }}>
-                      💵 Costo estimado: <b style={{ color: "white" }}>{formatearPrecio(precioEstimado)}</b>
-                      <span style={{ color: "#6b7280", fontSize: 11 }}> = Neto × (1+IVA{margenNum > 0 ? " " + margenNum + "%" : ""}) × (1+Flete{fleteEditNum > 0 ? " " + fleteEditNum + "%" : ""})</span>
+                      💵 Precio estimado: <b style={{ color: "white" }}>{formatearPrecio(precioEstimado)}</b>
+                      <span style={{ color: "#6b7280", fontSize: 11 }}> = Neto × (1+IVA{margenNum > 0 ? " " + margenNum + "%" : ""}) × (1+Flete{fleteEditNum > 0 ? " " + fleteEditNum + "%" : ""}) × (1+Pérd.{perdidaEditNum > 0 ? " " + perdidaEditNum + "%" : ""})</span>
                     </span>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => guardarEdicion(p.id)} disabled={guardandoEdicion === p.id} style={{ background: "linear-gradient(135deg, #2563eb, #3b82f6)", color: "white", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardandoEdicion === p.id ? 0.6 : 1 }}>💾 Guardar</button>
@@ -1346,9 +1356,10 @@ export default function Productos() {
                     let ejCosto = p.costo, ejPrecio = p.precio_venta
                     if (ajusteAplica === "costos") {
                       ejCosto = ajusteTipo === "porcentaje" ? p.costo * (1 + valor / 100) : p.costo + valor
-                      const fleteNum = Number(p.flete) || 0
-                      const margenNum = Number(p.margen) || 0
-                      ejPrecio = Math.round(ejCosto * (1 + margenNum / 100) * (1 + fleteNum / 100) * 100) / 100
+                      const margenNum  = Number(p.margen)  || 0
+                      const fleteNum   = Number(p.flete)   || 0
+                      const perdidaNum = Number(p.perdida) || 0
+                      ejPrecio = Math.round(ejCosto * (1 + margenNum / 100) * (1 + fleteNum / 100) * (1 + perdidaNum / 100) * 100) / 100
                     } else {
                       ejPrecio = ajusteTipo === "porcentaje" ? p.precio_venta * (1 + valor / 100) : p.precio_venta + valor
                     }
