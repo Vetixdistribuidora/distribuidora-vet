@@ -69,6 +69,8 @@ export default function ProveedoresPage() {
   const [modalHistorial,   setModalHistorial]   = useState<Proveedor | null>(null);
   const [historialPagos,   setHistorialPagos]   = useState<any[]>([]);
   const [loadingHistorial, setLoadingHistorial] = useState(false);
+  const [filtroFechaHist,  setFiltroFechaHist]  = useState<"todo"|"hoy"|"semana"|"mes">("todo");
+  const [filtroMetodoHist, setFiltroMetodoHist] = useState<string>("todos");
   const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
 
   // ── Modal pago masivo ──────────────────────────────────────────────────────
@@ -302,6 +304,8 @@ export default function ProveedoresPage() {
     setModalHistorial(p);
     setHistorialPagos([]);
     setLoadingHistorial(true);
+    setFiltroFechaHist("todo");
+    setFiltroMetodoHist("todos");
     try {
       // Traer todas las compras del proveedor
       const { data: compras } = await supabase
@@ -748,101 +752,189 @@ export default function ProveedoresPage() {
       )}
 
       {/* ── Modal historial de pagos ── */}
-      {modalHistorial && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
-          onClick={() => setModalHistorial(null)}>
-          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "28px 28px", width: "100%", maxWidth: 680, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
-            onClick={e => e.stopPropagation()}>
+      {modalHistorial && (() => {
+        // ── Filtrado ──────────────────────────────────────────────────────────
+        const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+        const inicioSemana = new Date(hoy); inicioSemana.setDate(hoy.getDate() - hoy.getDay());
+        const inicioMes    = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
 
-            {/* Header */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-              <div>
-                <h2 style={{ color: "white", margin: 0, fontSize: 18, fontWeight: 700 }}>
-                  📋 Historial de pagos
-                </h2>
-                <p style={{ color: "#6b7280", margin: "4px 0 0", fontSize: 13 }}>
-                  {modalHistorial.nombre}
-                </p>
-              </div>
-              <button onClick={() => setModalHistorial(null)}
-                style={{ background: "rgba(255,255,255,0.08)", border: "none", color: "white", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 16 }}>✕</button>
-            </div>
+        const pagosFiltrados = historialPagos.filter(pg => {
+          const fecha = new Date(pg.fecha);
+          if (filtroFechaHist === "hoy"    && fecha < hoy)         return false;
+          if (filtroFechaHist === "semana" && fecha < inicioSemana) return false;
+          if (filtroFechaHist === "mes"    && fecha < inicioMes)    return false;
+          if (filtroMetodoHist !== "todos" && pg.metodo_pago !== filtroMetodoHist) return false;
+          return true;
+        });
 
-            {loadingHistorial ? (
-              <div style={{ textAlign: "center", padding: 40, color: "#6b7280" }}>Cargando pagos…</div>
-            ) : historialPagos.length === 0 ? (
-              <div style={{ textAlign: "center", padding: 40, color: "#6b7280" }}>
-                <div style={{ fontSize: 36, marginBottom: 10 }}>💳</div>
-                <div style={{ fontWeight: 600 }}>No hay pagos registrados para este proveedor</div>
+        // ── Agrupar por día ───────────────────────────────────────────────────
+        const grupos: Record<string, { fecha: string; pagos: any[]; total: number }> = {};
+        pagosFiltrados.forEach(pg => {
+          const dia = new Date(pg.fecha).toLocaleDateString("es-AR");
+          if (!grupos[dia]) grupos[dia] = { fecha: dia, pagos: [], total: 0 };
+          grupos[dia].pagos.push(pg);
+          grupos[dia].total += Number(pg.monto);
+        });
+        const dias = Object.values(grupos); // ya ordenados desc porque historialPagos viene ordenado
+
+        // ── Métodos únicos presentes ──────────────────────────────────────────
+        const metodosPresentes = Array.from(new Set(historialPagos.map(p => p.metodo_pago).filter(Boolean)));
+
+        const colorMetodo = (m: string) => ({
+          bg:    m === "Transferencia" ? "rgba(96,165,250,0.15)"  : m === "Efectivo" ? "rgba(74,222,128,0.15)"  : m === "Cheque" ? "rgba(251,191,36,0.15)"  : "rgba(156,163,175,0.15)",
+          color: m === "Transferencia" ? "#60a5fa"                : m === "Efectivo" ? "#4ade80"                : m === "Cheque" ? "#fbbf24"                : "#9ca3af",
+        });
+
+        const totalFiltrado = pagosFiltrados.reduce((s, p) => s + Number(p.monto), 0);
+
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
+            onClick={() => setModalHistorial(null)}>
+            <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "28px 28px", width: "100%", maxWidth: 700, maxHeight: "88vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
+              onClick={e => e.stopPropagation()}>
+
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                <div>
+                  <h2 style={{ color: "white", margin: 0, fontSize: 18, fontWeight: 700 }}>📋 Historial de pagos</h2>
+                  <p style={{ color: "#6b7280", margin: "4px 0 0", fontSize: 13 }}>{modalHistorial.nombre}</p>
+                </div>
+                <button onClick={() => setModalHistorial(null)}
+                  style={{ background: "rgba(255,255,255,0.08)", border: "none", color: "white", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 16 }}>✕</button>
               </div>
-            ) : (
-              <>
-                {/* Resumen */}
-                <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-                  <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 10, padding: "10px 18px", border: "1px solid rgba(255,255,255,0.08)" }}>
-                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Total pagado</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: "#4ade80" }}>
-                      {fmt(historialPagos.reduce((s, p) => s + Number(p.monto), 0))}
+
+              {loadingHistorial ? (
+                <div style={{ textAlign: "center", padding: 40, color: "#6b7280" }}>Cargando pagos…</div>
+              ) : historialPagos.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 40, color: "#6b7280" }}>
+                  <div style={{ fontSize: 36, marginBottom: 10 }}>💳</div>
+                  <div style={{ fontWeight: 600 }}>No hay pagos registrados para este proveedor</div>
+                </div>
+              ) : (
+                <>
+                  {/* ── Filtros ── */}
+                  <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+                    {/* Período */}
+                    <div style={{ display: "flex", gap: 4, background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: 4, border: "1px solid rgba(255,255,255,0.08)" }}>
+                      {(["hoy","semana","mes","todo"] as const).map(op => {
+                        const labels = { hoy: "Hoy", semana: "Esta semana", mes: "Este mes", todo: "Todo" };
+                        const active = filtroFechaHist === op;
+                        return (
+                          <button key={op} onClick={() => setFiltroFechaHist(op)} style={{
+                            padding: "5px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                            background: active ? "#2563eb" : "transparent",
+                            color: active ? "white" : "#9ca3af",
+                            transition: "all 0.15s",
+                          }}>{labels[op]}</button>
+                        );
+                      })}
                     </div>
+                    {/* Método */}
+                    {metodosPresentes.length > 1 && (
+                      <div style={{ display: "flex", gap: 4, background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: 4, border: "1px solid rgba(255,255,255,0.08)" }}>
+                        <button onClick={() => setFiltroMetodoHist("todos")} style={{
+                          padding: "5px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                          background: filtroMetodoHist === "todos" ? "#374151" : "transparent",
+                          color: filtroMetodoHist === "todos" ? "white" : "#9ca3af",
+                        }}>Todos</button>
+                        {metodosPresentes.map(m => {
+                          const active = filtroMetodoHist === m;
+                          const cm = colorMetodo(m);
+                          return (
+                            <button key={m} onClick={() => setFiltroMetodoHist(m)} style={{
+                              padding: "5px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                              background: active ? cm.bg : "transparent",
+                              color: active ? cm.color : "#9ca3af",
+                            }}>{m}</button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 10, padding: "10px 18px", border: "1px solid rgba(255,255,255,0.08)" }}>
-                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Pagos realizados</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: "white" }}>{historialPagos.length}</div>
-                  </div>
-                </div>
 
-                {/* Lista de pagos */}
-                <div style={{ overflowY: "auto", flex: 1 }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ background: "rgba(255,255,255,0.04)" }}>
-                        {["Fecha pago", "Compra / Remito", "Monto", "Método", "Notas"].map((h, i) => (
-                          <th key={i} style={{ padding: "9px 12px", fontSize: 11, fontWeight: 700, color: "#6b7280", textAlign: i === 2 ? "right" : "left", textTransform: "uppercase", letterSpacing: 0.4, whiteSpace: "nowrap" }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {historialPagos.map((pg, i) => (
-                        <tr key={pg.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)" }}>
-                          <td style={{ padding: "10px 12px", color: "#d1d5db", fontSize: 13, whiteSpace: "nowrap" }}>
-                            {new Date(pg.fecha).toLocaleDateString("es-AR")}
-                          </td>
-                          <td style={{ padding: "10px 12px", fontSize: 13 }}>
-                            <div style={{ color: "#93c5fd", fontWeight: 600 }}>
-                              Compra #{pg.compra?.id}
-                            </div>
-                            {pg.compra?.numero_remito && (
-                              <div style={{ fontSize: 11, color: "#6b7280" }}>Remito: {pg.compra.numero_remito}</div>
-                            )}
-                            <div style={{ fontSize: 11, color: "#6b7280" }}>
-                              Total compra: {fmt(Number(pg.compra?.total || 0))}
-                            </div>
-                          </td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, fontSize: 14, color: "#4ade80", whiteSpace: "nowrap" }}>
-                            {fmt(Number(pg.monto))}
-                          </td>
-                          <td style={{ padding: "10px 12px" }}>
-                            {pg.metodo_pago ? (
-                              <span style={{
-                                fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20,
-                                background: pg.metodo_pago === "Transferencia" ? "rgba(96,165,250,0.15)" : pg.metodo_pago === "Efectivo" ? "rgba(74,222,128,0.15)" : pg.metodo_pago === "Cheque" ? "rgba(251,191,36,0.15)" : "rgba(156,163,175,0.15)",
-                                color:      pg.metodo_pago === "Transferencia" ? "#60a5fa" : pg.metodo_pago === "Efectivo" ? "#4ade80" : pg.metodo_pago === "Cheque" ? "#fbbf24" : "#9ca3af",
-                              }}>{pg.metodo_pago}</span>
-                            ) : <span style={{ color: "#4b5563", fontSize: 12 }}>—</span>}
-                          </td>
-                          <td style={{ padding: "10px 12px", color: "#9ca3af", fontSize: 12 }}>
-                            {pg.notas || "—"}
-                          </td>
-                        </tr>
+                  {/* ── Chips resumen del período filtrado ── */}
+                  <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+                    <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 10, padding: "10px 18px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                      <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>
+                        {filtroFechaHist === "todo" ? "Total histórico" : filtroFechaHist === "hoy" ? "Pagado hoy" : filtroFechaHist === "semana" ? "Esta semana" : "Este mes"}
+                        {filtroMetodoHist !== "todos" ? ` · ${filtroMetodoHist}` : ""}
+                      </div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: "#4ade80" }}>{fmt(totalFiltrado)}</div>
+                    </div>
+                    <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 10, padding: "10px 18px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                      <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Transacciones</div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: "white" }}>{pagosFiltrados.length}</div>
+                    </div>
+                    {/* Subtotal por método en el período */}
+                    {filtroMetodoHist === "todos" && metodosPresentes.map(m => {
+                      const subtotal = pagosFiltrados.filter(p => p.metodo_pago === m).reduce((s, p) => s + Number(p.monto), 0);
+                      if (subtotal === 0) return null;
+                      const cm = colorMetodo(m);
+                      return (
+                        <div key={m} style={{ background: cm.bg, borderRadius: 10, padding: "10px 18px", border: `1px solid ${cm.color}33` }}>
+                          <div style={{ fontSize: 11, color: cm.color, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2, opacity: 0.8 }}>{m}</div>
+                          <div style={{ fontSize: 20, fontWeight: 800, color: cm.color }}>{fmt(subtotal)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* ── Tabla agrupada por día ── */}
+                  {pagosFiltrados.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: 30, color: "#6b7280", fontSize: 13 }}>
+                      Sin pagos en este período
+                    </div>
+                  ) : (
+                    <div style={{ overflowY: "auto", flex: 1 }}>
+                      {dias.map(grupo => (
+                        <div key={grupo.fecha} style={{ marginBottom: 18 }}>
+                          {/* Cabecera del día */}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 12px", background: "rgba(255,255,255,0.06)", borderRadius: 8, marginBottom: 4 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: "#d1d5db" }}>📅 {grupo.fecha}</span>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: "#4ade80" }}>Total del día: {fmt(grupo.total)}</span>
+                          </div>
+                          {/* Filas del día */}
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead>
+                              <tr>
+                                {["Compra / Remito", "Monto", "Método", "Notas"].map((h, i) => (
+                                  <th key={i} style={{ padding: "6px 12px", fontSize: 10, fontWeight: 700, color: "#4b5563", textAlign: i === 1 ? "right" : "left", textTransform: "uppercase", letterSpacing: 0.4 }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {grupo.pagos.map((pg, i) => (
+                                <tr key={pg.id} style={{ borderTop: "1px solid rgba(255,255,255,0.05)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)" }}>
+                                  <td style={{ padding: "9px 12px", fontSize: 13 }}>
+                                    <div style={{ color: "#93c5fd", fontWeight: 600 }}>Compra #{pg.compra?.id}</div>
+                                    {pg.compra?.numero_remito && <div style={{ fontSize: 11, color: "#6b7280" }}>Remito: {pg.compra.numero_remito}</div>}
+                                    <div style={{ fontSize: 11, color: "#6b7280" }}>Total compra: {fmt(Number(pg.compra?.total || 0))}</div>
+                                  </td>
+                                  <td style={{ padding: "9px 12px", textAlign: "right", fontWeight: 800, fontSize: 14, color: "#4ade80", whiteSpace: "nowrap" }}>
+                                    {fmt(Number(pg.monto))}
+                                  </td>
+                                  <td style={{ padding: "9px 12px" }}>
+                                    {pg.metodo_pago ? (
+                                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: colorMetodo(pg.metodo_pago).bg, color: colorMetodo(pg.metodo_pago).color }}>
+                                        {pg.metodo_pago}
+                                      </span>
+                                    ) : <span style={{ color: "#4b5563", fontSize: 12 }}>—</span>}
+                                  </td>
+                                  <td style={{ padding: "9px 12px", color: "#9ca3af", fontSize: 12 }}>{pg.notas || "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
