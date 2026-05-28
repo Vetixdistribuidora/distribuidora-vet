@@ -64,6 +64,11 @@ export default function ProveedoresPage() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmEliminar, setConfirmEliminar] = useState<Proveedor | null>(null);
+
+  // ── Historial de pagos ─────────────────────────────────────────────────────
+  const [modalHistorial,   setModalHistorial]   = useState<Proveedor | null>(null);
+  const [historialPagos,   setHistorialPagos]   = useState<any[]>([]);
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
   const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
 
   // ── Modal pago masivo ──────────────────────────────────────────────────────
@@ -292,6 +297,38 @@ export default function ProveedoresPage() {
     }
   }
 
+  // ── Historial de pagos ─────────────────────────────────────────────────────
+  async function abrirHistorial(p: Proveedor) {
+    setModalHistorial(p);
+    setHistorialPagos([]);
+    setLoadingHistorial(true);
+    try {
+      // Traer todas las compras del proveedor
+      const { data: compras } = await supabase
+        .from("compras")
+        .select("id, numero_remito, fecha, total")
+        .eq("proveedor_id", p.id);
+
+      if (!compras?.length) { setLoadingHistorial(false); return; }
+
+      // Traer todos los pagos de esas compras
+      const { data: pagos } = await supabase
+        .from("compras_pagos")
+        .select("id, compra_id, fecha, monto, metodo_pago, notas")
+        .in("compra_id", compras.map(c => c.id))
+        .order("fecha", { ascending: false });
+
+      // Unir pagos con info de la compra
+      const comprasMap = Object.fromEntries(compras.map(c => [c.id, c]));
+      setHistorialPagos((pagos || []).map(pg => ({
+        ...pg,
+        compra: comprasMap[pg.compra_id] || null,
+      })));
+    } finally {
+      setLoadingHistorial(false);
+    }
+  }
+
   const filtrados = proveedores.filter(p =>
     [p.nombre, p.cuit, p.telefono, p.email].join(" ").toLowerCase().includes(busqueda.toLowerCase())
   );
@@ -392,6 +429,10 @@ export default function ProveedoresPage() {
                       boxShadow: "0 2px 6px rgba(34,197,94,0.3)"
                     }}>💳 Pagar</button>
                   )}
+                  <button onClick={() => abrirHistorial(p)} style={{
+                    background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe",
+                    borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                  }}>📋 Pagos</button>
                   <button onClick={() => abrirEditar(p)} style={{
                     background: "#f1f5f9", color: "#374151", border: "1px solid #e2e8f0",
                     borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer"
@@ -702,6 +743,103 @@ export default function ProveedoresPage() {
                 fontSize: 13, fontWeight: 700, cursor: "pointer"
               }}>Eliminar</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal historial de pagos ── */}
+      {modalHistorial && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
+          onClick={() => setModalHistorial(null)}>
+          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "28px 28px", width: "100%", maxWidth: 680, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
+            onClick={e => e.stopPropagation()}>
+
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+              <div>
+                <h2 style={{ color: "white", margin: 0, fontSize: 18, fontWeight: 700 }}>
+                  📋 Historial de pagos
+                </h2>
+                <p style={{ color: "#6b7280", margin: "4px 0 0", fontSize: 13 }}>
+                  {modalHistorial.nombre}
+                </p>
+              </div>
+              <button onClick={() => setModalHistorial(null)}
+                style={{ background: "rgba(255,255,255,0.08)", border: "none", color: "white", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 16 }}>✕</button>
+            </div>
+
+            {loadingHistorial ? (
+              <div style={{ textAlign: "center", padding: 40, color: "#6b7280" }}>Cargando pagos…</div>
+            ) : historialPagos.length === 0 ? (
+              <div style={{ textAlign: "center", padding: 40, color: "#6b7280" }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}>💳</div>
+                <div style={{ fontWeight: 600 }}>No hay pagos registrados para este proveedor</div>
+              </div>
+            ) : (
+              <>
+                {/* Resumen */}
+                <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+                  <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 10, padding: "10px 18px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Total pagado</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "#4ade80" }}>
+                      {fmt(historialPagos.reduce((s, p) => s + Number(p.monto), 0))}
+                    </div>
+                  </div>
+                  <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 10, padding: "10px 18px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Pagos realizados</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "white" }}>{historialPagos.length}</div>
+                  </div>
+                </div>
+
+                {/* Lista de pagos */}
+                <div style={{ overflowY: "auto", flex: 1 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "rgba(255,255,255,0.04)" }}>
+                        {["Fecha pago", "Compra / Remito", "Monto", "Método", "Notas"].map((h, i) => (
+                          <th key={i} style={{ padding: "9px 12px", fontSize: 11, fontWeight: 700, color: "#6b7280", textAlign: i === 2 ? "right" : "left", textTransform: "uppercase", letterSpacing: 0.4, whiteSpace: "nowrap" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historialPagos.map((pg, i) => (
+                        <tr key={pg.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)" }}>
+                          <td style={{ padding: "10px 12px", color: "#d1d5db", fontSize: 13, whiteSpace: "nowrap" }}>
+                            {new Date(pg.fecha).toLocaleDateString("es-AR")}
+                          </td>
+                          <td style={{ padding: "10px 12px", fontSize: 13 }}>
+                            <div style={{ color: "#93c5fd", fontWeight: 600 }}>
+                              Compra #{pg.compra?.id}
+                            </div>
+                            {pg.compra?.numero_remito && (
+                              <div style={{ fontSize: 11, color: "#6b7280" }}>Remito: {pg.compra.numero_remito}</div>
+                            )}
+                            <div style={{ fontSize: 11, color: "#6b7280" }}>
+                              Total compra: {fmt(Number(pg.compra?.total || 0))}
+                            </div>
+                          </td>
+                          <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, fontSize: 14, color: "#4ade80", whiteSpace: "nowrap" }}>
+                            {fmt(Number(pg.monto))}
+                          </td>
+                          <td style={{ padding: "10px 12px" }}>
+                            {pg.metodo_pago ? (
+                              <span style={{
+                                fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20,
+                                background: pg.metodo_pago === "Transferencia" ? "rgba(96,165,250,0.15)" : pg.metodo_pago === "Efectivo" ? "rgba(74,222,128,0.15)" : pg.metodo_pago === "Cheque" ? "rgba(251,191,36,0.15)" : "rgba(156,163,175,0.15)",
+                                color:      pg.metodo_pago === "Transferencia" ? "#60a5fa" : pg.metodo_pago === "Efectivo" ? "#4ade80" : pg.metodo_pago === "Cheque" ? "#fbbf24" : "#9ca3af",
+                              }}>{pg.metodo_pago}</span>
+                            ) : <span style={{ color: "#4b5563", fontSize: 12 }}>—</span>}
+                          </td>
+                          <td style={{ padding: "10px 12px", color: "#9ca3af", fontSize: 12 }}>
+                            {pg.notas || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
