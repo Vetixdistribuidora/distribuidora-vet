@@ -1003,6 +1003,7 @@ thead th:last-child{text-align:right}
 
   function sumar(i: number) { const n = [...carrito]; if (n[i].cantidad >= n[i].stockDisponible) { mostrarToast("Stock máximo: " + n[i].stockDisponible, "error"); return }; n[i].cantidad++; setCarrito([...n]) }
   function restar(i: number) { const n = [...carrito]; if (n[i].cantidad > 1) n[i].cantidad--; setCarrito([...n]) }
+  function cambiarCantidad(i: number, v: number) { if (!v || v < 1) return; const n = [...carrito]; if (v > n[i].stockDisponible) { mostrarToast("Stock máximo: " + n[i].stockDisponible, "error"); return }; n[i].cantidad = v; setCarrito([...n]) }
   function eliminarItem(i: number) { setCarrito(carrito.filter((_, idx) => idx !== i)) }
   function vaciarCarrito() { setCarrito([]) }
   function cambiarBonificacion(i: number, v: number) { const n = [...carrito]; n[i].bonificacion = v; setCarrito([...n]) }
@@ -1366,7 +1367,10 @@ thead th:last-child{text-align:right}
                           {/* Cantidad */}
                           <div style={{ display: "flex", alignItems: "center", background: "white", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
                             <button onClick={() => restar(i)} style={{ width: 30, height: 30, border: "none", background: "transparent", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151" }}>−</button>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "#111827", minWidth: 28, textAlign: "center", borderLeft: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0", height: 30, lineHeight: "30px" }}>{item.cantidad}</span>
+                            <input type="number" min="1" max={item.stockDisponible} value={item.cantidad}
+                              onChange={e => cambiarCantidad(i, parseInt(e.target.value) || 1)}
+                              onFocus={e => e.target.select()}
+                              style={{ fontSize: 13, fontWeight: 700, color: "#111827", width: 46, textAlign: "center", borderTop: "none", borderBottom: "none", borderLeft: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0", height: 30, outline: "none", padding: 0 }} />
                             <button onClick={() => sumar(i)} style={{ width: 30, height: 30, border: "none", background: "transparent", cursor: "pointer", fontSize: 16, fontWeight: 700, color: "#374151" }}>+</button>
                           </div>
                           {/* Precio */}
@@ -1754,7 +1758,10 @@ thead th:last-child{text-align:right}
                                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                                   <button onClick={() => setBorrItems(prev => prev.map((i: any, ix: number) => ix === idx ? { ...i, cantidad: Math.max(1, i.cantidad - 1) } : i))}
                                     style={{ width: 26, height: 26, border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                                  <span style={{ fontSize: 13, fontWeight: 700, minWidth: 24, textAlign: "center" }}>{item.cantidad}</span>
+                                  <input type="number" min="1" value={item.cantidad}
+                                    onChange={e => { const v = parseInt(e.target.value) || 1; setBorrItems(prev => prev.map((i: any, ix: number) => ix === idx ? { ...i, cantidad: Math.max(1, v) } : i)) }}
+                                    onFocus={e => e.target.select()}
+                                    style={{ width: 46, fontSize: 13, fontWeight: 700, textAlign: "center", border: "1px solid #d1d5db", borderRadius: 6, outline: "none", padding: "2px 0", color: "#111827" }} />
                                   <button onClick={() => setBorrItems(prev => prev.map((i: any, ix: number) => ix === idx ? { ...i, cantidad: i.cantidad + 1 } : i))}
                                     style={{ width: 26, height: 26, border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
                                 </div>
