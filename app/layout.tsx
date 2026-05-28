@@ -207,7 +207,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       justifyContent: "space-between",
       flexShrink: 0,
     }}>
-      <div style={{ padding: "20px" }}>
+      <div style={{ padding: "20px", flex: 1, overflowY: "auto", minHeight: 0 }}>
         {/* LOGO */}
         <div style={{ marginBottom: "28px", display: "flex", alignItems: "center", gap: "12px" }}>
           <div style={{

@@ -403,9 +403,9 @@ export default function ChequesPage() {
       ) : (
         <div style={{
           background: "white", borderRadius: 14, border: "1px solid #e2e8f0",
-          overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+          overflowX: "auto", boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
         }}>
-          <div style={{ overflowX: "auto" }}>
+          <div>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1060 }}>
               <thead>
                 <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
