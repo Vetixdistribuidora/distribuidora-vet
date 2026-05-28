@@ -88,6 +88,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/deudores")) return "Deudores"
     if (pathname.startsWith("/pedidos")) return "Pedidos"
     if (pathname.startsWith("/cheques")) return "Cheques"
+    if (pathname.startsWith("/mermas")) return "Mermas"
     if (pathname.startsWith("/configuracion")) return "Configuración"
     if (pathname.startsWith("/admin")) return "Panel Admin"
     return ""
@@ -105,6 +106,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/deudores")) return "⚠️"
     if (pathname.startsWith("/pedidos")) return "📋"
     if (pathname.startsWith("/cheques")) return "🏦"
+    if (pathname.startsWith("/mermas")) return "📉"
     if (pathname.startsWith("/configuracion")) return "⚙️"
     if (pathname.startsWith("/admin")) return "⭐"
     return ""
@@ -304,6 +306,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <path d="M6 15h4M14 15h2" />
             </svg>
             Cheques
+          </Link>
+          <Link href="/mermas" style={getItemStyle("/mermas")} onClick={() => setSidebarAbierto(false)}>
+            <svg style={iconStyle("#f87171", pathname.startsWith("/mermas"))} fill="none" strokeWidth="2" viewBox="0 0 24 24">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+            </svg>
+            Mermas
           </Link>
           <Link href="/configuracion" style={getItemStyle("/configuracion")} onClick={() => setSidebarAbierto(false)}>
             <svg style={iconStyle("#94a3b8", pathname.startsWith("/configuracion"))} fill="none" strokeWidth="2" viewBox="0 0 24 24">
