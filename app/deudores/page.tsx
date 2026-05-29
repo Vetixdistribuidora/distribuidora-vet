@@ -41,6 +41,7 @@ export default function Deudores() {
   const [errorCobro, setErrorCobro] = useState<string | null>(null)
   const [exitoCobro, setExitoCobro] = useState<string | null>(null)
   const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string } | null>(null)
+  const [facturasSeleccionadas, setFacturasSeleccionadas] = useState<Set<number>>(new Set())
 
   useEffect(() => { cargarDeudores() }, [])
 
@@ -99,6 +100,7 @@ export default function Deudores() {
     setNotaCobro("")
     setErrorCobro(null)
     setExitoCobro(null)
+    setFacturasSeleccionadas(new Set())
   }
 
   function cerrarCobro() {
@@ -108,6 +110,28 @@ export default function Deudores() {
     setErrorCobro(null)
     setExitoCobro(null)
     setUltimoRecibo(null)
+    setFacturasSeleccionadas(new Set())
+  }
+
+  function toggleFactura(id: number, facturas: any[]) {
+    setFacturasSeleccionadas(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      // Auto-completar el monto con la suma de las facturas seleccionadas
+      const suma = facturas
+        .filter(f => next.has(f.id))
+        .reduce((s, f) => s + f.saldo, 0)
+      setMontoCobro(next.size > 0 ? String(Math.round(suma * 100) / 100) : "")
+      setErrorCobro(null)
+      return next
+    })
+  }
+
+  function calcularPreviewSeleccionado(facturas: any[], seleccionadas: Set<number>) {
+    return facturas.map(f => {
+      if (!seleccionadas.has(f.id)) return { ...f, pago: 0, resultado: "sin_cambio" }
+      return { ...f, pago: Math.round(f.saldo * 100) / 100, resultado: "pagado" }
+    })
   }
 
   function calcularPreview(facturas: any[], monto: number) {
@@ -130,7 +154,9 @@ export default function Deudores() {
     setProcesando(true)
     setErrorCobro(null)
 
-    const preview = calcularPreview(modalCobro.facturas, monto)
+    const preview = facturasSeleccionadas.size > 0
+      ? calcularPreviewSeleccionado(modalCobro.facturas, facturasSeleccionadas)
+      : calcularPreview(modalCobro.facturas, monto)
     const afectadas = preview.filter((f: any) => f.pago > 0)
 
     try {
@@ -444,39 +470,67 @@ export default function Deudores() {
             {/* Preview facturas */}
             {modalCobro.facturas.length > 0 && (
               <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>
-                  Se aplica de la factura más antigua a la más nueva
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase" }}>
+                    {facturasSeleccionadas.size > 0
+                      ? `${facturasSeleccionadas.size} factura${facturasSeleccionadas.size !== 1 ? "s" : ""} seleccionada${facturasSeleccionadas.size !== 1 ? "s" : ""}`
+                      : "Tocá las facturas a cobrar"}
+                  </div>
+                  {facturasSeleccionadas.size > 0 && (
+                    <button onClick={() => { setFacturasSeleccionadas(new Set()); setMontoCobro("") }}
+                      style={{ fontSize: 11, color: "#6b7280", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
+                      Limpiar
+                    </button>
+                  )}
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 240, overflowY: "auto" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
                   {(() => {
                     const monto = parseFloat(montoCobro.replace(",", ".")) || 0
-                    const preview = monto > 0
-                      ? calcularPreview(modalCobro.facturas, monto)
-                      : modalCobro.facturas.map((f: any) => ({ ...f, pago: 0, resultado: "sin_cambio" }))
-                    const colorMap: Record<string, { bg: string; color: string; label: string }> = {
-                      pagado:     { bg: "rgba(34,197,94,0.12)",   color: "#4ade80", label: "✓ Saldada" },
-                      parcial:    { bg: "rgba(251,191,36,0.12)",  color: "#fbbf24", label: "~ Parcial" },
-                      sin_cambio: { bg: "rgba(255,255,255,0.03)", color: "#6b7280", label: "Sin cambio" },
+                    const preview = facturasSeleccionadas.size > 0
+                      ? calcularPreviewSeleccionado(modalCobro.facturas, facturasSeleccionadas)
+                      : monto > 0
+                        ? calcularPreview(modalCobro.facturas, monto)
+                        : modalCobro.facturas.map((f: any) => ({ ...f, pago: 0, resultado: "sin_cambio" }))
+                    const colorMap: Record<string, { bg: string; border: string; color: string; label: string }> = {
+                      pagado:     { bg: "rgba(34,197,94,0.15)",   border: "rgba(34,197,94,0.35)",   color: "#4ade80", label: "✓ Saldada" },
+                      parcial:    { bg: "rgba(251,191,36,0.15)",  border: "rgba(251,191,36,0.35)",  color: "#fbbf24", label: "~ Parcial" },
+                      sin_cambio: { bg: "rgba(255,255,255,0.03)", border: "rgba(255,255,255,0.06)", color: "#6b7280", label: "" },
                     }
                     return preview.map((f: any) => {
+                      const sel = facturasSeleccionadas.has(f.id)
                       const est = colorMap[f.resultado] ?? colorMap.sin_cambio
                       return (
-                        <div key={f.id} style={{
-                          display: "flex", justifyContent: "space-between", alignItems: "center",
-                          padding: "8px 12px", background: est.bg,
-                          border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8,
-                        }}>
-                          <div>
-                            <div style={{ color: "white", fontSize: 12, fontWeight: 600 }}>
-                              N° {f.nro_factura || f.id}
+                        <div key={f.id}
+                          onClick={() => toggleFactura(f.id, modalCobro.facturas)}
+                          style={{
+                            display: "flex", justifyContent: "space-between", alignItems: "center",
+                            padding: "9px 12px", borderRadius: 8, cursor: "pointer",
+                            background: sel ? "rgba(59,130,246,0.18)" : est.bg,
+                            border: `1px solid ${sel ? "rgba(59,130,246,0.5)" : est.border}`,
+                            transition: "all 0.12s",
+                          }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            {/* Checkbox visual */}
+                            <div style={{
+                              width: 18, height: 18, borderRadius: 5, flexShrink: 0,
+                              border: `2px solid ${sel ? "#3b82f6" : "rgba(255,255,255,0.2)"}`,
+                              background: sel ? "#3b82f6" : "transparent",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                            }}>
+                              {sel && <span style={{ color: "white", fontSize: 11, fontWeight: 900, lineHeight: 1 }}>✓</span>}
                             </div>
-                            <div style={{ color: "#6b7280", fontSize: 11, marginTop: 1 }}>
-                              {f.fecha ? new Date(f.fecha).toLocaleDateString("es-AR") : ""} · Saldo: {fmt(f.saldo)}
+                            <div>
+                              <div style={{ color: "white", fontSize: 12, fontWeight: 600 }}>
+                                N° {f.nro_factura || f.id}
+                              </div>
+                              <div style={{ color: "#6b7280", fontSize: 11, marginTop: 1 }}>
+                                {f.fecha ? new Date(f.fecha).toLocaleDateString("es-AR") : ""} · Saldo: {fmt(f.saldo)}
+                              </div>
                             </div>
                           </div>
                           <div style={{ textAlign: "right" }}>
                             {f.pago > 0 && <div style={{ color: est.color, fontWeight: 700, fontSize: 13 }}>−{fmt(f.pago)}</div>}
-                            <div style={{ color: est.color, fontSize: 10, fontWeight: 600 }}>{est.label}</div>
+                            {est.label && <div style={{ color: est.color, fontSize: 10, fontWeight: 600 }}>{est.label}</div>}
                           </div>
                         </div>
                       )
@@ -488,13 +542,20 @@ export default function Deudores() {
                 {(() => {
                   const monto = parseFloat(montoCobro.replace(",", ".")) || 0
                   if (monto <= 0) return null
-                  const preview = calcularPreview(modalCobro.facturas, monto)
+                  const preview = facturasSeleccionadas.size > 0
+                    ? calcularPreviewSeleccionado(modalCobro.facturas, facturasSeleccionadas)
+                    : calcularPreview(modalCobro.facturas, monto)
                   const totalAplicado = preview.reduce((s: number, f: any) => s + f.pago, 0)
                   const excedente = Math.max(0, monto - totalAplicado)
                   const saldadas = preview.filter((f: any) => f.resultado === "pagado").length
                   const parciales = preview.filter((f: any) => f.resultado === "parcial").length
                   return (
                     <div style={{ marginTop: 10, padding: "10px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", fontSize: 12 }}>
+                      {facturasSeleccionadas.size === 0 && (
+                        <div style={{ color: "#4b5563", fontSize: 11, marginBottom: 6, fontStyle: "italic" }}>
+                          Distribución automática: de la más antigua a la más nueva
+                        </div>
+                      )}
                       {saldadas > 0 && (
                         <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
                           <span>Facturas a saldar:</span>
@@ -508,7 +569,7 @@ export default function Deudores() {
                         </div>
                       )}
                       <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: excedente > 0 ? 4 : 0 }}>
-                        <span>Total a aplicar:</span>
+                        <span>Total a cobrar:</span>
                         <span style={{ color: "white", fontWeight: 700 }}>{fmt(totalAplicado)}</span>
                       </div>
                       {excedente > 0 && (
