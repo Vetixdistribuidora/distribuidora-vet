@@ -412,12 +412,13 @@ export default function ComprasPage() {
       await Promise.all(items.map(async (item) => {
         const precioUnit = parseFloat(item.precio_unitario) || 0;
         if (!precioUnit) return;
-        const { data: prodActual } = await supabase.from("productos").select("margen, flete").eq("id", item.producto_id).single();
-        const margen = prodActual?.margen ?? 0;
-        const fleteProducto = prodActual?.flete ?? 0;
+        const { data: prodActual } = await supabase.from("productos").select("margen, flete, perdida").eq("id", item.producto_id).single();
+        const margen   = prodActual?.margen   ?? 0;
+        const fleteP   = prodActual?.flete    ?? 0;
+        const perdida  = prodActual?.perdida  ?? 0;
         await supabase.from("productos").update({
           costo: Math.round(precioUnit * 100) / 100,
-          precio_venta: Math.round(precioUnit * (1 + margen / 100) * (1 + fleteProducto / 100) * 100) / 100,
+          precio_venta: Math.round(precioUnit * (1 + margen / 100) * (1 + fleteP / 100) * (1 + perdida / 100) * 100) / 100,
         }).eq("id", item.producto_id);
       }));
     }
