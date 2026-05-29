@@ -479,23 +479,20 @@ thead th:last-child{text-align:right}
         const qty = ncCantidades[it.producto_id] || 0
         const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
         if (prod) await supabase.from("productos").update({ stock: (prod.stock || 0) + qty }).eq("id", it.producto_id)
-        await supabase.from("lotes").insert({ producto_id: it.producto_id, cantidad: qty, fecha_vencimiento: null, nro_remito: "NC " + nroNota })
+        await supabase.from("lotes").insert({ producto_id: it.producto_id, cantidad: qty, fecha_vencimiento: null })
       }
 
-      // Descontar de la venta original
-      const nuevoTotalVenta = Math.max(0, Number(modalNC.venta.total) - totalNC)
-      await supabase.from("ventas").update({ total: nuevoTotalVenta }).eq("id", modalNC.venta.id)
-      // Si era cuenta corriente, actualizar el movimiento de CC
-      if (modalNC.venta.estado === "cuenta_corriente") {
-        const { data: ultimo } = await supabase.from("cuentas_corrientes").select("id, saldo").eq("cliente_id", modalNC.venta.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
-        if (ultimo) {
-          const nuevoSaldoCC = Math.max(0, Number(ultimo.saldo) - totalNC)
-          await supabase.from("cuentas_corrientes").insert({ cliente_id: modalNC.venta.cliente_id, tipo: "nota_credito", monto: -totalNC, saldo: nuevoSaldoCC, venta_id: modalNC.venta.id, fecha: new Date() })
-        }
-      }
+      // Crear saldo a favor para el cliente (crédito flotante — se aplica en Deudores)
+      await supabase.from("saldo_clientes").insert({
+        cliente_id: modalNC.venta.cliente_id,
+        monto: totalNC,
+        motivo: "nota_credito",
+        nro_referencia: nroNota,
+        venta_origen_id: modalNC.venta.id,
+      })
 
       setModalNC(null)
-      mostrarToast("✅ Nota de crédito " + nroNota + " creada — total de la venta actualizado", "ok")
+      mostrarToast("✅ Nota de crédito " + nroNota + " creada — saldo a favor generado para el cliente", "ok")
       if (tab === "notascredito") cargarNotasCredito()
     } catch (e: any) {
       mostrarToast("❌ Error: " + (e?.message || "error desconocido"), "error")
