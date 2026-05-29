@@ -42,26 +42,17 @@ export default function Deudores() {
   const [exitoCobro, setExitoCobro] = useState<string | null>(null)
   const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string } | null>(null)
   const [facturasSeleccionadas, setFacturasSeleccionadas] = useState<Set<number>>(new Set())
-  // Saldo a favor (notas de crédito disponibles)
-  const [usarSaldo, setUsarSaldo] = useState(false)
 
   useEffect(() => { cargarDeudores() }, [])
 
   async function cargarDeudores() {
     setCargando(true)
     try {
-      const [ventasRes, saldosRes] = await Promise.all([
-        supabase
-          .from("ventas")
-          .select("id, total, nro_factura, fecha, cliente_id, clientes(nombre, apellido, telefono, localidad)")
-          .eq("estado", "cuenta_corriente")
-          .order("id", { ascending: true }),
-        supabase
-          .from("saldo_clientes")
-          .select("id, cliente_id, monto, motivo, nro_referencia, venta_origen_id, fecha")
-          .eq("usado", false)
-      ])
-      const ventas = ventasRes.data
+      const { data: ventas } = await supabase
+        .from("ventas")
+        .select("id, total, nro_factura, fecha, cliente_id, clientes(nombre, apellido, telefono, localidad)")
+        .eq("estado", "cuenta_corriente")
+        .order("id", { ascending: true })   // ascendente: más antigua primero
       if (!ventas) { setDeudores([]); return }
       const ventaIds = ventas.map(v => v.id)
       const { data: todosPagos } = await supabase
@@ -69,12 +60,6 @@ export default function Deudores() {
       const pagosPorVenta: Record<number, number> = {}
       ;(todosPagos || []).forEach((p: any) => {
         pagosPorVenta[p.venta_id] = (pagosPorVenta[p.venta_id] || 0) + Number(p.monto)
-      })
-      // Agrupar saldos a favor por cliente
-      const saldosPorCliente: Record<number, any[]> = {}
-      ;(saldosRes.data || []).forEach((s: any) => {
-        if (!saldosPorCliente[s.cliente_id]) saldosPorCliente[s.cliente_id] = []
-        saldosPorCliente[s.cliente_id].push(s)
       })
       const conSaldo = ventas.map(v => {
         const pagado = pagosPorVenta[v.id] || 0
@@ -93,7 +78,6 @@ export default function Deudores() {
             telefono: (v.clientes as any)?.telefono || "",
             localidad: (v.clientes as any)?.localidad || "",
             totalDeuda: 0,
-            saldosAFavor: saldosPorCliente[cid] || [],
             facturas: []
           }
         }
@@ -117,7 +101,6 @@ export default function Deudores() {
     setErrorCobro(null)
     setExitoCobro(null)
     setFacturasSeleccionadas(new Set())
-    setUsarSaldo(false)
   }
 
   function cerrarCobro() {
@@ -128,7 +111,6 @@ export default function Deudores() {
     setExitoCobro(null)
     setUltimoRecibo(null)
     setFacturasSeleccionadas(new Set())
-    setUsarSaldo(false)
   }
 
   function toggleFactura(id: number, facturas: any[]) {
@@ -166,11 +148,7 @@ export default function Deudores() {
 
   async function confirmarCobro() {
     const monto = parseFloat(montoCobro.replace(",", ".")) || 0
-    const saldosDisp = modalCobro?.saldosAFavor || []
-    const totalSaldo = saldosDisp.reduce((s: number, x: any) => s + Number(x.monto), 0)
-    const montoEfectivo = usarSaldo ? Math.max(0, monto - totalSaldo) : monto
-    const totalEfectivo = usarSaldo ? monto : monto   // monto ingresado incluye saldo
-    if (monto <= 0 && !(usarSaldo && totalSaldo > 0)) { setErrorCobro("Ingresá un monto válido."); return }
+    if (monto <= 0) { setErrorCobro("Ingresá un monto válido."); return }
     if (!modalCobro) return
 
     setProcesando(true)
@@ -186,6 +164,7 @@ export default function Deudores() {
       let nroReciboBase: string
       const { data: nroData, error: nroError } = await supabase.rpc('get_next_nro_recibo')
       if (nroError || !nroData) {
+        // Fallback
         const { data: ultimoRecibo } = await supabase
           .from("pagos_cuenta_corriente").select("nro_recibo")
           .not("nro_recibo", "is", null)
@@ -197,6 +176,7 @@ export default function Deudores() {
         }
         nroReciboBase = "001-" + String(nextNum).padStart(6, "0")
       } else {
+        // nroData es bigint → formatear como "001-006520"
         nroReciboBase = "001-" + String(Number(nroData)).padStart(6, "0")
       }
       const baseNum = parseInt(nroReciboBase.replace(/^.*-/, ""), 10)
@@ -205,37 +185,28 @@ export default function Deudores() {
       for (const f of afectadas) {
         const nroRecibo = "001-" + String(baseNum + offsetRecibo).padStart(6, "0")
         offsetRecibo++
-        const notaFinal = [
-          notaCobro.trim() || null,
-          usarSaldo && totalSaldo > 0 ? `Incluye saldo a favor $${totalSaldo.toLocaleString("es-AR")}` : null,
-        ].filter(Boolean).join(" | ") || null
+        // Mismo insert que usa la página de cuentas corrientes
         const { error: errInsert } = await supabase
           .from("pagos_cuenta_corriente")
           .insert([{
             cliente_id: modalCobro.cliente_id,
             venta_id: f.id,
             monto: f.pago,
-            nota: notaFinal,
+            nota: notaCobro.trim() || null,
             nro_recibo: nroRecibo,
           }])
         if (errInsert) throw new Error("Error en factura N°" + (f.nro_factura || f.id) + ": " + errInsert.message)
 
+        // Registrar en cuentas_corrientes
         const { data: ultimoCC } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", modalCobro.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
         const saldoAnteriorCC = Number(ultimoCC?.saldo ?? 0)
         const nuevoSaldoCC = Math.max(0, saldoAnteriorCC - f.pago)
         await supabase.from("cuentas_corrientes").insert({ cliente_id: modalCobro.cliente_id, venta_id: f.id, tipo: "pago", monto: -f.pago, saldo: nuevoSaldoCC, fecha: new Date() })
 
+        // Si queda saldada, marcar la venta como cobrada (igual que cuentas)
         if (f.resultado === "pagado") {
           await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", f.id)
         }
-      }
-
-      // Si se usó saldo a favor, marcar todos los registros de saldo como usados
-      if (usarSaldo && saldosDisp.length > 0) {
-        const ids = saldosDisp.map((s: any) => s.id)
-        await supabase.from("saldo_clientes")
-          .update({ usado: true, venta_aplicada_id: afectadas[0]?.id ?? null })
-          .in("id", ids)
       }
 
       const totalCobrado = afectadas.reduce((s: number, f: any) => s + f.pago, 0)
@@ -374,14 +345,6 @@ export default function Deudores() {
                         {d.telefono && <span>📞 {d.telefono}</span>}
                         {d.localidad && <span>📍 {d.localidad}</span>}
                         <span>{d.facturas.length} factura{d.facturas.length !== 1 ? "s" : ""}</span>
-                        {d.saldosAFavor?.length > 0 && (
-                          <span style={{
-                            background: "#dcfce7", color: "#16a34a", fontWeight: 700,
-                            padding: "1px 8px", borderRadius: 10, border: "1px solid #bbf7d0"
-                          }}>
-                            💚 Saldo a favor: {fmt(d.saldosAFavor.reduce((s: number, x: any) => s + Number(x.monto), 0))}
-                          </span>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -468,63 +431,10 @@ export default function Deudores() {
               </div>
             )}
 
-            {/* Saldo a favor disponible */}
-            {modalCobro.saldosAFavor?.length > 0 && (() => {
-              const totalSaldo = modalCobro.saldosAFavor.reduce((s: number, x: any) => s + Number(x.monto), 0)
-              return (
-                <div style={{
-                  background: usarSaldo ? "rgba(34,197,94,0.15)" : "rgba(34,197,94,0.08)",
-                  border: `1px solid ${usarSaldo ? "rgba(34,197,94,0.5)" : "rgba(34,197,94,0.25)"}`,
-                  borderRadius: 10, padding: "12px 14px", marginBottom: 16,
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <div style={{ color: "#4ade80", fontWeight: 700, fontSize: 13 }}>
-                        💚 Saldo a favor disponible: {fmt(totalSaldo)}
-                      </div>
-                      <div style={{ color: "#6b7280", fontSize: 11, marginTop: 3 }}>
-                        {modalCobro.saldosAFavor.map((s: any) =>
-                          `${s.nro_referencia || "Crédito"}: ${fmt(Number(s.monto))}`
-                        ).join(" · ")}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        const nuevoEstado = !usarSaldo
-                        setUsarSaldo(nuevoEstado)
-                        if (nuevoEstado) {
-                          // Auto-completar el monto con saldo + deuda seleccionada o total
-                          const base = facturasSeleccionadas.size > 0
-                            ? modalCobro.facturas.filter((f: any) => facturasSeleccionadas.has(f.id)).reduce((s: number, f: any) => s + f.saldo, 0)
-                            : Math.max(0, modalCobro.totalDeuda - totalSaldo)
-                          setMontoCobro(String(Math.round(Math.max(0, base) * 100) / 100))
-                        }
-                      }}
-                      style={{
-                        padding: "6px 14px", borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: "pointer",
-                        border: "none", flexShrink: 0,
-                        background: usarSaldo ? "#16a34a" : "rgba(34,197,94,0.2)",
-                        color: usarSaldo ? "white" : "#4ade80",
-                      }}>
-                      {usarSaldo ? "✓ Usando saldo" : "Usar saldo"}
-                    </button>
-                  </div>
-                  {usarSaldo && (
-                    <div style={{ marginTop: 8, fontSize: 11, color: "#86efac" }}>
-                      Se aplicarán {fmt(Math.min(totalSaldo, parseFloat(montoCobro) || 0))} de saldo a favor.
-                      {parseFloat(montoCobro) > totalSaldo
-                        ? ` El cliente abona ${fmt(parseFloat(montoCobro) - totalSaldo)} adicional.`
-                        : " Sin pago adicional del cliente."}
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-
             {/* Inputs */}
             <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
               <div>
-                <label style={labelStyle}>{usarSaldo ? "Monto total (saldo + efectivo)" : "Monto cobrado"}</label>
+                <label style={labelStyle}>Monto cobrado</label>
                 <input
                   type="number" min="0" step="0.01"
                   value={montoCobro}
