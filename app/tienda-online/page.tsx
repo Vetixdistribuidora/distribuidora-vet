@@ -106,6 +106,7 @@ export default function TiendaOnline() {
     const { data } = await supabase
       .from("pedidos")
       .select("*, pedido_items(producto_id, nombre_producto, cantidad, precio_unitario)")
+      .is("nombre_proveedor", null)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(300)

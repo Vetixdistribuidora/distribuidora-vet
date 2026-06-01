@@ -166,7 +166,7 @@ export default function Pedidos() {
     setCargando(true)
     try {
       const [resPeds, resProvs] = await Promise.all([
-        supabase.from("pedidos").select("*, pedidos_items(id, cantidad)").is("deleted_at", null).order("created_at", { ascending: false }),
+        supabase.from("pedidos").select("*, pedidos_items(id, cantidad)").not("nombre_proveedor", "is", null).is("deleted_at", null).order("created_at", { ascending: false }),
         supabase.from("proveedores").select("id, nombre").order("nombre"),
       ])
       setPedidos((resPeds.data || []).map((p: any) => ({
