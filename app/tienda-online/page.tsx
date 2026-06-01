@@ -106,6 +106,7 @@ export default function TiendaOnline() {
     const { data } = await supabase
       .from("pedidos")
       .select("*, pedido_items(producto_id, nombre_producto, cantidad, precio_unitario)")
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(300)
     setPedidos((data as Pedido[]) ?? [])
@@ -133,8 +134,7 @@ export default function TiendaOnline() {
   async function eliminarPedido() {
     if (!confirmDeleteId) return
     setEliminandoPedido(true)
-    await supabase.from("pedido_items").delete().eq("pedido_id", confirmDeleteId)
-    await supabase.from("pedidos").delete().eq("id", confirmDeleteId)
+    await supabase.from("pedidos").update({ deleted_at: new Date().toISOString() }).eq("id", confirmDeleteId)
     setPedidos(ps => ps.filter(p => p.id !== confirmDeleteId))
     setConfirmDeleteId(null)
     setExpandedId(null)

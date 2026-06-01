@@ -166,7 +166,7 @@ export default function Pedidos() {
     setCargando(true)
     try {
       const [resPeds, resProvs] = await Promise.all([
-        supabase.from("pedidos").select("*, pedidos_items(id, cantidad)").order("created_at", { ascending: false }),
+        supabase.from("pedidos").select("*, pedidos_items(id, cantidad)").is("deleted_at", null).order("created_at", { ascending: false }),
         supabase.from("proveedores").select("id, nombre").order("nombre"),
       ])
       setPedidos((resPeds.data || []).map((p: any) => ({
@@ -329,7 +329,7 @@ export default function Pedidos() {
     if (!confirmEliminar) return
     setEliminando(true)
     try {
-      const { error } = await supabase.from("pedidos").delete().eq("id", confirmEliminar.id)
+      const { error } = await supabase.from("pedidos").update({ deleted_at: new Date().toISOString() }).eq("id", confirmEliminar.id)
       if (error) { mostrarToast("Error al eliminar", "error"); return }
       mostrarToast("Pedido eliminado", "ok")
       setConfirmEliminar(null)
