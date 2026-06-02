@@ -85,6 +85,7 @@ export default function Clientes() {
   const [ventaParaPagar, setVentaParaPagar] = useState<any>(null)
   const [montoPago, setMontoPago] = useState("")
   const [notaPago, setNotaPago] = useState("")
+  const [metodoPago, setMetodoPago] = useState("efectivo")
   const [guardandoPago, setGuardandoPago] = useState(false)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
@@ -252,7 +253,7 @@ export default function Clientes() {
   }
 
   function abrirPago(venta: any) {
-    setVentaParaPagar(venta); setMontoPago(String(venta.saldo)); setNotaPago(""); setModalPago(true)
+    setVentaParaPagar(venta); setMontoPago(String(venta.saldo)); setNotaPago(""); setMetodoPago("efectivo"); setModalPago(true)
   }
 
   async function registrarPago() {
@@ -278,7 +279,7 @@ export default function Clientes() {
         nroRecibo = "001-" + String(Number(nroData)).padStart(6, "0")
       }
       const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
-        cliente_id: modalHistorial.id, venta_id: ventaParaPagar.id, monto, nota: notaPago || null, nro_recibo: nroRecibo
+        cliente_id: modalHistorial.id, venta_id: ventaParaPagar.id, monto, metodo_pago: metodoPago || null, nota: notaPago || null, nro_recibo: nroRecibo
       }])
       if (error) { mostrarToast("Error: " + error.message, "error"); return }
       // Registrar movimiento en cuentas_corrientes para mantener el saldo sincronizado
@@ -728,9 +729,20 @@ export default function Clientes() {
                 </div>
               )}
             </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Método de pago</label>
+              <select value={metodoPago} onChange={e => setMetodoPago(e.target.value)} style={{ ...inputDarkStyle, cursor: "pointer", background: "#1e293b" }}>
+                <option value="efectivo" style={{ color: "#000" }}>Efectivo</option>
+                <option value="transferencia" style={{ color: "#000" }}>Transferencia</option>
+                <option value="cheque" style={{ color: "#000" }}>Cheque</option>
+                <option value="echeq" style={{ color: "#000" }}>E-Cheq</option>
+                <option value="tarjeta" style={{ color: "#000" }}>Tarjeta</option>
+                <option value="otro" style={{ color: "#000" }}>Otro</option>
+              </select>
+            </div>
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Nota (opcional)</label>
-              <input type="text" value={notaPago} onChange={e => setNotaPago(e.target.value)} placeholder="Ej: efectivo, transferencia..." style={inputDarkStyle} />
+              <input type="text" value={notaPago} onChange={e => setNotaPago(e.target.value)} placeholder="Ej: transferencia mayo, banco Galicia..." style={inputDarkStyle} />
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => { setModalPago(false); setVentaParaPagar(null) }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>

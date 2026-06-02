@@ -1425,6 +1425,7 @@ thead th:last-child{text-align:right}
                     <option value="efectivo" style={{ background: "#1e293b", color: "white" }}>Efectivo</option>
                     <option value="transferencia" style={{ background: "#1e293b", color: "white" }}>Transferencia</option>
                     <option value="cheque" style={{ background: "#1e293b", color: "white" }}>Cheque</option>
+                    <option value="echeq" style={{ background: "#1e293b", color: "white" }}>E-Cheq</option>
                     <option value="tarjeta" style={{ background: "#1e293b", color: "white" }}>Tarjeta</option>
                     <option value="otro" style={{ background: "#1e293b", color: "white" }}>Otro</option>
                   </select>

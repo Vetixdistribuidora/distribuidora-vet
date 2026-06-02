@@ -84,6 +84,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/proveedores")) return "Proveedores"
     if (pathname.startsWith("/compras")) return "Compras"
     if (pathname.startsWith("/cuentas")) return "Cuenta Corriente"
+    if (pathname.startsWith("/caja")) return "Caja"
     if (pathname.startsWith("/reportes")) return "Reportes"
     if (pathname.startsWith("/deudores")) return "Deudores"
     if (pathname.startsWith("/tienda-online")) return "Tienda Online"
@@ -103,6 +104,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (pathname.startsWith("/proveedores")) return "🚚"
     if (pathname.startsWith("/compras")) return "🧾"
     if (pathname.startsWith("/cuentas")) return "📄"
+    if (pathname.startsWith("/caja")) return "💵"
     if (pathname.startsWith("/reportes")) return "📊"
     if (pathname.startsWith("/deudores")) return "⚠️"
     if (pathname.startsWith("/tienda-online")) return "🛍️"
@@ -277,6 +279,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <path d="M14 2v6h6" />
             </svg>
             Cuenta Corriente
+          </Link>
+          <Link href="/caja" style={getItemStyle("/caja")} onClick={() => setSidebarAbierto(false)}>
+            <svg style={iconStyle("#10b981", pathname.startsWith("/caja"))} fill="none" strokeWidth="2" viewBox="0 0 24 24">
+              <rect x="2" y="6" width="20" height="12" rx="2" />
+              <circle cx="12" cy="12" r="2.5" />
+              <path d="M6 10v4M18 10v4" />
+            </svg>
+            Caja
           </Link>
           <Link href="/reportes" style={getItemStyle("/reportes")} onClick={() => setSidebarAbierto(false)}>
             <svg style={iconStyle("#a78bfa", pathname.startsWith("/reportes"))} fill="none" strokeWidth="2" viewBox="0 0 24 24">

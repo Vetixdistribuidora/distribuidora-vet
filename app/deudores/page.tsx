@@ -36,6 +36,7 @@ export default function Deudores() {
   // ── Modal cobro masivo ──────────────────────────────────────────────────────
   const [modalCobro, setModalCobro] = useState<any | null>(null)
   const [montoCobro, setMontoCobro] = useState("")
+  const [metodoCobro, setMetodoCobro] = useState("efectivo")
   const [notaCobro, setNotaCobro] = useState("")
   const [procesando, setProcesando] = useState(false)
   const [errorCobro, setErrorCobro] = useState<string | null>(null)
@@ -97,6 +98,7 @@ export default function Deudores() {
   function abrirCobro(d: any) {
     setModalCobro(d)
     setMontoCobro("")
+    setMetodoCobro("efectivo")
     setNotaCobro("")
     setErrorCobro(null)
     setExitoCobro(null)
@@ -192,6 +194,7 @@ export default function Deudores() {
             cliente_id: modalCobro.cliente_id,
             venta_id: f.id,
             monto: f.pago,
+            metodo_pago: metodoCobro || null,
             nota: notaCobro.trim() || null,
             nro_recibo: nroRecibo,
           }])
@@ -460,10 +463,22 @@ export default function Deudores() {
                   })}
                 </div>
               </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>Método de pago</label>
+                <select value={metodoCobro} onChange={e => setMetodoCobro(e.target.value)}
+                  style={{ ...inputDarkStyle, cursor: "pointer", background: "#1e293b" }}>
+                  <option value="efectivo" style={{ color: "#000" }}>Efectivo</option>
+                  <option value="transferencia" style={{ color: "#000" }}>Transferencia</option>
+                  <option value="cheque" style={{ color: "#000" }}>Cheque</option>
+                  <option value="echeq" style={{ color: "#000" }}>E-Cheq</option>
+                  <option value="tarjeta" style={{ color: "#000" }}>Tarjeta</option>
+                  <option value="otro" style={{ color: "#000" }}>Otro</option>
+                </select>
+              </div>
               <div>
                 <label style={labelStyle}>Nota (opcional)</label>
                 <input type="text" value={notaCobro} onChange={e => setNotaCobro(e.target.value)}
-                  placeholder="Ej: transferencia mayo, efectivo..." style={inputDarkStyle} />
+                  placeholder="Ej: transferencia mayo, banco Galicia..." style={inputDarkStyle} />
               </div>
             </div>
 
