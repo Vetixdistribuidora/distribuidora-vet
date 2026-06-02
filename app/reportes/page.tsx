@@ -94,16 +94,20 @@ export default function Reportes() {
       const antHastaUTC = new Date(antHasta + "T23:59:59").toISOString()
 
       // Todas las queries en paralelo
-      const [ventasRes, pagosRes, comprasRes, ventasAntRes] = await Promise.all([
+      const [ventasRes, pagosRes, comprasRes, comprasPagosRes, ventasAntRes] = await Promise.all([
         supabase.from("ventas")
-          .select("id, total, cliente_id, fecha, estado")
+          .select("id, total, cliente_id, fecha, estado, metodo_cobro")
           .gte("fecha", desdeUTC).lte("fecha", hastaUTC).neq("estado", "anulada"),
         supabase.from("pagos_cuenta_corriente")
-          .select("monto")
+          .select("venta_id, monto")
           .gte("fecha", desdeUTC).lte("fecha", hastaUTC),
         supabase.from("compras")
           .select("total")
           .gte("fecha", desdeUTC).lte("fecha", hastaUTC),
+        // Pagos REALES a proveedores del período (fecha es DATE → rango YYYY-MM-DD)
+        supabase.from("compras_pagos")
+          .select("monto")
+          .gte("fecha", desde).lte("fecha", hasta),
         supabase.from("ventas")
           .select("id, total")
           .gte("fecha", antDesdeUTC).lte("fecha", antHastaUTC).neq("estado", "anulada"),
@@ -164,14 +168,28 @@ export default function Reportes() {
       const markup = totalCosto > 0 ? (ganancia / totalCosto) * 100 : 0
 
       // ── Cobrado vs CC ─────────────────────────────────────────────────────────
-      const ventasCobradas = ventas.filter((v: any) => v.estado !== "cuenta_corriente")
+      // Sin duplicar: ventas directas = metodo_cobro no nulo (las CC siempre tienen
+      // metodo_cobro NULL, aun cobradas). De los pagos solo contamos los de ventas CC.
+      const pagos = pagosRes.data || []
+      const idsPagos = [...new Set(pagos.map((p: any) => p.venta_id).filter((x: any) => x != null))]
+      const metodoCobroPorVenta: Record<number, string | null> = {}
+      if (idsPagos.length) {
+        const { data: vInfo } = await supabase.from("ventas").select("id, metodo_cobro").in("id", idsPagos)
+        ;(vInfo || []).forEach((v: any) => { metodoCobroPorVenta[v.id] = v.metodo_cobro })
+      }
+      const ventasCobradas = ventas.filter((v: any) => v.metodo_cobro != null)
+      // Pendiente = solo las que SIGUEN en cuenta corriente sin saldar (estado),
+      // no todas las metodo_cobro NULL (una CC ya cobrada queda metodo_cobro NULL pero estado 'cobrada').
       const ventasCC = ventas.filter((v: any) => v.estado === "cuenta_corriente")
       const cobradoVentas = ventasCobradas.reduce((s: number, v: any) => s + (v.total || 0), 0)
-      const pagosCCperiodo = (pagosRes.data || []).reduce((s: number, p: any) => s + Number(p.monto), 0)
+      const pagosCCperiodo = pagos
+        .filter((p: any) => metodoCobroPorVenta[p.venta_id] == null)
+        .reduce((s: number, p: any) => s + Number(p.monto), 0)
       const cobrado = cobradoVentas + pagosCCperiodo
       const pendienteCC = ventasCC.reduce((s: number, v: any) => s + (v.total || 0), 0)
       const compras = (comprasRes.data || []).reduce((s: number, c: any) => s + Number(c.total || 0), 0)
-      const resultado = cobrado - compras
+      const comprasPagadas = (comprasPagosRes.data || []).reduce((s: number, p: any) => s + Number(p.monto || 0), 0)
+      const resultado = cobrado - comprasPagadas
 
       setKpis({ total: totalVendido, ganancia, ticket, clientesUnicos, cantVentas, margen, markup, promedioDiario, cobrado, pendienteCC, compras, resultado, diasPeriodo })
 
@@ -310,7 +328,7 @@ export default function Reportes() {
       label: "Resultado neto", value: fmt(kpis.resultado), icon: kpis.resultado >= 0 ? "🟢" : "🔴",
       color: kpis.resultado >= 0 ? "#16a34a" : "#dc2626",
       bg: kpis.resultado >= 0 ? "#f0fdf4" : "#fef2f2",
-      sub: "Cobrado − compras del período",
+      sub: "Cobrado − pagado a proveedores",
     },
   ]
 

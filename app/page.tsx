@@ -94,16 +94,16 @@ export default function Dashboard() {
         .select("id, total, nro_factura, fecha, clientes(nombre, apellido)")
         .eq("estado", "cuenta_corriente").order("id", { ascending: false }),
       supabase.from("ventas")
-        .select("id, total, nro_factura, fecha, estado, clientes(nombre, apellido)")
+        .select("id, total, nro_factura, fecha, estado, metodo_cobro, clientes(nombre, apellido)")
         .gte("fecha", inicioHoyUTC).neq("estado", "anulada"),
       supabase.from("ventas")
-        .select("id, total, nro_factura, fecha, estado, clientes(nombre, apellido)")
+        .select("id, total, nro_factura, fecha, estado, metodo_cobro, clientes(nombre, apellido)")
         .gte("fecha", inicioMesStr).neq("estado", "anulada").order("id", { ascending: false }),
       // Solo traer productos con stock bajo o sin stock — evita cargar 9000+ filas
       // para luego filtrar. Supabase devuelve máx 1000 sin paginación explícita.
       supabase.from("productos").select("id, nombre, stock").or("stock.is.null,stock.lte.5"),
-      supabase.from("pagos_cuenta_corriente").select("monto").gte("fecha", inicioHoyUTC),
-      supabase.from("pagos_cuenta_corriente").select("monto").gte("fecha", inicioMesStr),
+      supabase.from("pagos_cuenta_corriente").select("venta_id, monto").gte("fecha", inicioHoyUTC),
+      supabase.from("pagos_cuenta_corriente").select("venta_id, monto").gte("fecha", inicioMesStr),
     ])
 
     const k = kpisRes.data as any
@@ -114,15 +114,31 @@ export default function Dashboard() {
       ? ((Number(k.total_mes) - Number(k.total_mes_ant)) / Number(k.total_mes_ant)) * 100 : 0
     const margen = Number(k.total_mes) > 0 ? (Number(k.ganancia_mes) / Number(k.total_mes)) * 100 : 0
 
-    // ── Efectivo real ingresado (ventas cobradas + pagos CC recibidos) ────────
+    // ── Efectivo real ingresado (ventas directas cobradas + cobros de CC) ─────
+    // IMPORTANTE: una venta directa inserta fila en `ventas` Y en `pagos_cuenta_corriente`.
+    // Para NO duplicar, las ventas directas se identifican por `metodo_cobro` no nulo
+    // (las cuentas corrientes siempre tienen metodo_cobro NULL, aun cobradas), y de los
+    // pagos solo se cuentan los que corresponden a ventas CC (metodo_cobro NULL).
     const ventasHoyData = ventasHoyRes.data || []
     const ventasMesData = ventasMesRes.data || []
+    const pagosHoy = pagosHoyRes.data || []
+    const pagosMes = pagosMesRes.data || []
+
+    // Mapa venta_id → metodo_cobro para los pagos (las ventas pueden ser de otro mes)
+    const idsPagos = [...new Set([...pagosHoy, ...pagosMes].map((p: any) => p.venta_id).filter((x: any) => x != null))]
+    const metodoCobroPorVenta: Record<number, string | null> = {}
+    if (idsPagos.length) {
+      const { data: vInfo } = await supabase.from("ventas").select("id, metodo_cobro").in("id", idsPagos)
+      ;(vInfo || []).forEach((v: any) => { metodoCobroPorVenta[v.id] = v.metodo_cobro })
+    }
+    const esCobroCC = (p: any) => metodoCobroPorVenta[p.venta_id] == null
+
     const cobradoHoy =
-      ventasHoyData.filter((v: any) => v.estado !== "cuenta_corriente").reduce((s: number, v: any) => s + Number(v.total), 0) +
-      (pagosHoyRes.data || []).reduce((s: number, p: any) => s + Number(p.monto), 0)
+      ventasHoyData.filter((v: any) => v.metodo_cobro != null).reduce((s: number, v: any) => s + Number(v.total), 0) +
+      pagosHoy.filter(esCobroCC).reduce((s: number, p: any) => s + Number(p.monto), 0)
     const cobradoMes =
-      ventasMesData.filter((v: any) => v.estado !== "cuenta_corriente").reduce((s: number, v: any) => s + Number(v.total), 0) +
-      (pagosMesRes.data || []).reduce((s: number, p: any) => s + Number(p.monto), 0)
+      ventasMesData.filter((v: any) => v.metodo_cobro != null).reduce((s: number, v: any) => s + Number(v.total), 0) +
+      pagosMes.filter(esCobroCC).reduce((s: number, p: any) => s + Number(p.monto), 0)
 
     setKpis({
       totalHoy: Number(k.total_hoy), cantidadHoy: Number(k.cant_hoy),
