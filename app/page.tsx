@@ -80,13 +80,20 @@ export default function Dashboard() {
     // Ej. Argentina: "2026-05-20T00:00:00" local → "2026-05-20T03:00:00.000Z" UTC
     const inicioHoyUTC = new Date(hoyStr + "T00:00:00").toISOString()
     // Inicio de mes: new Date(y, m, 1) ya usa hora local → toISOString() es correcto
-    const inicioMesStr = new Date(hoyDate.getFullYear(), hoyDate.getMonth(), 1).toISOString()
+    const inicioMesDate = new Date(hoyDate.getFullYear(), hoyDate.getMonth(), 1)
+    const inicioMesStr = inicioMesDate.toISOString()
+    // Mismo tramo del mes anterior (para "Crecimiento" justo: lo que va del mes vs igual
+    // cantidad de días del mes pasado, no contra el mes pasado completo).
+    const spanMs = hoyDate.getTime() - inicioMesDate.getTime()
+    const prevMesInicio = new Date(hoyDate.getFullYear(), hoyDate.getMonth() - 1, 1)
+    const prevMesInicioUTC = prevMesInicio.toISOString()
+    const prevMesHastaUTC = new Date(prevMesInicio.getTime() + spanMs).toISOString()
     // 90 días usando fecha local
     const d90 = new Date(hoyDate); d90.setDate(d90.getDate() + 90)
     const en90Str = d90.toLocaleDateString("sv-SE")
 
     // ── Todo en paralelo: 1 RPC + 7 queries pequeñas ─────────────────────────
-    const [kpisRes, lotesRes, ccRes, ventasHoyRes, ventasMesRes, prodRes, pagosHoyRes, pagosMesRes] = await Promise.all([
+    const [kpisRes, lotesRes, ccRes, ventasHoyRes, ventasMesRes, prodRes, pagosHoyRes, pagosMesRes, ventasPrevMTDRes] = await Promise.all([
       supabase.rpc("dashboard_kpis"),
       supabase.from("lotes_con_stock").select("*")
         .lte("fecha_vencimiento", en90Str).order("fecha_vencimiento", { ascending: true }),
@@ -104,14 +111,20 @@ export default function Dashboard() {
       supabase.from("productos").select("id, nombre, stock").or("stock.is.null,stock.lte.5"),
       supabase.from("pagos_cuenta_corriente").select("venta_id, monto").gte("fecha", inicioHoyUTC),
       supabase.from("pagos_cuenta_corriente").select("venta_id, monto").gte("fecha", inicioMesStr),
+      // Ventas del MISMO tramo del mes anterior (para Crecimiento)
+      supabase.from("ventas").select("total")
+        .gte("fecha", prevMesInicioUTC).lt("fecha", prevMesHastaUTC).neq("estado", "anulada"),
     ])
 
     const k = kpisRes.data as any
     if (!k) return
 
     // ── KPIs (todos vienen calculados del servidor) ───────────────────────────
-    const crecimiento = Number(k.total_mes_ant) > 0
-      ? ((Number(k.total_mes) - Number(k.total_mes_ant)) / Number(k.total_mes_ant)) * 100 : 0
+    // Crecimiento: lo que va del mes (total_mes) vs el MISMO tramo del mes anterior
+    // (no el mes anterior completo), para que la comparación sea justa desde el día 1.
+    const totalPrevMTD = (ventasPrevMTDRes.data || []).reduce((s: number, v: any) => s + Number(v.total || 0), 0)
+    const crecimiento = totalPrevMTD > 0
+      ? ((Number(k.total_mes) - totalPrevMTD) / totalPrevMTD) * 100 : 0
     const margen = Number(k.total_mes) > 0 ? (Number(k.ganancia_mes) / Number(k.total_mes)) * 100 : 0
 
     // ── Efectivo real ingresado (ventas directas cobradas + cobros de CC) ─────
@@ -262,7 +275,7 @@ export default function Dashboard() {
     { titulo: "Ingresos del mes", valor: fmt(kpis.cobradoMes ?? 0), sub: "Cobrado + pagos CC recibidos", icon: "🏦", color: "#059669", onClick: undefined },
     { titulo: "Compras del mes", valor: fmt(kpis.totalComprasMes), sub: "Total gastado en compras", icon: "🛒", color: "#f59e0b", onClick: undefined },
     { titulo: "Ganancia", valor: fmt(kpis.ganancia), sub: `Margen ${kpis.margen?.toFixed(1)}%`, icon: "💰", color: "#22c55e", onClick: undefined },
-    { titulo: "Crecimiento", valor: (kpis.crecimiento >= 0 ? "+" : "") + kpis.crecimiento?.toFixed(1) + "%", sub: "vs mes anterior", icon: "📈", color: kpis.crecimiento >= 0 ? "#22c55e" : "#ef4444", onClick: undefined },
+    { titulo: "Crecimiento", valor: (kpis.crecimiento >= 0 ? "+" : "") + kpis.crecimiento?.toFixed(1) + "%", sub: "vs mismo tramo mes anterior", icon: "📈", color: kpis.crecimiento >= 0 ? "#22c55e" : "#ef4444", onClick: undefined },
     { titulo: "Capital en stock", valor: fmt(kpis.capitalStock), sub: "Costo × stock", icon: "📦", color: "#a78bfa", onClick: undefined },
     { titulo: "Cuentas corrientes", valor: fmt(kpis.totalCC), sub: `${kpis.cantidadCC} venta${kpis.cantidadCC !== 1 ? "s" : ""} pendiente${kpis.cantidadCC !== 1 ? "s" : ""}`, icon: "🕐", color: "#ef4444", onClick: () => abrirModal("cuentasCC") },
   ]
