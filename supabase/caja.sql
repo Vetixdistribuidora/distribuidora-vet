@@ -54,35 +54,29 @@ CREATE INDEX IF NOT EXISTS movimientos_caja_tipo_idx  ON movimientos_caja(tipo);
 -- 5. MULTI-TENANT: trigger de org_id + RLS por organización
 --    (reusa _set_org_id() y get_my_org_id() de migration_multitenant.sql)
 -- ────────────────────────────────────────────────────────────
-DO $$
-DECLARE
-  tablas TEXT[] := ARRAY['movimientos_caja', 'caja_config'];
-  t TEXT;
-BEGIN
-  FOREACH t IN ARRAY tablas LOOP
-    -- trigger que autocompleta organizacion_id en cada INSERT
-    EXECUTE format('DROP TRIGGER IF EXISTS tg_set_org_id ON %I', t);
-    EXECUTE format(
-      'CREATE TRIGGER tg_set_org_id
-       BEFORE INSERT ON %I
-       FOR EACH ROW EXECUTE FUNCTION _set_org_id()',
-      t
-    );
+-- Se escribe explícito por tabla (no en un loop) para que cada statement se aplique
+-- de forma independiente y no quede una tabla con RLS activada pero SIN política
+-- (RLS activa + sin política = se niega todo INSERT).
 
-    -- habilitar RLS
-    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+-- caja_config
+ALTER TABLE caja_config ENABLE ROW LEVEL SECURITY;
+DROP TRIGGER IF EXISTS tg_set_org_id ON caja_config;
+CREATE TRIGGER tg_set_org_id BEFORE INSERT ON caja_config
+  FOR EACH ROW EXECUTE FUNCTION _set_org_id();
+DROP POLICY IF EXISTS "org_isolation" ON caja_config;
+CREATE POLICY "org_isolation" ON caja_config
+  FOR ALL USING (organizacion_id = get_my_org_id())
+  WITH CHECK (organizacion_id = get_my_org_id());
 
-    -- política de aislamiento por organización
-    EXECUTE format('DROP POLICY IF EXISTS "org_isolation" ON %I', t);
-    EXECUTE format(
-      'CREATE POLICY "org_isolation" ON %I
-       FOR ALL
-       USING      (organizacion_id = get_my_org_id())
-       WITH CHECK (organizacion_id = get_my_org_id())',
-      t
-    );
-  END LOOP;
-END $$;
+-- movimientos_caja
+ALTER TABLE movimientos_caja ENABLE ROW LEVEL SECURITY;
+DROP TRIGGER IF EXISTS tg_set_org_id ON movimientos_caja;
+CREATE TRIGGER tg_set_org_id BEFORE INSERT ON movimientos_caja
+  FOR EACH ROW EXECUTE FUNCTION _set_org_id();
+DROP POLICY IF EXISTS "org_isolation" ON movimientos_caja;
+CREATE POLICY "org_isolation" ON movimientos_caja
+  FOR ALL USING (organizacion_id = get_my_org_id())
+  WITH CHECK (organizacion_id = get_my_org_id());
 
 -- ────────────────────────────────────────────────────────────
 -- 6. Etiquetar filas pre-existentes (si las hubiera) con la org VETIX
