@@ -158,7 +158,7 @@ export default function CajaPage() {
     setLoading(true); setError(null)
     try {
       // 1. Config (saldo inicial)
-      const { data: cfg } = await supabase.from("caja_config").select("*").maybeSingle()
+      const { data: cfg } = await supabase.from("caja_config").select("*").order("id", { ascending: true }).limit(1).maybeSingle()
       let sInicial = 0
       let mInicial = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`
       if (cfg) {
@@ -439,18 +439,25 @@ export default function CajaPage() {
     try {
       const oid = await obtenerOrgId()
       if (!oid) throw new Error("No se pudo identificar tu organización. Recargá la página e intentá de nuevo.")
-      // upsert keyed por organización: inserta o actualiza la única fila de config,
-      // sin depender de configId (evita el caso en que el update no encontraba la fila).
-      const { data, error } = await supabase.from("caja_config")
-        .upsert(
-          { saldo_inicial: s, mes_inicial: saldoForm.mes_inicial, organizacion_id: oid, updated_at: new Date().toISOString() },
-          { onConflict: "organizacion_id" }
-        )
-        .select()
-        .maybeSingle()
-      if (error) throw error
-      if (!data) throw new Error("No se pudo guardar (revisá permisos / conexión).")
-      setConfigId(data.id)
+      // Buscar la fila de config existente (RLS solo ve la de tu organización) y
+      // actualizar por id, o insertar si no hay. Sin ON CONFLICT (no depende de un
+      // índice único en la base).
+      const { data: existente } = await supabase.from("caja_config").select("id").limit(1).maybeSingle()
+      if (existente?.id) {
+        const { data, error } = await supabase.from("caja_config")
+          .update({ saldo_inicial: s, mes_inicial: saldoForm.mes_inicial, updated_at: new Date().toISOString() })
+          .eq("id", existente.id).select().maybeSingle()
+        if (error) throw error
+        if (!data) throw new Error("No se pudo actualizar (revisá permisos / conexión).")
+        setConfigId(data.id)
+      } else {
+        const { data, error } = await supabase.from("caja_config")
+          .insert({ saldo_inicial: s, mes_inicial: saldoForm.mes_inicial, organizacion_id: oid })
+          .select().maybeSingle()
+        if (error) throw error
+        if (!data) throw new Error("No se pudo guardar (revisá permisos / conexión).")
+        setConfigId(data.id)
+      }
       mostrarToast("✅ Saldo inicial guardado")
       setModalSaldo(false)
       await cargar()
