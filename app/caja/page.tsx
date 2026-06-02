@@ -84,7 +84,25 @@ const inputDark: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, color: "white",
   fontSize: 14, outline: "none", boxSizing: "border-box",
 }
-const selectDark: React.CSSProperties = { ...inputDark, cursor: "pointer", background: "#1e293b" }
+// Los <select> van con fondo claro y texto oscuro para que se lean bien
+// (sobre el modal oscuro un select oscuro queda ilegible).
+const selectClaro: React.CSSProperties = {
+  width: "100%", padding: "10px 12px", background: "#ffffff",
+  border: "1px solid #cbd5e1", borderRadius: 10, color: "#0f172a",
+  fontSize: 14, fontWeight: 600, outline: "none", boxSizing: "border-box", cursor: "pointer",
+}
+
+// Bloques separados del detalle (cada uno es como una planilla aparte)
+const BLOQUES: { key: string; label: string; icon: string; color: string; modo: "ingreso" | "egreso" }[] = [
+  { key: "ingresos",            label: "Ingresos",             icon: "💵", color: "#16a34a", modo: "ingreso" },
+  { key: "proveedores",         label: "Pagos a proveedores",  icon: "🚚", color: "#f59e0b", modo: "egreso" },
+  { key: "gasto_distribuidora", label: "Gastos Distribuidora", icon: "🏢", color: "#0ea5e9", modo: "egreso" },
+  { key: "gasto_casa",          label: "Gastos Casa",          icon: "🏠", color: "#a855f7", modo: "egreso" },
+  { key: "gasto_camioneta",     label: "Gastos Camioneta",     icon: "🚐", color: "#14b8a6", modo: "egreso" },
+  { key: "retiro",              label: "Retiros",              icon: "🏧", color: "#ef4444", modo: "egreso" },
+  { key: "flete",               label: "Fletes",               icon: "🚛", color: "#d97706", modo: "egreso" },
+  { key: "otro_egreso",         label: "Otros egresos",        icon: "📤", color: "#64748b", modo: "egreso" },
+]
 
 export default function CajaPage() {
   const hoy = new Date()
@@ -446,12 +464,13 @@ export default function CajaPage() {
     XLSX.writeFile(wb, `caja_${mesInputValue}.xlsx`)
   }
 
-  // ── Saldo corriente por fila (acumulado dentro del mes) ──
-  let corriente = apertura
-  const filasConSaldo = filas.map(f => {
-    corriente += f.ingreso - f.egreso
-    return { ...f, saldo: corriente }
-  })
+  // ── Agrupar movimientos en bloques separados (cada uno = una planilla) ──
+  const filasPorBloque: Record<string, FilaCaja[]> = {}
+  for (const f of filas) {
+    const bk = f.ingreso > 0 ? "ingresos" : f.categoriaKey
+    if (!filasPorBloque[bk]) filasPorBloque[bk] = []
+    filasPorBloque[bk].push(f)
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const cardBase: React.CSSProperties = {
@@ -574,62 +593,68 @@ export default function CajaPage() {
         </div>
       </div>
 
-      {/* ── Planilla detallada ── */}
-      <div style={{ ...cardBase, padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ ...panelTitle, margin: 0 }}>📋 Detalle del mes</h3>
-          <span style={{ fontSize: 12, color: "#94a3b8" }}>{filas.length} movimiento{filas.length !== 1 ? "s" : ""}</span>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
-            <thead>
-              <tr style={{ background: "#f8fafc" }}>
-                {["Fecha", "Detalle", "Concepto", "Método", "Ingreso", "Egreso", "Saldo"].map((h, i) => (
-                  <th key={h} style={{ textAlign: i >= 4 ? "right" : "left", padding: "10px 14px", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" }}>{h}</th>
-                ))}
-                <th style={{ width: 40 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Fila apertura */}
-              <tr style={{ background: "#eef2ff" }}>
-                <td colSpan={6} style={{ padding: "9px 14px", fontSize: 12, fontWeight: 700, color: "#4338ca" }}>Saldo de apertura</td>
-                <td style={{ padding: "9px 14px", textAlign: "right", fontSize: 13, fontWeight: 800, color: "#4338ca", whiteSpace: "nowrap" }}>{fmt(apertura)}</td>
-                <td></td>
-              </tr>
-              {filasConSaldo.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: 30, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>Sin movimientos en este mes.</td></tr>
-              ) : filasConSaldo.map(f => (
-                <tr key={f.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-                  <td style={{ padding: "9px 14px", fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>{fmtFecha(f.fecha)}</td>
-                  <td style={{ padding: "9px 14px", fontSize: 13, color: "#0f172a", maxWidth: 280 }}>{f.detalle}</td>
-                  <td style={{ padding: "9px 14px", fontSize: 12 }}>
-                    <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{f.grupoLabel}</span>
-                  </td>
-                  <td style={{ padding: "9px 14px", fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>{f.ingreso ? (METODOS[f.metodo]?.label || "") : (f.origen === "compra" || (f.origen === "manual" && f.egreso) ? (METODOS[f.metodo]?.label || "") : "")}</td>
-                  <td style={{ padding: "9px 14px", textAlign: "right", fontSize: 13, fontWeight: 700, color: "#16a34a", whiteSpace: "nowrap" }}>{f.ingreso ? fmt(f.ingreso) : ""}</td>
-                  <td style={{ padding: "9px 14px", textAlign: "right", fontSize: 13, fontWeight: 700, color: "#ef4444", whiteSpace: "nowrap" }}>{f.egreso ? fmt(f.egreso) : ""}</td>
-                  <td style={{ padding: "9px 14px", textAlign: "right", fontSize: 13, fontWeight: 800, color: f.saldo >= 0 ? "#0f172a" : "#ef4444", whiteSpace: "nowrap" }}>{fmt(f.saldo)}</td>
-                  <td style={{ padding: "9px 6px", textAlign: "center" }}>
-                    {f.editable && (
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <button onClick={() => abrirEditarMov(f.raw)} title="Editar" style={iconBtn}>✏️</button>
-                        <button onClick={() => setConfirmDel(f.raw)} title="Eliminar" style={iconBtn}>🗑️</button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {/* Fila cierre */}
-              <tr style={{ background: "#f0f9ff", borderTop: "2px solid #e0f2fe" }}>
-                <td colSpan={6} style={{ padding: "11px 14px", fontSize: 13, fontWeight: 800, color: "#0369a1" }}>Saldo final del mes</td>
-                <td style={{ padding: "11px 14px", textAlign: "right", fontSize: 15, fontWeight: 800, color: cierre >= 0 ? "#0369a1" : "#ef4444", whiteSpace: "nowrap" }}>{fmt(cierre)}</td>
-                <td></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+      {/* ── Detalle separado por planilla ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <h3 style={{ ...panelTitle, margin: 0 }}>📋 Detalle del mes — por planilla</h3>
+        <span style={{ fontSize: 12, color: "#94a3b8" }}>{filas.length} movimiento{filas.length !== 1 ? "s" : ""}</span>
       </div>
+      {filas.length === 0 ? (
+        <div style={{ ...cardBase, textAlign: "center", color: "#94a3b8", fontSize: 13, padding: 30 }}>Sin movimientos en este mes.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {BLOQUES.map(b => {
+            const rows = filasPorBloque[b.key]
+            if (!rows || rows.length === 0) return null
+            const subtotal = rows.reduce((s, r) => s + (b.modo === "ingreso" ? r.ingreso : r.egreso), 0)
+            return (
+              <div key={b.key} style={{ ...cardBase, padding: 0, overflow: "hidden", borderLeft: `4px solid ${b.color}` }}>
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 18 }}>{b.icon}</span>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a" }}>{b.label}</div>
+                      <div style={{ fontSize: 11, color: "#94a3b8" }}>{rows.length} movimiento{rows.length !== 1 ? "s" : ""}</div>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 17, fontWeight: 800, color: b.color, whiteSpace: "nowrap" }}>
+                    {b.modo === "ingreso" ? "+ " : "− "}{fmt(subtotal)}
+                  </span>
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 540 }}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc" }}>
+                        {["Fecha", "Detalle", "Método", "Monto"].map((h, i) => (
+                          <th key={h} style={{ textAlign: i === 3 ? "right" : "left", padding: "8px 14px", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" }}>{h}</th>
+                        ))}
+                        <th style={{ width: 40 }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(f => (
+                        <tr key={f.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "8px 14px", fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>{fmtFecha(f.fecha)}</td>
+                          <td style={{ padding: "8px 14px", fontSize: 13, color: "#0f172a", maxWidth: 320 }}>{f.detalle}</td>
+                          <td style={{ padding: "8px 14px", fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>{METODOS[f.metodo]?.label || ""}</td>
+                          <td style={{ padding: "8px 14px", textAlign: "right", fontSize: 13, fontWeight: 700, color: b.modo === "ingreso" ? "#16a34a" : "#ef4444", whiteSpace: "nowrap" }}>{fmt(b.modo === "ingreso" ? f.ingreso : f.egreso)}</td>
+                          <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                            {f.editable && (
+                              <div style={{ display: "flex", gap: 4 }}>
+                                <button onClick={() => abrirEditarMov(f.raw)} title="Editar" style={iconBtn}>✏️</button>
+                                <button onClick={() => setConfirmDel(f.raw)} title="Eliminar" style={iconBtn}>🗑️</button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {mesInputValue < mesInicial && (
         <p style={{ marginTop: 12, fontSize: 12, color: "#94a3b8" }}>
@@ -651,16 +676,21 @@ export default function CajaPage() {
               </button>
             ))}
           </div>
-          <Campo label="Categoría">
-            <select value={movForm.categoria} onChange={e => setMovForm((p: any) => ({ ...p, categoria: e.target.value }))} style={selectDark}>
-              {movForm.tipo === "ingreso"
-                ? Object.entries(CAT_INGRESO).map(([k, v]) => <option key={k} value={k} style={{ color: "#000" }}>{v.label}</option>)
-                : ORDEN_CAT_EGRESO.filter(k => k !== "proveedores").map(k => <option key={k} value={k} style={{ color: "#000" }}>{CAT_EGRESO[k].label}</option>)}
-            </select>
-          </Campo>
+          {movForm.tipo === "egreso" && (
+            <Campo label="Categoría">
+              <select value={movForm.categoria} onChange={e => setMovForm((p: any) => ({ ...p, categoria: e.target.value }))} style={selectClaro}>
+                {ORDEN_CAT_EGRESO.filter(k => k !== "proveedores").map(k => <option key={k} value={k}>{CAT_EGRESO[k].label}</option>)}
+              </select>
+            </Campo>
+          )}
+          {movForm.tipo === "ingreso" && (
+            <Campo label="Nombre del ingreso">
+              <input type="text" value={movForm.descripcion} onChange={e => setMovForm((p: any) => ({ ...p, descripcion: e.target.value }))} placeholder="Ej: aporte de socio, venta de rezago, reintegro..." style={inputDark} />
+            </Campo>
+          )}
           <Campo label="Método de pago">
-            <select value={movForm.metodo_pago} onChange={e => setMovForm((p: any) => ({ ...p, metodo_pago: e.target.value }))} style={selectDark}>
-              {ORDEN_METODOS.filter(k => k !== "sin_especificar").map(k => <option key={k} value={k} style={{ color: "#000" }}>{METODOS[k].label}</option>)}
+            <select value={movForm.metodo_pago} onChange={e => setMovForm((p: any) => ({ ...p, metodo_pago: e.target.value }))} style={selectClaro}>
+              {ORDEN_METODOS.filter(k => k !== "sin_especificar").map(k => <option key={k} value={k}>{METODOS[k].label}</option>)}
             </select>
           </Campo>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -671,9 +701,11 @@ export default function CajaPage() {
               <input type="date" value={movForm.fecha} onChange={e => setMovForm((p: any) => ({ ...p, fecha: e.target.value }))} style={inputDark} />
             </Campo>
           </div>
-          <Campo label="Descripción (opcional)">
-            <input type="text" value={movForm.descripcion} onChange={e => setMovForm((p: any) => ({ ...p, descripcion: e.target.value }))} placeholder="Ej: pago de luz, retiro para sueldo..." style={inputDark} />
-          </Campo>
+          {movForm.tipo === "egreso" && (
+            <Campo label="Descripción (opcional)">
+              <input type="text" value={movForm.descripcion} onChange={e => setMovForm((p: any) => ({ ...p, descripcion: e.target.value }))} placeholder="Ej: pago de luz, nafta, retiro para sueldo..." style={inputDark} />
+            </Campo>
+          )}
           <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
             <button onClick={() => setModalMov(null)} style={btnModalSec}>Cancelar</button>
             <button onClick={guardarMov} disabled={guardandoMov} style={{ ...btnModalPri, opacity: guardandoMov ? 0.5 : 1 }}>{guardandoMov ? "Guardando..." : "Guardar"}</button>
