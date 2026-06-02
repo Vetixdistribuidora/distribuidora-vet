@@ -115,6 +115,18 @@ export default function CajaPage() {
   const [saldoInicial, setSaldoInicial] = useState(0)
   const [mesInicial, setMesInicial] = useState<string>(`${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`)
   const [configId, setConfigId] = useState<number | null>(null)
+  const [orgId, setOrgId] = useState<string | null>(null)
+
+  // Obtiene el id de la organización del usuario. Lo mandamos explícito en los
+  // INSERT para que la política RLS (organizacion_id = get_my_org_id()) siempre
+  // se cumpla, sin depender de que el trigger tg_set_org_id esté instalado.
+  async function obtenerOrgId(): Promise<string | null> {
+    if (orgId) return orgId
+    const { data } = await supabase.from("organizaciones").select("id").maybeSingle()
+    const id = (data as any)?.id ?? null
+    setOrgId(id)
+    return id
+  }
 
   const [apertura, setApertura] = useState(0)
   const [filas, setFilas] = useState<FilaCaja[]>([])
@@ -384,7 +396,8 @@ export default function CajaPage() {
         if (error) throw error
         mostrarToast("✅ Movimiento actualizado")
       } else {
-        const { error } = await supabase.from("movimientos_caja").insert(payload)
+        const oid = await obtenerOrgId()
+        const { error } = await supabase.from("movimientos_caja").insert({ ...payload, organizacion_id: oid })
         if (error) throw error
         mostrarToast("✅ Movimiento agregado")
       }
@@ -428,8 +441,9 @@ export default function CajaPage() {
           .eq("id", configId)
         if (error) throw error
       } else {
+        const oid = await obtenerOrgId()
         const { error } = await supabase.from("caja_config")
-          .insert({ saldo_inicial: s, mes_inicial: saldoForm.mes_inicial })
+          .insert({ saldo_inicial: s, mes_inicial: saldoForm.mes_inicial, organizacion_id: oid })
         if (error) throw error
       }
       mostrarToast("✅ Saldo inicial guardado")
