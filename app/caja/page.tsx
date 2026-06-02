@@ -427,25 +427,30 @@ export default function CajaPage() {
 
   // ── Guardar saldo inicial ──
   function abrirSaldo() {
-    setSaldoForm({ saldo_inicial: String(saldoInicial), mes_inicial: mesInicial })
+    // Arranca vacío si es 0 (que no moleste); si ya hay saldo, lo muestra con puntos de miles.
+    setSaldoForm({ saldo_inicial: saldoInicial ? saldoInicial.toLocaleString("es-AR") : "", mes_inicial: mesInicial })
     setModalSaldo(true)
   }
   async function guardarSaldo() {
-    const s = parseFloat(String(saldoForm.saldo_inicial).replace(",", ".")) || 0
+    // Quitar puntos de miles y normalizar coma decimal antes de parsear
+    const s = Number(String(saldoForm.saldo_inicial).replace(/\./g, "").replace(",", ".")) || 0
     if (!saldoForm.mes_inicial) { mostrarToast("Elegí el mes de arranque", "error"); return }
     setGuardandoSaldo(true)
     try {
-      if (configId) {
-        const { error } = await supabase.from("caja_config")
-          .update({ saldo_inicial: s, mes_inicial: saldoForm.mes_inicial, updated_at: new Date().toISOString() })
-          .eq("id", configId)
-        if (error) throw error
-      } else {
-        const oid = await obtenerOrgId()
-        const { error } = await supabase.from("caja_config")
-          .insert({ saldo_inicial: s, mes_inicial: saldoForm.mes_inicial, organizacion_id: oid })
-        if (error) throw error
-      }
+      const oid = await obtenerOrgId()
+      if (!oid) throw new Error("No se pudo identificar tu organización. Recargá la página e intentá de nuevo.")
+      // upsert keyed por organización: inserta o actualiza la única fila de config,
+      // sin depender de configId (evita el caso en que el update no encontraba la fila).
+      const { data, error } = await supabase.from("caja_config")
+        .upsert(
+          { saldo_inicial: s, mes_inicial: saldoForm.mes_inicial, organizacion_id: oid, updated_at: new Date().toISOString() },
+          { onConflict: "organizacion_id" }
+        )
+        .select()
+        .maybeSingle()
+      if (error) throw error
+      if (!data) throw new Error("No se pudo guardar (revisá permisos / conexión).")
+      setConfigId(data.id)
       mostrarToast("✅ Saldo inicial guardado")
       setModalSaldo(false)
       await cargar()
@@ -750,7 +755,14 @@ export default function CajaPage() {
             <input type="month" value={saldoForm.mes_inicial} onChange={e => setSaldoForm(p => ({ ...p, mes_inicial: e.target.value }))} style={inputDark} />
           </Campo>
           <Campo label="Saldo inicial ($)">
-            <input type="number" inputMode="decimal" value={saldoForm.saldo_inicial} onChange={e => setSaldoForm(p => ({ ...p, saldo_inicial: e.target.value }))} placeholder="0" style={inputDark} />
+            <input
+              type="text" inputMode="numeric" value={saldoForm.saldo_inicial}
+              onChange={e => {
+                const raw = e.target.value.replace(/[^\d]/g, "")           // solo dígitos
+                const formateado = raw ? Number(raw).toLocaleString("es-AR") : ""  // puntos de miles
+                setSaldoForm(p => ({ ...p, saldo_inicial: formateado }))
+              }}
+              placeholder="Ej: 1.500.000" style={inputDark} />
           </Campo>
           <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
             <button onClick={() => setModalSaldo(false)} style={btnModalSec}>Cancelar</button>
