@@ -86,6 +86,8 @@ export default function ProveedoresPage() {
   const [saldoFavorProv, setSaldoFavorProv] = useState(0);
   const [usarSaldoFavor, setUsarSaldoFavor] = useState(false);
   const [saldosFavor, setSaldosFavor] = useState<Record<string, number>>({});
+  const [comprasSeleccionadas, setComprasSeleccionadas] = useState<Set<number>>(new Set());
+  const [descuentoPago, setDescuentoPago] = useState("");
 
   useEffect(() => { cargarProveedores(); }, []);
 
@@ -182,6 +184,8 @@ export default function ProveedoresPage() {
     setExito(null);
     setUsarSaldoFavor(false);
     setSaldoFavorProv(0);
+    setComprasSeleccionadas(new Set());
+    setDescuentoPago("");
     setLoadingCompras(true);
     try {
       const [{ data: compras }, { data: saldos }] = await Promise.all([
@@ -207,9 +211,55 @@ export default function ProveedoresPage() {
     setExito(null);
     setUsarSaldoFavor(false);
     setSaldoFavorProv(0);
+    setComprasSeleccionadas(new Set());
+    setDescuentoPago("");
+  }
+
+  // Suma de efectivo a pagar por las compras seleccionadas (saldo menos descuento)
+  function sumaCashSeleccion(sel: Set<number>, pct: number) {
+    return comprasPendientes
+      .filter(c => sel.has(c.id))
+      .reduce((s, c) => {
+        const saldo = Math.round((c.total - c.total_pagado) * 100) / 100;
+        const desc = pct > 0 ? Math.round(saldo * (pct / 100) * 100) / 100 : 0;
+        return s + (saldo - desc);
+      }, 0);
+  }
+
+  function toggleCompra(id: number) {
+    setComprasSeleccionadas(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      const pct = parseFloat(descuentoPago) || 0;
+      const suma = sumaCashSeleccion(next, pct);
+      setMontoPago(next.size > 0 ? String(Math.round(suma * 100) / 100) : "");
+      setErrorPago(null); setExito(null);
+      return next;
+    });
+  }
+
+  function cambiarDescuento(valor: string) {
+    setDescuentoPago(valor);
+    if (comprasSeleccionadas.size > 0) {
+      const pct = parseFloat(valor) || 0;
+      const suma = sumaCashSeleccion(comprasSeleccionadas, pct);
+      setMontoPago(String(Math.round(suma * 100) / 100));
+    }
   }
 
   function calcularPreview() {
+    const pctDesc = parseFloat(descuentoPago) || 0;
+    // ── Modo selección: cada compra tildada se paga en full (con descuento opcional) ──
+    if (comprasSeleccionadas.size > 0) {
+      return comprasPendientes.map(c => {
+        const saldo = Math.round((c.total - c.total_pagado) * 100) / 100;
+        if (!comprasSeleccionadas.has(c.id)) return { ...c, saldo, montoDesc: 0, pago: 0, resultado: "sin_cambio" };
+        const montoDesc = pctDesc > 0 ? Math.round(saldo * (pctDesc / 100) * 100) / 100 : 0;
+        const pago = Math.round((saldo - montoDesc) * 100) / 100;
+        return { ...c, saldo, montoDesc, pago, resultado: "pagado" };
+      });
+    }
+    // ── Modo monto libre: reparte de la más antigua a la más nueva (sin descuento) ──
     const monto = parseFloat(montoPago.replace(",", ".")) || 0;
     const saldoExtra = usarSaldoFavor ? saldoFavorProv : 0;
     const total = monto + saldoExtra;
@@ -217,37 +267,50 @@ export default function ProveedoresPage() {
     let restante = total;
     return comprasPendientes.map(c => {
       const saldo = Math.round((c.total - c.total_pagado) * 100) / 100;
-      if (restante <= 0) return { ...c, saldo, pago: 0, resultado: "sin_cambio" };
+      if (restante <= 0) return { ...c, saldo, montoDesc: 0, pago: 0, resultado: "sin_cambio" };
       const pago = Math.min(restante, saldo);
       restante = Math.round((restante - pago) * 100) / 100;
-      return { ...c, saldo, pago: Math.round(pago * 100) / 100, resultado: pago >= saldo ? "pagado" : "parcial" };
+      return { ...c, saldo, montoDesc: 0, pago: Math.round(pago * 100) / 100, resultado: pago >= saldo ? "pagado" : "parcial" };
     });
   }
 
   async function confirmarPago() {
-    const monto = parseFloat(montoPago.replace(",", ".")) || 0;
-    const saldoExtra = usarSaldoFavor ? saldoFavorProv : 0;
-    if (monto <= 0 && saldoExtra <= 0) { setErrorPago("Ingresá un monto válido."); return; }
     if (!modalPago) return;
+    const seleccion = comprasSeleccionadas.size > 0;
+    const monto = parseFloat(montoPago.replace(",", ".")) || 0;
+    // El saldo a favor solo se combina en modo "monto libre" (no en selección, para no duplicar créditos)
+    const saldoExtra = (usarSaldoFavor && !seleccion) ? saldoFavorProv : 0;
+    const pctDesc = parseFloat(descuentoPago) || 0;
+    if (!seleccion && monto <= 0 && saldoExtra <= 0) { setErrorPago("Ingresá un monto o seleccioná facturas."); return; }
     setProcesandoPago(true);
     setErrorPago(null);
     const preview = calcularPreview();
-    const afectadas = preview.filter((c: any) => c.pago > 0);
+    const afectadas = preview.filter((c: any) => c.pago > 0 || (c.montoDesc || 0) > 0);
     const totalAplicado = afectadas.reduce((s: number, c: any) => s + c.pago, 0);
-    const exceso = Math.max(0, Math.round((monto + saldoExtra - totalAplicado) * 100) / 100);
+    const totalDescuento = afectadas.reduce((s: number, c: any) => s + (c.montoDesc || 0), 0);
+    const exceso = seleccion ? 0 : Math.max(0, Math.round((monto + saldoExtra - totalAplicado) * 100) / 100);
     try {
       // 1. Registrar pago en cada compra directamente (sin RPC)
       for (const c of afectadas) {
-        await supabase.from("compras_pagos").insert({
-          compra_id: c.id,
-          monto: c.pago,
-          metodo_pago: metodoPago,
-          notas: notaPago.trim() || null,
-          fecha: new Date().toISOString(),
-        });
-        const nuevoTotal = Math.round((c.total_pagado + c.pago) * 100) / 100;
-        const nuevoEstado = nuevoTotal >= c.total ? "pagado" : "parcial";
-        await supabase.from("compras").update({ total_pagado: nuevoTotal, estado: nuevoEstado }).eq("id", c.id);
+        const montoDesc = c.montoDesc || 0;
+        const nuevoTotalCompra = montoDesc > 0 ? Math.round((c.total - montoDesc) * 100) / 100 : c.total;
+        if (c.pago > 0) {
+          await supabase.from("compras_pagos").insert({
+            compra_id: c.id,
+            monto: c.pago,
+            metodo_pago: metodoPago,
+            notas: [
+              notaPago.trim() || null,
+              montoDesc > 0 ? `Descuento ${pctDesc}% aplicado: ${fmt(montoDesc)}` : null,
+            ].filter(Boolean).join(" | ") || null,
+            fecha: new Date().toISOString(),
+          });
+        }
+        const nuevoTotalPagado = Math.round((c.total_pagado + c.pago) * 100) / 100;
+        const nuevoEstado = nuevoTotalPagado >= nuevoTotalCompra ? "pagado" : "parcial";
+        const updateCompra: any = { total_pagado: nuevoTotalPagado, estado: nuevoEstado };
+        if (montoDesc > 0) updateCompra.total = nuevoTotalCompra;
+        await supabase.from("compras").update(updateCompra).eq("id", c.id);
       }
 
       // 2. Si se usó saldo a favor → descontarlo (FIFO)
@@ -280,6 +343,7 @@ export default function ProveedoresPage() {
 
       const facturasPagadas = afectadas.filter((c: any) => c.resultado === "pagado").length;
       let msg = `✅ Pago de ${fmt(totalAplicado)} aplicado. ${facturasPagadas} factura${facturasPagadas !== 1 ? "s" : ""} saldada${facturasPagadas !== 1 ? "s" : ""}.`;
+      if (totalDescuento > 0.01) msg += ` Descuento: ${fmt(totalDescuento)}.`;
       if (exceso > 0.01) msg += ` ${fmt(exceso)} quedaron como saldo a favor.`;
       setExito(msg);
 
@@ -292,6 +356,8 @@ export default function ProveedoresPage() {
       setComprasPendientes(data || []);
       setMontoPago("");
       setUsarSaldoFavor(false);
+      setComprasSeleccionadas(new Set());
+      setDescuentoPago("");
     } catch (e: any) {
       setErrorPago(e.message || "Error al procesar el pago.");
     } finally {
@@ -550,8 +616,8 @@ export default function ProveedoresPage() {
               </div>
             )}
 
-            {/* Saldo a favor disponible */}
-            {saldoFavorProv > 0 && (
+            {/* Saldo a favor disponible (solo en modo monto libre) */}
+            {saldoFavorProv > 0 && comprasSeleccionadas.size === 0 && (
               <div onClick={() => { setUsarSaldoFavor(!usarSaldoFavor); setExito(null); }}
                 style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, cursor: "pointer", marginBottom: 16,
                   background: usarSaldoFavor ? "rgba(34,197,94,0.1)" : "rgba(255,255,255,0.04)",
@@ -570,15 +636,32 @@ export default function ProveedoresPage() {
             {/* Inputs */}
             <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
               <div>
-                <label style={labelStyle}>Monto a pagar{usarSaldoFavor ? " (además del saldo a favor)" : ""}</label>
+                <label style={labelStyle}>
+                  {comprasSeleccionadas.size > 0
+                    ? `Monto a pagar (${comprasSeleccionadas.size} factura${comprasSeleccionadas.size !== 1 ? "s" : ""} seleccionada${comprasSeleccionadas.size !== 1 ? "s" : ""})`
+                    : `Monto a pagar${usarSaldoFavor ? " (además del saldo a favor)" : ""}`}
+                </label>
                 <input
                   type="number" min="0" step="0.01"
                   value={montoPago}
                   onChange={e => { setMontoPago(e.target.value); setErrorPago(null); setExito(null); }}
-                  placeholder={usarSaldoFavor ? "0 si el saldo cubre todo" : "Ej: 2000000"}
+                  placeholder={usarSaldoFavor ? "0 si el saldo cubre todo" : "Ej: 2000000 — o tocá las facturas abajo"}
                   style={inputStyle}
-                  autoFocus
+                  readOnly={comprasSeleccionadas.size > 0}
                 />
+              </div>
+              {/* Descuento */}
+              <div>
+                <label style={labelStyle}>Descuento (opcional)</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <input type="number" min="0" max="100" step="0.01" value={descuentoPago}
+                    onChange={e => cambiarDescuento(e.target.value)}
+                    placeholder="0" style={{ ...inputStyle, width: 100, textAlign: "center" }} />
+                  <span style={{ color: "#9ca3af", fontSize: 14, fontWeight: 700 }}>%</span>
+                  {comprasSeleccionadas.size === 0 && (parseFloat(descuentoPago) || 0) > 0 && (
+                    <span style={{ color: "#fbbf24", fontSize: 11 }}>Tocá las facturas a pagar para aplicar el descuento</span>
+                  )}
+                </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <div>
@@ -603,39 +686,67 @@ export default function ProveedoresPage() {
               <div style={{ color: "#4ade80", fontSize: 13, textAlign: "center", padding: "16px 0" }}>✓ Sin facturas pendientes</div>
             ) : (
               <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>
-                  Facturas pendientes — se aplica de la más antigua a la más nueva
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase" }}>
+                    {comprasSeleccionadas.size > 0
+                      ? `${comprasSeleccionadas.size} factura${comprasSeleccionadas.size !== 1 ? "s" : ""} seleccionada${comprasSeleccionadas.size !== 1 ? "s" : ""}`
+                      : "Tocá las facturas a pagar"}
+                  </div>
+                  {comprasSeleccionadas.size > 0 && (
+                    <button onClick={() => { setComprasSeleccionadas(new Set()); setMontoPago(""); }}
+                      style={{ fontSize: 11, color: "#6b7280", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
+                      Limpiar
+                    </button>
+                  )}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
                   {(() => {
                     const preview = calcularPreview();
-                    const lista = preview.length > 0 ? preview : comprasPendientes.map(c => ({ ...c, saldo: c.total - c.total_pagado, pago: 0, resultado: "sin_cambio" }));
+                    const lista = preview.length > 0 ? preview : comprasPendientes.map(c => ({ ...c, saldo: c.total - c.total_pagado, montoDesc: 0, pago: 0, resultado: "sin_cambio" }));
                     return lista.map((c: any) => {
-                      const colorMap: Record<string, { bg: string; color: string; label: string }> = {
-                        pagado:    { bg: "rgba(34,197,94,0.12)",  color: "#4ade80",  label: "✓ Saldada" },
-                        parcial:   { bg: "rgba(251,191,36,0.12)", color: "#fbbf24",  label: "~ Parcial" },
-                        sin_cambio:{ bg: "rgba(255,255,255,0.03)", color: "#6b7280", label: "Sin cambio" },
+                      const sel = comprasSeleccionadas.has(c.id);
+                      const colorMap: Record<string, { bg: string; border: string; color: string; label: string }> = {
+                        pagado:    { bg: "rgba(34,197,94,0.12)",  border: "rgba(34,197,94,0.3)",  color: "#4ade80",  label: "✓ Saldada" },
+                        parcial:   { bg: "rgba(251,191,36,0.12)", border: "rgba(251,191,36,0.3)", color: "#fbbf24",  label: "~ Parcial" },
+                        sin_cambio:{ bg: "rgba(255,255,255,0.03)", border: "rgba(255,255,255,0.06)", color: "#6b7280", label: "" },
                       };
                       const est = colorMap[c.resultado] ?? colorMap.sin_cambio;
                       return (
-                        <div key={c.id} style={{
-                          display: "flex", justifyContent: "space-between", alignItems: "center",
-                          padding: "8px 12px", background: est.bg,
-                          border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8,
-                        }}>
-                          <div>
-                            <div style={{ color: "white", fontSize: 12, fontWeight: 600 }}>
-                              {c.numero_remito ? `Remito ${c.numero_remito}` : `Compra #${c.id}`}
+                        <div key={c.id}
+                          onClick={() => toggleCompra(c.id)}
+                          style={{
+                            display: "flex", justifyContent: "space-between", alignItems: "center",
+                            padding: "9px 12px", borderRadius: 8, cursor: "pointer",
+                            background: sel ? "rgba(59,130,246,0.18)" : est.bg,
+                            border: `1px solid ${sel ? "rgba(59,130,246,0.5)" : est.border}`,
+                            transition: "all 0.12s",
+                          }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div style={{
+                              width: 18, height: 18, borderRadius: 5, flexShrink: 0,
+                              border: `2px solid ${sel ? "#3b82f6" : "rgba(255,255,255,0.2)"}`,
+                              background: sel ? "#3b82f6" : "transparent",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                            }}>
+                              {sel && <span style={{ color: "white", fontSize: 11, fontWeight: 900, lineHeight: 1 }}>✓</span>}
                             </div>
-                            <div style={{ color: "#6b7280", fontSize: 11, marginTop: 1 }}>
-                              {c.fecha?.slice(0, 10)} · Saldo: {fmt(c.saldo)}
+                            <div>
+                              <div style={{ color: "white", fontSize: 12, fontWeight: 600 }}>
+                                {c.numero_remito ? `Remito ${c.numero_remito}` : `Compra #${c.id}`}
+                              </div>
+                              <div style={{ color: "#6b7280", fontSize: 11, marginTop: 1 }}>
+                                {c.fecha?.slice(0, 10)} · Saldo: {fmt(c.saldo)}
+                              </div>
                             </div>
                           </div>
                           <div style={{ textAlign: "right" }}>
+                            {(c.montoDesc || 0) > 0 && (
+                              <div style={{ color: "#fbbf24", fontSize: 10, fontWeight: 600 }}>desc. −{fmt(c.montoDesc)}</div>
+                            )}
                             {c.pago > 0 && (
                               <div style={{ color: est.color, fontWeight: 700, fontSize: 13 }}>−{fmt(c.pago)}</div>
                             )}
-                            <div style={{ color: est.color, fontSize: 10, fontWeight: 600 }}>{est.label}</div>
+                            {est.label && <div style={{ color: est.color, fontSize: 10, fontWeight: 600 }}>{est.label}</div>}
                           </div>
                         </div>
                       );
@@ -645,16 +756,24 @@ export default function ProveedoresPage() {
 
                 {/* Resumen del preview */}
                 {(() => {
+                  const seleccion = comprasSeleccionadas.size > 0;
                   const monto = parseFloat(montoPago.replace(",", ".")) || 0;
-                  const saldoExtra = usarSaldoFavor ? saldoFavorProv : 0;
+                  const saldoExtra = (usarSaldoFavor && !seleccion) ? saldoFavorProv : 0;
                   if (monto <= 0 && saldoExtra <= 0) return null;
                   const preview = calcularPreview();
                   const totalAplicado = preview.reduce((s: number, c: any) => s + c.pago, 0);
-                  const exceso = Math.max(0, Math.round((monto + saldoExtra - totalAplicado) * 100) / 100);
+                  const totalDescuento = preview.reduce((s: number, c: any) => s + (c.montoDesc || 0), 0);
+                  const exceso = seleccion ? 0 : Math.max(0, Math.round((monto + saldoExtra - totalAplicado) * 100) / 100);
                   const saldadas = preview.filter((c: any) => c.resultado === "pagado").length;
                   const parciales = preview.filter((c: any) => c.resultado === "parcial").length;
                   return (
                     <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", fontSize: 12 }}>
+                      {totalDescuento > 0.01 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
+                          <span>Descuento aplicado:</span>
+                          <span style={{ color: "#fbbf24", fontWeight: 700 }}>−{fmt(totalDescuento)}</span>
+                        </div>
+                      )}
                       {saldoExtra > 0 && (
                         <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
                           <span>Saldo a favor aplicado:</span>
@@ -701,7 +820,7 @@ export default function ProveedoresPage() {
               }}>Cerrar</button>
               <button
                 onClick={confirmarPago}
-                disabled={procesandoPago || comprasPendientes.length === 0 || (Number(montoPago) <= 0 && (!usarSaldoFavor || saldoFavorProv <= 0))}
+                disabled={procesandoPago || comprasPendientes.length === 0 || (comprasSeleccionadas.size === 0 && Number(montoPago) <= 0 && (!usarSaldoFavor || saldoFavorProv <= 0))}
                 style={{
                   flex: 2, padding: "11px",
                   background: "linear-gradient(135deg, #16a34a, #22c55e)",
