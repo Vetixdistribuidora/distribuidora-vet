@@ -89,6 +89,13 @@ export default function ProveedoresPage() {
   const [comprasSeleccionadas, setComprasSeleccionadas] = useState<Set<number>>(new Set());
   const [descuentoPago, setDescuentoPago] = useState("");
 
+  // ── Modal nota de crédito / devolución ─────────────────────────────────────
+  const [modalNC, setModalNC] = useState<Proveedor | null>(null);
+  const [ncMonto, setNcMonto] = useState("");
+  const [ncMotivo, setNcMotivo] = useState("");
+  const [guardandoNC, setGuardandoNC] = useState(false);
+  const [errorNC, setErrorNC] = useState<string | null>(null);
+
   useEffect(() => { cargarProveedores(); }, []);
 
   async function cargarProveedores() {
@@ -174,6 +181,36 @@ export default function ProveedoresPage() {
     }
   }
 
+  // ── Nota de crédito / devolución ───────────────────────────────────────────
+  function abrirNC(p: Proveedor) {
+    setModalNC(p);
+    setNcMonto("");
+    setNcMotivo("");
+    setErrorNC(null);
+  }
+
+  async function guardarNC() {
+    if (!modalNC) return;
+    const monto = parseFloat(ncMonto.replace(",", ".")) || 0;
+    if (monto <= 0) { setErrorNC("Ingresá un monto válido."); return; }
+    setGuardandoNC(true);
+    setErrorNC(null);
+    try {
+      const fechaTxt = new Date().toLocaleDateString("es-AR");
+      await supabase.from("saldo_proveedores").insert({
+        proveedor_id: modalNC.id,
+        monto: Math.round(monto * 100) / 100,
+        notas: `Nota de crédito / devolución${ncMotivo.trim() ? " — " + ncMotivo.trim() : ""} (${fechaTxt})`,
+      });
+      setModalNC(null);
+      await cargarProveedores();
+    } catch (e: any) {
+      setErrorNC(e.message || "Error al guardar la nota de crédito.");
+    } finally {
+      setGuardandoNC(false);
+    }
+  }
+
   // ── Funciones pago masivo ──────────────────────────────────────────────────
   async function abrirPago(p: Proveedor) {
     setModalPago(p);
@@ -226,13 +263,19 @@ export default function ProveedoresPage() {
       }, 0);
   }
 
+  // Efectivo a pagar en modo selección = (saldo − descuento) − crédito a favor (si se usa)
+  function recomputarMontoSel(sel: Set<number>, pct: number, usarCred: boolean) {
+    if (sel.size === 0) { setMontoPago(""); return; }
+    const settle = sumaCashSeleccion(sel, pct);
+    const credito = usarCred ? saldoFavorProv : 0;
+    setMontoPago(String(Math.max(0, Math.round((settle - credito) * 100) / 100)));
+  }
+
   function toggleCompra(id: number) {
     setComprasSeleccionadas(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
-      const pct = parseFloat(descuentoPago) || 0;
-      const suma = sumaCashSeleccion(next, pct);
-      setMontoPago(next.size > 0 ? String(Math.round(suma * 100) / 100) : "");
+      recomputarMontoSel(next, parseFloat(descuentoPago) || 0, usarSaldoFavor);
       setErrorPago(null); setExito(null);
       return next;
     });
@@ -241,9 +284,16 @@ export default function ProveedoresPage() {
   function cambiarDescuento(valor: string) {
     setDescuentoPago(valor);
     if (comprasSeleccionadas.size > 0) {
-      const pct = parseFloat(valor) || 0;
-      const suma = sumaCashSeleccion(comprasSeleccionadas, pct);
-      setMontoPago(String(Math.round(suma * 100) / 100));
+      recomputarMontoSel(comprasSeleccionadas, parseFloat(valor) || 0, usarSaldoFavor);
+    }
+  }
+
+  function toggleSaldoFavor() {
+    const nuevo = !usarSaldoFavor;
+    setUsarSaldoFavor(nuevo);
+    setExito(null);
+    if (comprasSeleccionadas.size > 0) {
+      recomputarMontoSel(comprasSeleccionadas, parseFloat(descuentoPago) || 0, nuevo);
     }
   }
 
@@ -278,47 +328,58 @@ export default function ProveedoresPage() {
     if (!modalPago) return;
     const seleccion = comprasSeleccionadas.size > 0;
     const monto = parseFloat(montoPago.replace(",", ".")) || 0;
-    // El saldo a favor solo se combina en modo "monto libre" (no en selección, para no duplicar créditos)
-    const saldoExtra = (usarSaldoFavor && !seleccion) ? saldoFavorProv : 0;
+    const saldoExtra = usarSaldoFavor ? saldoFavorProv : 0;
     const pctDesc = parseFloat(descuentoPago) || 0;
     if (!seleccion && monto <= 0 && saldoExtra <= 0) { setErrorPago("Ingresá un monto o seleccioná facturas."); return; }
     setProcesandoPago(true);
     setErrorPago(null);
     const preview = calcularPreview();
     const afectadas = preview.filter((c: any) => c.pago > 0 || (c.montoDesc || 0) > 0);
-    const totalAplicado = afectadas.reduce((s: number, c: any) => s + c.pago, 0);
     const totalDescuento = afectadas.reduce((s: number, c: any) => s + (c.montoDesc || 0), 0);
-    const exceso = seleccion ? 0 : Math.max(0, Math.round((monto + saldoExtra - totalAplicado) * 100) / 100);
+    let creditoRestante = saldoExtra;
+    let totalCash = 0, totalCredito = 0;
     try {
-      // 1. Registrar pago en cada compra directamente (sin RPC)
+      // 1. Registrar pago en cada compra — crédito (nota de crédito / saldo a favor) primero, luego efectivo
       for (const c of afectadas) {
         const montoDesc = c.montoDesc || 0;
         const nuevoTotalCompra = montoDesc > 0 ? Math.round((c.total - montoDesc) * 100) / 100 : c.total;
-        if (c.pago > 0) {
+        const credUsado = Math.min(creditoRestante, c.pago);
+        creditoRestante = Math.round((creditoRestante - credUsado) * 100) / 100;
+        const cashUsado = Math.round((c.pago - credUsado) * 100) / 100;
+        totalCredito = Math.round((totalCredito + credUsado) * 100) / 100;
+        totalCash = Math.round((totalCash + cashUsado) * 100) / 100;
+        const notaBase = [
+          notaPago.trim() || null,
+          montoDesc > 0 ? `Descuento ${pctDesc}% aplicado: ${fmt(montoDesc)}` : null,
+        ].filter(Boolean).join(" | ") || null;
+        if (credUsado > 0) {
           await supabase.from("compras_pagos").insert({
-            compra_id: c.id,
-            monto: c.pago,
-            metodo_pago: metodoPago,
-            notas: [
-              notaPago.trim() || null,
-              montoDesc > 0 ? `Descuento ${pctDesc}% aplicado: ${fmt(montoDesc)}` : null,
-            ].filter(Boolean).join(" | ") || null,
-            fecha: new Date().toISOString(),
+            compra_id: c.id, monto: credUsado, metodo_pago: "Nota de crédito",
+            notas: notaBase, fecha: new Date().toISOString(),
           });
         }
-        const nuevoTotalPagado = Math.round((c.total_pagado + c.pago) * 100) / 100;
+        if (cashUsado > 0) {
+          await supabase.from("compras_pagos").insert({
+            compra_id: c.id, monto: cashUsado, metodo_pago: metodoPago,
+            notas: notaBase, fecha: new Date().toISOString(),
+          });
+        }
+        const nuevoTotalPagado = Math.round((c.total_pagado + credUsado + cashUsado) * 100) / 100;
         const nuevoEstado = nuevoTotalPagado >= nuevoTotalCompra ? "pagado" : "parcial";
         const updateCompra: any = { total_pagado: nuevoTotalPagado, estado: nuevoEstado };
         if (montoDesc > 0) updateCompra.total = nuevoTotalCompra;
         await supabase.from("compras").update(updateCompra).eq("id", c.id);
       }
 
-      // 2. Si se usó saldo a favor → descontarlo (FIFO)
-      if (saldoExtra > 0.01) {
+      const totalAplicado = Math.round((totalCash + totalCredito) * 100) / 100;
+      const exceso = seleccion ? 0 : Math.max(0, Math.round((monto + saldoExtra - totalAplicado) * 100) / 100);
+
+      // 2. Consumir el crédito usado de saldo_proveedores (FIFO)
+      if (totalCredito > 0.01) {
         const { data: registros } = await supabase.from("saldo_proveedores")
           .select("id, monto").eq("proveedor_id", modalPago.id)
           .gt("monto", 0).order("fecha", { ascending: true });
-        let aDescontar = Math.min(saldoExtra, totalAplicado);
+        let aDescontar = totalCredito;
         for (const reg of (registros || [])) {
           if (aDescontar <= 0.001) break;
           if (reg.monto <= aDescontar + 0.001) {
@@ -343,6 +404,7 @@ export default function ProveedoresPage() {
 
       const facturasPagadas = afectadas.filter((c: any) => c.resultado === "pagado").length;
       let msg = `✅ Pago de ${fmt(totalAplicado)} aplicado. ${facturasPagadas} factura${facturasPagadas !== 1 ? "s" : ""} saldada${facturasPagadas !== 1 ? "s" : ""}.`;
+      if (totalCredito > 0.01) msg += ` Nota de crédito / saldo a favor usado: ${fmt(totalCredito)}.`;
       if (totalDescuento > 0.01) msg += ` Descuento: ${fmt(totalDescuento)}.`;
       if (exceso > 0.01) msg += ` ${fmt(exceso)} quedaron como saldo a favor.`;
       setExito(msg);
@@ -499,6 +561,10 @@ export default function ProveedoresPage() {
                       boxShadow: "0 2px 6px rgba(34,197,94,0.3)"
                     }}>💳 Pagar</button>
                   )}
+                  <button onClick={() => abrirNC(p)} title="Registrar nota de crédito / devolución" style={{
+                    background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0",
+                    borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                  }}>↩️ NC</button>
                   <button onClick={() => abrirHistorial(p)} style={{
                     background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe",
                     borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer"
@@ -616,9 +682,9 @@ export default function ProveedoresPage() {
               </div>
             )}
 
-            {/* Saldo a favor disponible (solo en modo monto libre) */}
-            {saldoFavorProv > 0 && comprasSeleccionadas.size === 0 && (
-              <div onClick={() => { setUsarSaldoFavor(!usarSaldoFavor); setExito(null); }}
+            {/* Saldo a favor / nota de crédito disponible */}
+            {saldoFavorProv > 0 && (
+              <div onClick={toggleSaldoFavor}
                 style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, cursor: "pointer", marginBottom: 16,
                   background: usarSaldoFavor ? "rgba(34,197,94,0.1)" : "rgba(255,255,255,0.04)",
                   border: usarSaldoFavor ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(255,255,255,0.08)" }}>
@@ -627,8 +693,10 @@ export default function ProveedoresPage() {
                   {usarSaldoFavor && <span style={{ color: "white", fontSize: 11, fontWeight: 900 }}>✓</span>}
                 </div>
                 <div>
-                  <div style={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>💰 Usar saldo a favor: {fmt(saldoFavorProv)}</div>
-                  {usarSaldoFavor && <div style={{ color: "#86efac", fontSize: 11, marginTop: 2 }}>Se aplicará al pago automáticamente</div>}
+                  <div style={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>💰 Usar nota de crédito / saldo a favor: {fmt(saldoFavorProv)}</div>
+                  {usarSaldoFavor && <div style={{ color: "#86efac", fontSize: 11, marginTop: 2 }}>
+                    {comprasSeleccionadas.size > 0 ? "Cubre las compras seleccionadas; el resto lo pagás en efectivo" : "Se aplica al pago automáticamente"}
+                  </div>}
                 </div>
               </div>
             )}
@@ -758,11 +826,13 @@ export default function ProveedoresPage() {
                 {(() => {
                   const seleccion = comprasSeleccionadas.size > 0;
                   const monto = parseFloat(montoPago.replace(",", ".")) || 0;
-                  const saldoExtra = (usarSaldoFavor && !seleccion) ? saldoFavorProv : 0;
+                  const saldoExtra = usarSaldoFavor ? saldoFavorProv : 0;
                   if (monto <= 0 && saldoExtra <= 0) return null;
                   const preview = calcularPreview();
                   const totalAplicado = preview.reduce((s: number, c: any) => s + c.pago, 0);
                   const totalDescuento = preview.reduce((s: number, c: any) => s + (c.montoDesc || 0), 0);
+                  const creditoUsado = Math.min(saldoExtra, totalAplicado);
+                  const cashReal = Math.max(0, Math.round((totalAplicado - creditoUsado) * 100) / 100);
                   const exceso = seleccion ? 0 : Math.max(0, Math.round((monto + saldoExtra - totalAplicado) * 100) / 100);
                   const saldadas = preview.filter((c: any) => c.resultado === "pagado").length;
                   const parciales = preview.filter((c: any) => c.resultado === "parcial").length;
@@ -774,10 +844,16 @@ export default function ProveedoresPage() {
                           <span style={{ color: "#fbbf24", fontWeight: 700 }}>−{fmt(totalDescuento)}</span>
                         </div>
                       )}
-                      {saldoExtra > 0 && (
+                      {creditoUsado > 0.01 && (
                         <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
-                          <span>Saldo a favor aplicado:</span>
-                          <span style={{ color: "#4ade80", fontWeight: 700 }}>−{fmt(Math.min(saldoExtra, totalAplicado))}</span>
+                          <span>Nota de crédito / saldo a favor:</span>
+                          <span style={{ color: "#4ade80", fontWeight: 700 }}>−{fmt(creditoUsado)}</span>
+                        </div>
+                      )}
+                      {creditoUsado > 0.01 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
+                          <span>Pagás en efectivo:</span>
+                          <span style={{ color: "white", fontWeight: 700 }}>{fmt(cashReal)}</span>
                         </div>
                       )}
                       <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
@@ -826,9 +902,72 @@ export default function ProveedoresPage() {
                   background: "linear-gradient(135deg, #16a34a, #22c55e)",
                   border: "none", borderRadius: 10, color: "white",
                   fontSize: 13, fontWeight: 700, cursor: "pointer",
-                  opacity: procesandoPago || (parseFloat(montoPago.replace(",", ".")) || 0) <= 0 ? 0.5 : 1,
+                  opacity: procesandoPago || (comprasSeleccionadas.size === 0 && (parseFloat(montoPago.replace(",", ".")) || 0) <= 0 && !(usarSaldoFavor && saldoFavorProv > 0)) ? 0.5 : 1,
                 }}>
-                {procesandoPago ? "Procesando..." : `Confirmar pago${montoPago ? " de " + fmt(parseFloat(montoPago.replace(",", ".")) || 0) : ""}`}
+                {procesandoPago ? "Procesando..." : "Confirmar pago"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal nota de crédito / devolución */}
+      {modalNC && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
+          onClick={() => setModalNC(null)}>
+          <div style={{
+            background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 440,
+            boxShadow: "0 24px 64px rgba(0,0,0,0.6)"
+          }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "0 0 4px" }}>
+              ↩️ Nota de crédito / devolución
+            </h2>
+            <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 20px" }}>
+              {modalNC.nombre}
+            </p>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Monto de la devolución *</label>
+              <input
+                type="number" min="0" step="0.01"
+                value={ncMonto}
+                onChange={e => { setNcMonto(e.target.value); setErrorNC(null); }}
+                placeholder="Ej: 150000"
+                style={inputStyle}
+                autoFocus
+              />
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>Motivo (opcional)</label>
+              <input type="text" value={ncMotivo} onChange={e => setNcMotivo(e.target.value)}
+                placeholder="Ej: devolución mercadería vencida" style={inputStyle} />
+            </div>
+
+            <div style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 10, padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "#86efac" }}>
+              💡 Se guardará como <b>saldo a favor</b> de este proveedor. Después lo aplicás a las compras que elijas desde el botón 💳 Pagar.
+            </div>
+
+            {errorNC && (
+              <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 13, padding: "10px 14px", borderRadius: 8, marginBottom: 16 }}>
+                ⚠️ {errorNC}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setModalNC(null)} style={{
+                flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10,
+                color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600
+              }}>Cancelar</button>
+              <button onClick={guardarNC} disabled={guardandoNC || (parseFloat(ncMonto) || 0) <= 0} style={{
+                flex: 2, padding: "11px",
+                background: "linear-gradient(135deg, #16a34a, #22c55e)",
+                border: "none", borderRadius: 10, color: "white",
+                fontSize: 13, fontWeight: 700, cursor: "pointer",
+                opacity: guardandoNC || (parseFloat(ncMonto) || 0) <= 0 ? 0.5 : 1,
+              }}>
+                {guardandoNC ? "Guardando..." : "Registrar nota de crédito"}
               </button>
             </div>
           </div>
