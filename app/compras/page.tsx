@@ -812,7 +812,7 @@ export default function ComprasPage() {
       {/* ── MODAL NUEVA COMPRA ── */}
       {modalNueva && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 50, padding: 16, overflowY: "auto" }}>
-          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, width: "100%", maxWidth: 900, margin: "32px 0", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, width: "100%", maxWidth: 1240, margin: "32px 0", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
             <div style={{ padding: "24px 28px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
               <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: 0 }}>Nueva compra</h2>
             </div>
@@ -934,7 +934,7 @@ export default function ComprasPage() {
                         <tbody>
                           {itemsCalculados.map((it, idx) => (
                             <tr key={it.producto_id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                              <td style={{ padding: "9px 10px", color: "white", fontSize: 13, fontWeight: 500, maxWidth: 180, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={it.nombre}>{it.nombre}</td>
+                              <td style={{ padding: "9px 10px", color: "white", fontSize: 13, fontWeight: 500, minWidth: 240, maxWidth: 380, whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.3 }} title={it.nombre}>{it.nombre}</td>
                               <td style={{ padding: "9px 10px" }}>
                                 <input type="number" min="1" value={it.cantidad}
                                   onChange={e => setItems(items.map((item, i) => i === idx ? { ...item, cantidad: e.target.value } : item))}
