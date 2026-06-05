@@ -112,7 +112,8 @@ export function imprimirReciboCobroMasivo(
   afectadas: Array<{ id: number; nro_factura?: string; total: number; pago: number; resultado: string; saldo: number }>,
   cliente: ClienteRecibo,
   nota?: string,
-  saldoTotalCliente?: number
+  saldoTotalCliente?: number,
+  creditoAplicado?: number
 ) {
   const logoUrl = window.location.origin + "/logo.png"
   const fecha = new Date().toLocaleDateString("es-AR")
@@ -181,9 +182,10 @@ export function imprimirReciboCobroMasivo(
   ${resumenHtml}
   <div class="total-box"><div class="total-inner">
     <div class="total-pagado">
-      <p class="total-pagado-label">Total recibido</p>
+      <p class="total-pagado-label">${Number(creditoAplicado || 0) > 0 ? "Total aplicado" : "Total recibido"}</p>
       <p class="total-pagado-monto">${f(totalCobrado)}</p>
     </div>
+    ${Number(creditoAplicado || 0) > 0 ? `<div style="margin-top:8px;background:#e7f5ff;border:1px solid #1971c2;border-radius:8px;padding:10px 16px;text-align:left;font-size:12px;"><p style="margin:0 0 3px;color:#555;display:flex;justify-content:space-between;"><span>Nota de crédito aplicada:</span><span style="font-weight:700;color:#1971c2;">${f(Number(creditoAplicado))}</span></p><p style="margin:0;color:#555;display:flex;justify-content:space-between;"><span>Efectivo recibido:</span><span style="font-weight:700;color:#2f9e44;">${f(Math.max(0, totalCobrado - Number(creditoAplicado)))}</span></p></div>` : ""}
     ${Number(saldoTotalCliente || 0) > 0 ? `<div style="margin-top:8px;background:#fff3cd;border:1px solid #e67700;border-radius:8px;padding:10px 16px;text-align:center;"><p style="font-size:12px;font-weight:700;color:#e67700;margin:0;">Saldo total en cuenta corriente: ${f(Number(saldoTotalCliente))}</p></div>` : ""}
   </div></div>
   <div class="firma-box">

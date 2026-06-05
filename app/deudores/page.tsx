@@ -42,20 +42,37 @@ export default function Deudores() {
   const [procesando, setProcesando] = useState(false)
   const [errorCobro, setErrorCobro] = useState<string | null>(null)
   const [exitoCobro, setExitoCobro] = useState<string | null>(null)
-  const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string; saldoTotal?: number } | null>(null)
+  const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string; saldoTotal?: number; creditoAplicado?: number } | null>(null)
   const [facturasSeleccionadas, setFacturasSeleccionadas] = useState<Set<number>>(new Set())
+  // Saldo a favor del cliente (notas de crédito por devolución)
+  const [usarSaldo, setUsarSaldo] = useState(false)
+
+  // ── Modal nota de crédito / devolución ─────────────────────────────────────
+  const [modalNC, setModalNC] = useState<any | null>(null)
+  const [ncMonto, setNcMonto] = useState("")
+  const [ncMotivo, setNcMotivo] = useState("")
+  const [guardandoNC, setGuardandoNC] = useState(false)
+  const [errorNC, setErrorNC] = useState<string | null>(null)
 
   useEffect(() => { cargarDeudores() }, [])
 
   async function cargarDeudores() {
     setCargando(true)
     try {
-      const { data: ventas } = await supabase
-        .from("ventas")
-        .select("id, total, nro_factura, fecha, cliente_id, clientes(nombre, apellido, telefono, localidad)")
-        .eq("estado", "cuenta_corriente")
-        .order("id", { ascending: true })   // ascendente: más antigua primero
+      const [{ data: ventas }, { data: creditos }] = await Promise.all([
+        supabase
+          .from("ventas")
+          .select("id, total, nro_factura, fecha, cliente_id, clientes(nombre, apellido, telefono, localidad)")
+          .eq("estado", "cuenta_corriente")
+          .order("id", { ascending: true }),   // ascendente: más antigua primero
+        supabase.from("saldo_clientes").select("cliente_id, monto"),
+      ])
       if (!ventas) { setDeudores([]); return }
+      // Crédito a favor por cliente (notas de crédito / devoluciones)
+      const creditoPorCliente: Record<number, number> = {}
+      ;(creditos || []).forEach((c: any) => {
+        creditoPorCliente[c.cliente_id] = (creditoPorCliente[c.cliente_id] || 0) + Number(c.monto)
+      })
       const ventaIds = ventas.map(v => v.id)
       const { data: todosPagos } = await supabase
         .from("pagos_cuenta_corriente").select("venta_id, monto").in("venta_id", ventaIds)
@@ -80,6 +97,7 @@ export default function Deudores() {
             telefono: (v.clientes as any)?.telefono || "",
             localidad: (v.clientes as any)?.localidad || "",
             totalDeuda: 0,
+            creditoDisponible: creditoPorCliente[cid] || 0,
             facturas: []
           }
         }
@@ -95,6 +113,37 @@ export default function Deudores() {
     }
   }
 
+  // ── Nota de crédito / devolución ───────────────────────────────────────────
+  function abrirNC(d: any) {
+    setModalNC(d)
+    setNcMonto("")
+    setNcMotivo("")
+    setErrorNC(null)
+  }
+
+  async function guardarNC() {
+    if (!modalNC) return
+    const monto = parseFloat(ncMonto.replace(",", ".")) || 0
+    if (monto <= 0) { setErrorNC("Ingresá un monto válido."); return }
+    setGuardandoNC(true)
+    setErrorNC(null)
+    try {
+      const fechaTxt = new Date().toLocaleDateString("es-AR")
+      const { error } = await supabase.from("saldo_clientes").insert({
+        cliente_id: modalNC.cliente_id,
+        monto: Math.round(monto * 100) / 100,
+        notas: `Nota de crédito / devolución${ncMotivo.trim() ? " — " + ncMotivo.trim() : ""} (${fechaTxt})`,
+      })
+      if (error) throw error
+      setModalNC(null)
+      await cargarDeudores()
+    } catch (e: any) {
+      setErrorNC(e.message || "Error al guardar la nota de crédito.")
+    } finally {
+      setGuardandoNC(false)
+    }
+  }
+
   // ── Cobro masivo ────────────────────────────────────────────────────────────
   function abrirCobro(d: any) {
     setModalCobro(d)
@@ -104,6 +153,7 @@ export default function Deudores() {
     setErrorCobro(null)
     setExitoCobro(null)
     setFacturasSeleccionadas(new Set())
+    setUsarSaldo(false)
   }
 
   function cerrarCobro() {
@@ -114,17 +164,31 @@ export default function Deudores() {
     setExitoCobro(null)
     setUltimoRecibo(null)
     setFacturasSeleccionadas(new Set())
+    setUsarSaldo(false)
+  }
+
+  // Efectivo a cobrar en modo selección = suma de facturas seleccionadas − crédito a favor (si se usa)
+  function recomputarMontoCobro(sel: Set<number>, facturas: any[], usarCred: boolean) {
+    if (sel.size === 0) { setMontoCobro(""); return }
+    const suma = facturas.filter(f => sel.has(f.id)).reduce((s, f) => s + f.saldo, 0)
+    const credito = usarCred ? (Number(modalCobro?.creditoDisponible) || 0) : 0
+    setMontoCobro(String(Math.max(0, Math.round((suma - credito) * 100) / 100)))
+  }
+
+  function toggleSaldoCobro() {
+    const nuevo = !usarSaldo
+    setUsarSaldo(nuevo)
+    setExitoCobro(null)
+    if (facturasSeleccionadas.size > 0) {
+      recomputarMontoCobro(facturasSeleccionadas, modalCobro?.facturas || [], nuevo)
+    }
   }
 
   function toggleFactura(id: number, facturas: any[]) {
     setFacturasSeleccionadas(prev => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
-      // Auto-completar el monto con la suma de las facturas seleccionadas
-      const suma = facturas
-        .filter(f => next.has(f.id))
-        .reduce((s, f) => s + f.saldo, 0)
-      setMontoCobro(next.size > 0 ? String(Math.round(suma * 100) / 100) : "")
+      recomputarMontoCobro(next, facturas, usarSaldo)
       setErrorCobro(null)
       return next
     })
@@ -150,16 +214,17 @@ export default function Deudores() {
   }
 
   async function confirmarCobro() {
-    const monto = parseFloat(montoCobro.replace(",", ".")) || 0
-    if (monto <= 0) { setErrorCobro("Ingresá un monto válido."); return }
     if (!modalCobro) return
+    const monto = parseFloat(montoCobro.replace(",", ".")) || 0
+    const creditoDisp = usarSaldo ? (Number(modalCobro.creditoDisponible) || 0) : 0
+    if (monto <= 0 && creditoDisp <= 0) { setErrorCobro("Ingresá un monto o usá el saldo a favor."); return }
 
     setProcesando(true)
     setErrorCobro(null)
 
     const preview = facturasSeleccionadas.size > 0
       ? calcularPreviewSeleccionado(modalCobro.facturas, facturasSeleccionadas)
-      : calcularPreview(modalCobro.facturas, monto)
+      : calcularPreview(modalCobro.facturas, monto + creditoDisp)
     const afectadas = preview.filter((f: any) => f.pago > 0)
 
     try {
@@ -185,35 +250,73 @@ export default function Deudores() {
       const baseNum = parseInt(nroReciboBase.replace(/^.*-/, ""), 10)
       let offsetRecibo = 0
 
+      // Saldo de cuenta corriente actual (lo decrementamos a medida que aplicamos)
+      const { data: ccIni } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", modalCobro.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
+      let saldoCC = Number(ccIni?.saldo ?? 0)
+
+      let creditoRestante = creditoDisp
+      let totalCash = 0, totalCredito = 0
+
       for (const f of afectadas) {
         const nroRecibo = "001-" + String(baseNum + offsetRecibo).padStart(6, "0")
         offsetRecibo++
-        // Mismo insert que usa la página de cuentas corrientes
-        const { error: errInsert } = await supabase
-          .from("pagos_cuenta_corriente")
-          .insert([{
-            cliente_id: modalCobro.cliente_id,
-            venta_id: f.id,
-            monto: f.pago,
-            metodo_pago: metodoCobro || null,
-            nota: notaCobro.trim() || null,
-            nro_recibo: nroRecibo,
+        // Cubrir esta factura con el crédito (nota de crédito) primero, y el resto en efectivo
+        const credUsado = Math.min(creditoRestante, f.pago)
+        creditoRestante = Math.round((creditoRestante - credUsado) * 100) / 100
+        const cashUsado = Math.round((f.pago - credUsado) * 100) / 100
+        totalCredito = Math.round((totalCredito + credUsado) * 100) / 100
+        totalCash = Math.round((totalCash + cashUsado) * 100) / 100
+        const notaBase = [
+          notaCobro.trim() || null,
+          credUsado > 0 ? `Nota de crédito aplicada: ${fmt(credUsado)}` : null,
+        ].filter(Boolean).join(" | ") || null
+
+        if (credUsado > 0) {
+          const { error: e1 } = await supabase.from("pagos_cuenta_corriente").insert([{
+            cliente_id: modalCobro.cliente_id, venta_id: f.id, monto: credUsado,
+            metodo_pago: "otro", nota: notaBase, nro_recibo: nroRecibo,
           }])
-        if (errInsert) throw new Error("Error en factura N°" + (f.nro_factura || f.id) + ": " + errInsert.message)
+          if (e1) throw new Error("Error en factura N°" + (f.nro_factura || f.id) + ": " + e1.message)
+          saldoCC = Math.max(0, Math.round((saldoCC - credUsado) * 100) / 100)
+          // tipo "pago" porque cuentas_corrientes tiene constraint que solo permite 'venta'/'pago';
+          // el detalle de que fue nota de crédito queda en pagos_cuenta_corriente (metodo_pago)
+          await supabase.from("cuentas_corrientes").insert({ cliente_id: modalCobro.cliente_id, venta_id: f.id, tipo: "pago", monto: -credUsado, saldo: saldoCC, fecha: new Date() })
+        }
+        if (cashUsado > 0) {
+          const { error: e2 } = await supabase.from("pagos_cuenta_corriente").insert([{
+            cliente_id: modalCobro.cliente_id, venta_id: f.id, monto: cashUsado,
+            metodo_pago: metodoCobro || null, nota: notaBase, nro_recibo: nroRecibo,
+          }])
+          if (e2) throw new Error("Error en factura N°" + (f.nro_factura || f.id) + ": " + e2.message)
+          saldoCC = Math.max(0, Math.round((saldoCC - cashUsado) * 100) / 100)
+          await supabase.from("cuentas_corrientes").insert({ cliente_id: modalCobro.cliente_id, venta_id: f.id, tipo: "pago", monto: -cashUsado, saldo: saldoCC, fecha: new Date() })
+        }
 
-        // Registrar en cuentas_corrientes
-        const { data: ultimoCC } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", modalCobro.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
-        const saldoAnteriorCC = Number(ultimoCC?.saldo ?? 0)
-        const nuevoSaldoCC = Math.max(0, saldoAnteriorCC - f.pago)
-        await supabase.from("cuentas_corrientes").insert({ cliente_id: modalCobro.cliente_id, venta_id: f.id, tipo: "pago", monto: -f.pago, saldo: nuevoSaldoCC, fecha: new Date() })
-
-        // Si queda saldada, marcar la venta como cobrada (igual que cuentas)
+        // Si queda saldada, marcar la venta como cobrada
         if (f.resultado === "pagado") {
           await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", f.id)
         }
       }
 
-      const totalCobrado = afectadas.reduce((s: number, f: any) => s + f.pago, 0)
+      // Consumir el crédito usado de saldo_clientes (FIFO)
+      if (totalCredito > 0.01) {
+        const { data: registros } = await supabase.from("saldo_clientes")
+          .select("id, monto").eq("cliente_id", modalCobro.cliente_id)
+          .gt("monto", 0).order("fecha", { ascending: true })
+        let aDescontar = totalCredito
+        for (const reg of (registros || [])) {
+          if (aDescontar <= 0.001) break
+          if (reg.monto <= aDescontar + 0.001) {
+            await supabase.from("saldo_clientes").delete().eq("id", reg.id)
+            aDescontar -= reg.monto
+          } else {
+            await supabase.from("saldo_clientes").update({ monto: Math.round((reg.monto - aDescontar) * 100) / 100 }).eq("id", reg.id)
+            aDescontar = 0
+          }
+        }
+      }
+
+      const totalCobrado = Math.round((totalCash + totalCredito) * 100) / 100
       const saldadas = afectadas.filter((f: any) => f.resultado === "pagado").length
       const parciales = afectadas.filter((f: any) => f.resultado === "parcial").length
 
@@ -223,6 +326,7 @@ export default function Deudores() {
       // Guardar datos del recibo para poder reimprimir
       const datosRecibo = {
         totalCobrado,
+        creditoAplicado: totalCredito,
         nroReciboBase,
         afectadas,
         cliente: { nombre: modalCobro.nombre, apellido: modalCobro.apellido, telefono: modalCobro.telefono },
@@ -238,15 +342,18 @@ export default function Deudores() {
         afectadas,
         { nombre: modalCobro.nombre, apellido: modalCobro.apellido, telefono: modalCobro.telefono },
         notaCobro.trim() || undefined,
-        saldoTotalCliente
+        saldoTotalCliente,
+        totalCredito
       )
 
       setExitoCobro(
-        `✅ ${fmt(totalCobrado)} cobrado.` +
+        `✅ ${fmt(totalCobrado)} aplicado.` +
+        (totalCredito > 0 ? ` Nota de crédito usada: ${fmt(totalCredito)}.` : "") +
         (saldadas > 0 ? ` ${saldadas} factura${saldadas !== 1 ? "s" : ""} saldada${saldadas !== 1 ? "s" : ""}.` : "") +
         (parciales > 0 ? ` ${parciales} parcial.` : "")
       )
       setMontoCobro("")
+      setUsarSaldo(false)
 
       // Recargar lista completa — el useEffect([deudores]) maneja el cierre del modal
       await cargarDeudores()
@@ -350,10 +457,15 @@ export default function Deudores() {
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>{d.nombre} {d.apellido}</div>
-                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12, color: "#6b7280", marginTop: 2 }}>
+                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12, color: "#6b7280", marginTop: 2, alignItems: "center" }}>
                         {d.telefono && <span>📞 {d.telefono}</span>}
                         {d.localidad && <span>📍 {d.localidad}</span>}
                         <span>{d.facturas.length} factura{d.facturas.length !== 1 ? "s" : ""}</span>
+                        {(d.creditoDisponible || 0) > 0 && (
+                          <span style={{ background: "#dcfce7", color: "#16a34a", fontWeight: 700, padding: "1px 8px", borderRadius: 10, border: "1px solid #bbf7d0" }}>
+                            💚 Crédito: {fmt(d.creditoDisponible)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -373,6 +485,16 @@ export default function Deudores() {
                         boxShadow: "0 2px 6px rgba(34,197,94,0.3)", whiteSpace: "nowrap", flexShrink: 0
                       }}>
                       💰 Cobrar
+                    </button>
+                    <button
+                      onClick={() => abrirNC(d)}
+                      title="Registrar nota de crédito / devolución"
+                      style={{
+                        background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0",
+                        borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                        whiteSpace: "nowrap", flexShrink: 0
+                      }}>
+                      ↩️ NC
                     </button>
                     <button onClick={() => toggleExpandir(d.cliente_id)} style={{
                       background: "#f1f5f9", border: "none", borderRadius: 8,
@@ -432,11 +554,30 @@ export default function Deudores() {
                 <div style={{ color: "#4ade80", fontSize: 13, padding: "10px 14px" }}>{exitoCobro}</div>
                 {ultimoRecibo && (
                   <button
-                    onClick={() => imprimirReciboCobroMasivo(ultimoRecibo.totalCobrado, ultimoRecibo.nroReciboBase, ultimoRecibo.afectadas, ultimoRecibo.cliente, ultimoRecibo.nota, ultimoRecibo.saldoTotal)}
+                    onClick={() => imprimirReciboCobroMasivo(ultimoRecibo.totalCobrado, ultimoRecibo.nroReciboBase, ultimoRecibo.afectadas, ultimoRecibo.cliente, ultimoRecibo.nota, ultimoRecibo.saldoTotal, ultimoRecibo.creditoAplicado)}
                     style={{ width: "100%", padding: "8px 14px", background: "rgba(34,197,94,0.15)", border: "none", borderTop: "1px solid rgba(34,197,94,0.2)", color: "#4ade80", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "center" }}>
                     🖨️ Reimprimir recibo
                   </button>
                 )}
+              </div>
+            )}
+
+            {/* Saldo a favor / nota de crédito disponible */}
+            {(modalCobro.creditoDisponible || 0) > 0 && (
+              <div onClick={toggleSaldoCobro}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, cursor: "pointer", marginBottom: 16,
+                  background: usarSaldo ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.04)",
+                  border: usarSaldo ? "1px solid rgba(34,197,94,0.4)" : "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ width: 18, height: 18, borderRadius: 4, border: "2px solid", borderColor: usarSaldo ? "#22c55e" : "#4b5563",
+                  background: usarSaldo ? "#22c55e" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {usarSaldo && <span style={{ color: "white", fontSize: 11, fontWeight: 900 }}>✓</span>}
+                </div>
+                <div>
+                  <div style={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>💚 Usar nota de crédito / saldo a favor: {fmt(modalCobro.creditoDisponible)}</div>
+                  {usarSaldo && <div style={{ color: "#86efac", fontSize: 11, marginTop: 2 }}>
+                    {facturasSeleccionadas.size > 0 ? "Cubre las facturas seleccionadas; el resto lo cobrás en efectivo" : "Se aplica al cobro automáticamente"}
+                  </div>}
+                </div>
               </div>
             )}
 
@@ -562,12 +703,16 @@ export default function Deudores() {
                 {/* Resumen */}
                 {(() => {
                   const monto = parseFloat(montoCobro.replace(",", ".")) || 0
-                  if (monto <= 0) return null
-                  const preview = facturasSeleccionadas.size > 0
+                  const creditoDisp = usarSaldo ? (Number(modalCobro.creditoDisponible) || 0) : 0
+                  if (monto <= 0 && creditoDisp <= 0) return null
+                  const seleccion = facturasSeleccionadas.size > 0
+                  const preview = seleccion
                     ? calcularPreviewSeleccionado(modalCobro.facturas, facturasSeleccionadas)
-                    : calcularPreview(modalCobro.facturas, monto)
+                    : calcularPreview(modalCobro.facturas, monto + creditoDisp)
                   const totalAplicado = preview.reduce((s: number, f: any) => s + f.pago, 0)
-                  const excedente = Math.max(0, monto - totalAplicado)
+                  const creditoUsado = Math.min(creditoDisp, totalAplicado)
+                  const cashReal = Math.max(0, Math.round((totalAplicado - creditoUsado) * 100) / 100)
+                  const excedente = seleccion ? 0 : Math.max(0, Math.round((monto + creditoDisp - totalAplicado) * 100) / 100)
                   const saldadas = preview.filter((f: any) => f.resultado === "pagado").length
                   const parciales = preview.filter((f: any) => f.resultado === "parcial").length
                   return (
@@ -575,6 +720,18 @@ export default function Deudores() {
                       {facturasSeleccionadas.size === 0 && (
                         <div style={{ color: "#4b5563", fontSize: 11, marginBottom: 6, fontStyle: "italic" }}>
                           Distribución automática: de la más antigua a la más nueva
+                        </div>
+                      )}
+                      {creditoUsado > 0.01 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
+                          <span>Nota de crédito / saldo a favor:</span>
+                          <span style={{ color: "#4ade80", fontWeight: 700 }}>−{fmt(creditoUsado)}</span>
+                        </div>
+                      )}
+                      {creditoUsado > 0.01 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: 4 }}>
+                          <span>Cobrás en efectivo:</span>
+                          <span style={{ color: "white", fontWeight: 700 }}>{fmt(cashReal)}</span>
                         </div>
                       )}
                       {saldadas > 0 && (
@@ -590,7 +747,7 @@ export default function Deudores() {
                         </div>
                       )}
                       <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af", marginBottom: excedente > 0 ? 4 : 0 }}>
-                        <span>Total a cobrar:</span>
+                        <span>Total aplicado:</span>
                         <span style={{ color: "white", fontWeight: 700 }}>{fmt(totalAplicado)}</span>
                       </div>
                       {excedente > 0 && (
@@ -619,19 +776,56 @@ export default function Deudores() {
               }}>Cerrar</button>
               <button
                 onClick={confirmarCobro}
-                disabled={procesando || (parseFloat(montoCobro.replace(",", ".")) || 0) <= 0}
+                disabled={procesando || ((parseFloat(montoCobro.replace(",", ".")) || 0) <= 0 && !(usarSaldo && (modalCobro.creditoDisponible || 0) > 0))}
                 style={{
                   flex: 2, padding: "11px",
                   background: "linear-gradient(135deg, #16a34a, #22c55e)",
                   border: "none", borderRadius: 10, color: "white",
                   fontSize: 13, fontWeight: 700, cursor: "pointer",
-                  opacity: procesando || (parseFloat(montoCobro.replace(",", ".")) || 0) <= 0 ? 0.5 : 1,
+                  opacity: procesando || ((parseFloat(montoCobro.replace(",", ".")) || 0) <= 0 && !(usarSaldo && (modalCobro.creditoDisponible || 0) > 0)) ? 0.5 : 1,
                 }}>
-                {procesando
-                  ? "Registrando..."
-                  : montoCobro
-                    ? `Confirmar cobro de ${fmt(parseFloat(montoCobro.replace(",", ".")) || 0)}`
-                    : "Confirmar cobro"}
+                {procesando ? "Registrando..." : "Confirmar cobro"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal nota de crédito / devolución ── */}
+      {modalNC && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
+          onClick={() => setModalNC(null)}>
+          <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 440, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
+            onClick={e => e.stopPropagation()}>
+            <h2 style={{ color: "white", fontSize: 18, fontWeight: 700, margin: "0 0 4px" }}>↩️ Nota de crédito / devolución</h2>
+            <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 20px" }}>{modalNC.nombre} {modalNC.apellido}</p>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Monto de la devolución *</label>
+              <input type="number" min="0" step="0.01" value={ncMonto}
+                onChange={e => { setNcMonto(e.target.value); setErrorNC(null) }}
+                placeholder="Ej: 50000" style={inputDarkStyle} autoFocus />
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>Motivo (opcional)</label>
+              <input type="text" value={ncMotivo} onChange={e => setNcMotivo(e.target.value)}
+                placeholder="Ej: devolución mercadería" style={inputDarkStyle} />
+            </div>
+
+            <div style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 10, padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "#86efac" }}>
+              💡 Se guarda como <b>crédito a favor</b> del cliente. Después lo aplicás a las facturas que elijas desde el botón 💰 Cobrar.
+            </div>
+
+            {errorNC && (
+              <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", fontSize: 13, padding: "10px 14px", borderRadius: 8, marginBottom: 16 }}>
+                ⚠️ {errorNC}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setModalNC(null)} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+              <button onClick={guardarNC} disabled={guardandoNC || (parseFloat(ncMonto) || 0) <= 0} style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardandoNC || (parseFloat(ncMonto) || 0) <= 0 ? 0.5 : 1 }}>
+                {guardandoNC ? "Guardando..." : "Registrar nota de crédito"}
               </button>
             </div>
           </div>
