@@ -233,6 +233,22 @@ export default function Ventas() {
   }
 
   useEffect(() => { cargar() }, [])
+
+  // Al volver a la pestaña/ventana de Ventas, refrescar la lista de productos en silencio.
+  // Así un producto agregado en otra pestaña (Productos o Compras) aparece sin recargar la página.
+  useEffect(() => {
+    function alVolver() {
+      if (document.visibilityState === "visible") recargarProductos()
+    }
+    window.addEventListener("focus", alVolver)
+    document.addEventListener("visibilitychange", alVolver)
+    return () => {
+      window.removeEventListener("focus", alVolver)
+      document.removeEventListener("visibilitychange", alVolver)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     if (tab === "historial") cargarHistorial()
     if (tab === "borradores") cargarBorradores()
@@ -678,6 +694,29 @@ thead th:last-child{text-align:right}
     }
   }
 
+  // Refresca SOLO la lista de productos (silencioso) — no toca carrito, cliente ni nro de factura.
+  // Sirve para que un producto recién agregado en otra pestaña aparezca al volver a Ventas.
+  async function recargarProductos() {
+    try {
+      let todos: any[] = []
+      let desde = 0
+      while (true) {
+        const { data } = await supabase
+          .from("productos")
+          .select("id, nombre, precio_venta, stock, categoria, laboratorio")
+          .order("nombre")
+          .range(desde, desde + 999)
+        if (!data?.length) break
+        todos = [...todos, ...data]
+        if (data.length < 1000) break
+        desde += 1000
+      }
+      if (todos.length > 0) setProductos(todos)
+    } catch (e) {
+      console.error("Error recargando productos:", e)
+    }
+  }
+
   async function cargarHistorial() {
     setLoadingHistorial(true)
     try {
@@ -1085,7 +1124,11 @@ thead th:last-child{text-align:right}
       for (const item of carrito) {
         const producto = productos.find(p => p.id === item.producto_id)
         if (!producto) continue
-        await supabase.from("productos").update({ stock: producto.stock - item.cantidad }).eq("id", item.producto_id)
+        // Leer el stock FRESCO de la base antes de descontar (evita pisar stock que cambió
+        // por una compra u otra venta mientras esta página estaba abierta con datos viejos)
+        const { data: prodFresh } = await supabase.from("productos").select("stock").eq("id", item.producto_id).single()
+        const stockActual = Number(prodFresh?.stock ?? producto.stock)
+        await supabase.from("productos").update({ stock: Math.max(0, stockActual - item.cantidad) }).eq("id", item.producto_id)
         let cantidadRestante = item.cantidad
         const { data: lotes } = await supabase.from("lotes").select("id, cantidad").eq("producto_id", item.producto_id).gt("cantidad", 0).order("fecha_vencimiento", { ascending: true })
         if (lotes) {
@@ -1123,10 +1166,13 @@ thead th:last-child{text-align:right}
       localStorage.removeItem("vetix_borrador")
       // Actualizar sin recargar toda la lista: incrementar nro de factura y descontar stock local
       setNroFactura(String(parseInt(nroFacturaSave, 10) + 1).padStart(5, "0"))
-      setProductos(prev => prev.map(p => {
-        const vendido = carrito.find(i => i.producto_id === p.id)
-        return vendido ? { ...p, stock: Math.max(0, p.stock - vendido.cantidad) } : p
-      }))
+      // Releer el stock fresco de los productos vendidos y reflejarlo en la lista local
+      const idsVendidos = carrito.map(i => i.producto_id)
+      const { data: stocksFrescos } = await supabase.from("productos").select("id, stock").in("id", idsVendidos)
+      const mapaStock = new Map((stocksFrescos || []).map((p: any) => [p.id, p.stock]))
+      setProductos(prev => prev.map(p =>
+        mapaStock.has(p.id) ? { ...p, stock: Number(mapaStock.get(p.id)) } : p
+      ))
     } catch (e: any) {
       mostrarToast("Error: " + (e?.message || "error desconocido"), "error")
     } finally {
