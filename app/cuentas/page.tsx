@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { imprimirReciboCC } from "@/lib/impresion"
+import { getSaldoCliente } from "@/lib/saldo"
 
 function fmt(n: number) {
   return "$" + Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -224,11 +225,13 @@ export default function CuentasCorrientes() {
       mostrarToast("✅ Pago registrado — Recibo " + nroRecibo, "ok")
       // Imprimir recibo automáticamente (solo si hubo pago en efectivo)
       if (monto > 0) {
+        const saldoTotalCliente = await getSaldoCliente(clienteActivo.id)
         imprimirReciboCC(
           { monto, nota: notaFinal, nro_recibo: nroRecibo, fecha: new Date().toISOString() },
           ventaPago,
           clienteActivo,
-          ventaPago.saldo
+          ventaPago.saldo,
+          saldoTotalCliente
         )
       }
       setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago("")
@@ -241,9 +244,10 @@ export default function CuentasCorrientes() {
     }
   }
 
-  function imprimirRecibo(pago: any, venta: any) {
+  async function imprimirRecibo(pago: any, venta: any) {
     const saldoAnterior = Number(venta.total) - (Number(venta.totalPagado) - Number(pago.monto))
-    imprimirReciboCC(pago, venta, clienteActivo, saldoAnterior)
+    const saldoTotalCliente = clienteActivo ? await getSaldoCliente(clienteActivo.id) : 0
+    imprimirReciboCC(pago, venta, clienteActivo, saldoAnterior, saldoTotalCliente)
   }
 
   const clientesFiltrados = clientes

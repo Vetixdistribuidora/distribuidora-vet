@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { imprimirReciboCobroMasivo } from "@/lib/impresion"
+import { getSaldoCliente } from "@/lib/saldo"
 
 function fmt(num: number) {
   return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -41,7 +42,7 @@ export default function Deudores() {
   const [procesando, setProcesando] = useState(false)
   const [errorCobro, setErrorCobro] = useState<string | null>(null)
   const [exitoCobro, setExitoCobro] = useState<string | null>(null)
-  const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string } | null>(null)
+  const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string; saldoTotal?: number } | null>(null)
   const [facturasSeleccionadas, setFacturasSeleccionadas] = useState<Set<number>>(new Set())
 
   useEffect(() => { cargarDeudores() }, [])
@@ -216,13 +217,17 @@ export default function Deudores() {
       const saldadas = afectadas.filter((f: any) => f.resultado === "pagado").length
       const parciales = afectadas.filter((f: any) => f.resultado === "parcial").length
 
+      // Saldo total del cliente después de aplicar este cobro
+      const saldoTotalCliente = await getSaldoCliente(modalCobro.cliente_id)
+
       // Guardar datos del recibo para poder reimprimir
       const datosRecibo = {
         totalCobrado,
         nroReciboBase,
         afectadas,
         cliente: { nombre: modalCobro.nombre, apellido: modalCobro.apellido, telefono: modalCobro.telefono },
-        nota: notaCobro.trim() || undefined
+        nota: notaCobro.trim() || undefined,
+        saldoTotal: saldoTotalCliente,
       }
       setUltimoRecibo(datosRecibo)
 
@@ -232,7 +237,8 @@ export default function Deudores() {
         nroReciboBase,
         afectadas,
         { nombre: modalCobro.nombre, apellido: modalCobro.apellido, telefono: modalCobro.telefono },
-        notaCobro.trim() || undefined
+        notaCobro.trim() || undefined,
+        saldoTotalCliente
       )
 
       setExitoCobro(
@@ -426,7 +432,7 @@ export default function Deudores() {
                 <div style={{ color: "#4ade80", fontSize: 13, padding: "10px 14px" }}>{exitoCobro}</div>
                 {ultimoRecibo && (
                   <button
-                    onClick={() => imprimirReciboCobroMasivo(ultimoRecibo.totalCobrado, ultimoRecibo.nroReciboBase, ultimoRecibo.afectadas, ultimoRecibo.cliente, ultimoRecibo.nota)}
+                    onClick={() => imprimirReciboCobroMasivo(ultimoRecibo.totalCobrado, ultimoRecibo.nroReciboBase, ultimoRecibo.afectadas, ultimoRecibo.cliente, ultimoRecibo.nota, ultimoRecibo.saldoTotal)}
                     style={{ width: "100%", padding: "8px 14px", background: "rgba(34,197,94,0.15)", border: "none", borderTop: "1px solid rgba(34,197,94,0.2)", color: "#4ade80", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "center" }}>
                     🖨️ Reimprimir recibo
                   </button>

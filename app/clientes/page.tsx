@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { generarHTMLEImprimir, imprimirReciboCC } from "@/lib/impresion"
+import { getSaldoCliente } from "@/lib/saldo"
 
 function fmt(num: number) {
   return "$" + Number(num).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -297,11 +298,13 @@ export default function Clientes() {
       }
       mostrarToast("✅ Pago registrado — Recibo " + nroRecibo, "ok")
       // Imprimir recibo automáticamente
+      const saldoTotalClientePago = await getSaldoCliente(modalHistorial.id)
       imprimirReciboCC(
         { monto, nota: notaPago || null, nro_recibo: nroRecibo, fecha: new Date().toISOString() },
         ventaParaPagar,
         modalHistorial,
-        ventaParaPagar.saldo
+        ventaParaPagar.saldo,
+        saldoTotalClientePago
       )
       setModalPago(false); setVentaParaPagar(null)
       // Recargar solo el historial del cliente y recalcular deudas (sin refetch de toda la lista)
@@ -314,9 +317,10 @@ export default function Clientes() {
     }
   }
 
-  function imprimirRecibo(pago: any, venta: any) {
+  async function imprimirRecibo(pago: any, venta: any) {
     const saldoAnterior = Number(venta.total) - (Number(venta.totalPagado) - Number(pago.monto))
-    imprimirReciboCC(pago, venta, modalHistorial, saldoAnterior)
+    const saldoTotalCliente = modalHistorial ? await getSaldoCliente(modalHistorial.id) : 0
+    imprimirReciboCC(pago, venta, modalHistorial, saldoAnterior, saldoTotalCliente)
   }
 
   async function reimprimirFactura(venta: any) {
@@ -339,6 +343,7 @@ export default function Clientes() {
       const pagan = Math.max(0, item.cantidad - (item.bonificacion || 0))
       return acc + pagan * item.precio
     }, 0)
+    const saldoCliente = venta.cliente_id ? await getSaldoCliente(venta.cliente_id) : (modalHistorial ? await getSaldoCliente(modalHistorial.id) : 0)
     generarHTMLEImprimir({
       nroFactura: nroParaImprimir,
       clienteSeleccionado: factura.clienteSeleccionado || {},
@@ -349,6 +354,7 @@ export default function Clientes() {
       esCuentaCorriente: factura.esCuentaCorriente ?? false,
       metodoCobro: factura.metodoCobro,
       fecha: fechaVenta,
+      saldoCliente,
     }, "presupuesto")
   }
 
@@ -610,9 +616,9 @@ export default function Clientes() {
                       )}
                       {/* Fallback para ventas cobradas sin registro de pago (ventas anteriores al sistema de recibos) */}
                       {v.estado === "cobrada" && (!v.pagos || v.pagos.length === 0) && (
-                        <button onClick={() => imprimirReciboCC(
+                        <button onClick={async () => imprimirReciboCC(
                           { monto: Number(v.total), nota: null, nro_recibo: undefined, fecha: v.fecha },
-                          v, modalHistorial, Number(v.total)
+                          v, modalHistorial, Number(v.total), modalHistorial ? await getSaldoCliente(modalHistorial.id) : 0
                         )} style={{ marginTop: 8, background: "rgba(74,222,128,0.1)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                           🖨️ Recibo
                         </button>

@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react"
 import { supabase } from "../../lib/supabase"
 import { generarHTMLEImprimir } from "../../lib/impresion"
 import type { DatosImpresion } from "../../lib/impresion"
+import { getSaldoCliente } from "../../lib/saldo"
 // XLSX se carga de forma diferida (lazy) — solo cuando el usuario exporta
 
 function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
@@ -39,10 +40,12 @@ interface DatosRecibo {
   esCuentaCorriente: boolean
   metodoCobro?: string
   fecha?: string
+  saldoCliente?: number
 }
 
 function generarReciboHTMLEImprimir(datos: DatosRecibo) {
   const { nroFactura, clienteSeleccionado, carrito, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro, fecha: fechaParam } = datos
+  const saldoCliente = Number(datos.saldoCliente || 0)
   const logoUrl = window.location.origin + "/logo.png"
   const fecha = fechaParam || new Date().toLocaleDateString("es-AR")
   const f = (n: number) => "$" + n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -128,6 +131,7 @@ thead th{background:#f1f5f9;padding:8px 8px;font-size:11px;font-weight:700;color
     <p><span>Subtotal</span><span>${f(subtotal)}</span></p>
     <p><span>IVA (${ivaNum}%)</span><span>${f(subtotal * ivaNum / 100)}</span></p>
     <h2><span>Total</span><span>${f(total)}</span></h2>
+    ${saldoCliente > 0 ? `<div style="margin-top:10px;background:#fff3cd;border:1px solid #e67700;border-radius:8px;padding:10px 14px;text-align:center;"><p style="margin:0;font-size:12px;font-weight:700;color:#e67700;">Saldo total en cuenta corriente: ${f(saldoCliente)}</p></div>` : ""}
   </div></div>
   <div style="margin-top:16px;">${estadoHTML}</div>
   <div class="firma-box">
@@ -890,6 +894,7 @@ thead th:last-child{text-align:right}
       } else {
         // Presupuesto: usa el formato original de presupuesto (con número, fecha, tabla de ítems)
         const fechaVenta = venta.fecha ? new Date(venta.fecha).toLocaleDateString("es-AR") : new Date().toLocaleDateString("es-AR")
+        const saldoCliente = venta.cliente_id ? await getSaldoCliente(venta.cliente_id) : 0
         generarHTMLEImprimir({
           nroFactura: nroParaImprimir,
           clienteSeleccionado: clienteData || venta.clientes || {},
@@ -900,6 +905,7 @@ thead th:last-child{text-align:right}
           esCuentaCorriente: venta.estado === "cuenta_corriente",
           metodoCobro: venta.metodo_cobro,
           fecha: fechaVenta,
+          saldoCliente,
         }, "presupuesto")
       }
     } catch (e: any) {
@@ -932,6 +938,7 @@ thead th:last-child{text-align:right}
         ? (isNaN(parseInt(venta.nro_factura, 10)) ? venta.nro_factura : String(parseInt(venta.nro_factura, 10)).padStart(5, "0"))
         : ""
       const fechaVenta = venta.fecha ? new Date(venta.fecha).toLocaleDateString("es-AR") : new Date().toLocaleDateString("es-AR")
+      const saldoCliente = venta.cliente_id ? await getSaldoCliente(venta.cliente_id) : 0
       generarReciboHTMLEImprimir({
         nroFactura: nroParaImprimir,
         clienteSeleccionado: clienteData || venta.clientes || {},
@@ -942,6 +949,7 @@ thead th:last-child{text-align:right}
         esCuentaCorriente: venta.estado === "cuenta_corriente",
         metodoCobro: venta.metodo_cobro,
         fecha: fechaVenta,
+        saldoCliente,
       })
     } catch (e: any) {
       mostrarToast("Error al generar recibo: " + (e?.message || "error desconocido"), "error")
@@ -1160,7 +1168,9 @@ thead th:last-child{text-align:right}
         }
         await supabase.from("pagos_cuenta_corriente").insert([{ cliente_id: Number(clienteId), venta_id: venta.id, monto: total, nota: metodoCobro || null, nro_recibo: nroRecibo }])
         const fechaHoy = new Date().toLocaleDateString("es-AR")
-        generarReciboHTMLEImprimir({ nroFactura: nroFacturaSave, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente: false, metodoCobro, fecha: fechaHoy })
+        // Venta al contado: no genera deuda, pero mostramos la deuda existente del cliente (si tiene)
+        const saldoCliente = clienteId ? await getSaldoCliente(clienteId) : 0
+        generarReciboHTMLEImprimir({ nroFactura: nroFacturaSave, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente: false, metodoCobro, fecha: fechaHoy, saldoCliente })
       }
       setCarrito([]); setClienteId(""); setClienteSeleccionado(null); setBusquedaCliente(""); setEsCuentaCorriente(false)
       localStorage.removeItem("vetix_borrador")
@@ -1180,10 +1190,14 @@ thead th:last-child{text-align:right}
     }
   }
 
-  function imprimirTicket(tipo: "presupuesto" | "remito" = "presupuesto") {
+  async function imprimirTicket(tipo: "presupuesto" | "remito" = "presupuesto") {
     if (!clienteSeleccionado || carrito.length === 0) return
     const carritoEfectivo = carrito.map(item => ({ ...item, precio: precioEfectivo(item) }))
-    generarHTMLEImprimir({ nroFactura, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro }, tipo)
+    // Saldo del cliente: como la venta todavía no está guardada, si es a cuenta corriente
+    // le sumamos el total de este presupuesto para reflejar la deuda total resultante.
+    const saldoPrevio = clienteId ? await getSaldoCliente(clienteId) : 0
+    const saldoCliente = esCuentaCorriente ? Math.round((saldoPrevio + total) * 100) / 100 : saldoPrevio
+    generarHTMLEImprimir({ nroFactura, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro, saldoCliente }, tipo)
   }
 
   const terminoBusqVentas = busquedaProducto.trim().replace(/\s+/g, " ").toLowerCase()
