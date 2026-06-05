@@ -132,7 +132,7 @@ export default function ComprasPage() {
   const [loadingDetalle, setLoadingDetalle] = useState(false);
   const [tabDetalle, setTabDetalle] = useState<"detalle" | "pagos">("detalle");
   const [modalPago, setModalPago] = useState(false);
-  const [formPago, setFormPago] = useState({ monto: "", metodo_pago: "Efectivo", notas: "" });
+  const [formPago, setFormPago] = useState({ monto: "", metodo_pago: "Efectivo", notas: "", descuento: "" });
   const [guardandoPago, setGuardandoPago] = useState(false);
   const [saldoFavorDisponible, setSaldoFavorDisponible] = useState(0);
   const [usarSaldoFavor, setUsarSaldoFavor] = useState(false);
@@ -591,26 +591,33 @@ export default function ComprasPage() {
   async function guardarPago() {
     if (!compraVer) return;
     const monto = parseFloat(formPago.monto) || 0;
-    const saldoDeuda = compraVer.total - compraVer.total_pagado;
+    const pctDesc = parseFloat(formPago.descuento) || 0;
+    const saldoDeudaOrig = compraVer.total - compraVer.total_pagado;
+    // El descuento perdona parte de la deuda actual (reduce el total de la compra)
+    const montoDesc = pctDesc > 0 ? Math.round(saldoDeudaOrig * (pctDesc / 100) * 100) / 100 : 0;
+    const saldoDeuda = Math.round((saldoDeudaOrig - montoDesc) * 100) / 100; // a pagar después del descuento
     const saldoAplicado = usarSaldoFavor ? Math.min(saldoFavorDisponible, saldoDeuda) : 0;
-    const montoEfectivo = monto + saldoAplicado; // total que cubre la deuda
-    if (monto <= 0 && saldoAplicado <= 0) return;
+    const montoEfectivo = monto + saldoAplicado; // total en plata que cubre la deuda
+    if (monto <= 0 && saldoAplicado <= 0 && montoDesc <= 0) return;
 
     setGuardandoPago(true);
 
-    // Cuánto de la deuda se cancela con este pago
+    // Cuánto de la deuda (post-descuento) se cancela con este pago
     const montoCancela = Math.min(montoEfectivo, saldoDeuda);
     // Si pagó más efectivo del necesario → exceso va a saldo a favor
     const exceso = monto - (montoCancela - saldoAplicado);
+    // Nuevo total de la compra (reducido por el descuento)
+    const nuevoTotalCompra = Math.round((compraVer.total - montoDesc) * 100) / 100;
 
     try {
-      // 1. Registrar el pago en compras_pagos
+      // 1. Registrar el pago en compras_pagos (solo plata real, no el descuento)
       const { error: errPago } = await supabase.from("compras_pagos").insert({
         compra_id: compraVer.id,
         monto: montoCancela,
-        metodo_pago: monto > 0 ? formPago.metodo_pago : "Saldo a favor",
+        metodo_pago: monto > 0 ? formPago.metodo_pago : (saldoAplicado > 0 ? "Saldo a favor" : "Descuento"),
         notas: [
           formPago.notas || null,
+          montoDesc > 0 ? `Descuento ${pctDesc}% aplicado: ${fmt(montoDesc)}` : null,
           saldoAplicado > 0 ? `Saldo a favor aplicado: ${fmt(saldoAplicado)}` : null,
           exceso > 0 ? `Exceso pasó a saldo a favor: ${fmt(exceso)}` : null,
         ].filter(Boolean).join(" | ") || null,
@@ -618,10 +625,12 @@ export default function ComprasPage() {
       });
       if (errPago) { setErrorForm("Error al registrar pago: " + errPago.message); return; }
 
-      // 2. Actualizar total_pagado y estado de la compra
+      // 2. Actualizar total (si hubo descuento), total_pagado y estado de la compra
       const nuevoTotalPagado = compraVer.total_pagado + montoCancela;
-      const nuevoEstado = nuevoTotalPagado >= compraVer.total ? "pagado" : "parcial";
-      await supabase.from("compras").update({ total_pagado: nuevoTotalPagado, estado: nuevoEstado }).eq("id", compraVer.id);
+      const nuevoEstado = nuevoTotalPagado >= nuevoTotalCompra ? "pagado" : "parcial";
+      const updateCompra: any = { total_pagado: nuevoTotalPagado, estado: nuevoEstado };
+      if (montoDesc > 0) updateCompra.total = nuevoTotalCompra;
+      await supabase.from("compras").update(updateCompra).eq("id", compraVer.id);
 
       // 3. Si hubo exceso de efectivo → guardar como saldo a favor
       if (exceso > 0.01) {
@@ -651,9 +660,10 @@ export default function ComprasPage() {
       }
 
       setModalPago(false); setUsarSaldoFavor(false);
-      setCompraVer({ ...compraVer, total_pagado: nuevoTotalPagado, estado: nuevoEstado });
+      const camposActualizados = { total_pagado: nuevoTotalPagado, estado: nuevoEstado, ...(montoDesc > 0 ? { total: nuevoTotalCompra } : {}) };
+      setCompraVer({ ...compraVer, ...camposActualizados });
       // Actualizar la fila en la lista local sin recargar todo
-      setCompras(prev => prev.map(c => c.id === compraVer.id ? { ...c, total_pagado: nuevoTotalPagado, estado: nuevoEstado } : c));
+      setCompras(prev => prev.map(c => c.id === compraVer.id ? { ...c, ...camposActualizados } : c));
       const { data: p } = await supabase.from("compras_pagos").select("*").eq("compra_id", compraVer.id).order("fecha");
       if (p) setPagos(p);
     } catch (e: any) {
@@ -1143,7 +1153,7 @@ export default function ComprasPage() {
               {compraVer.estado !== "pagado" ? (
                 <div className="compras-botones-pago" style={{ display: "flex", gap: 10 }}>
                   <button onClick={() => {
-                    setFormPago({ monto: "", metodo_pago: "Efectivo", notas: "" });
+                    setFormPago({ monto: "", metodo_pago: "Efectivo", notas: "", descuento: "" });
                     setUsarSaldoFavor(false);
                     cargarSaldoFavor(compraVer.proveedor_id);
                     setModalPago(true);
@@ -1295,7 +1305,10 @@ export default function ComprasPage() {
 
       {/* ── MODAL PAGO PARCIAL ── */}
       {modalPago && compraVer && (() => {
-        const saldoDeuda = compraVer.total - compraVer.total_pagado;
+        const saldoDeudaTotal = compraVer.total - compraVer.total_pagado;
+        const pctDescPrev = parseFloat(formPago.descuento) || 0;
+        const montoDescPrev = pctDescPrev > 0 ? Math.round(saldoDeudaTotal * (pctDescPrev / 100) * 100) / 100 : 0;
+        const saldoDeuda = Math.round((saldoDeudaTotal - montoDescPrev) * 100) / 100; // a pagar tras descuento
         const saldoAplicado = usarSaldoFavor ? Math.min(saldoFavorDisponible, saldoDeuda) : 0;
         const montoIngresado = parseFloat(formPago.monto) || 0;
         const montoEfectivo = montoIngresado + saldoAplicado;
@@ -1306,7 +1319,7 @@ export default function ComprasPage() {
             <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 400, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
               <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: "0 0 4px" }}>Registrar pago</h2>
               <p style={{ color: "#6b7280", fontSize: 12, marginBottom: 16 }}>
-                Saldo pendiente: <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(saldoDeuda)}</span>
+                Saldo pendiente: <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(saldoDeudaTotal)}</span>
               </p>
 
               {/* Saldo a favor disponible */}
@@ -1331,6 +1344,27 @@ export default function ComprasPage() {
                 <input type="number" min="0" step="0.01" value={formPago.monto}
                   onChange={e => setFormPago({ ...formPago, monto: e.target.value })}
                   placeholder={usarSaldoFavor && saldoAplicado >= saldoDeuda ? "0.00 (no es necesario)" : "0.00"} style={inputDarkStyle} />
+              </div>
+
+              {/* Descuento por pronto pago */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Descuento (opcional)</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <input type="number" min="0" max="100" step="0.01" value={formPago.descuento}
+                    onChange={e => setFormPago({ ...formPago, descuento: e.target.value })}
+                    placeholder="0" style={{ ...inputDarkStyle, width: 90, textAlign: "center" }} />
+                  <span style={{ color: "#9ca3af", fontSize: 14, fontWeight: 700 }}>%</span>
+                  {montoDescPrev > 0 && (
+                    <span style={{ color: "#4ade80", fontSize: 13, fontWeight: 600 }}>
+                      − {fmt(montoDescPrev)} · queda {fmt(saldoDeuda)}
+                    </span>
+                  )}
+                </div>
+                {montoDescPrev > 0 && (
+                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+                    El descuento reduce la deuda. Pagás {fmt(saldoDeuda)} y la compra queda saldada.
+                  </div>
+                )}
               </div>
 
               {/* Aviso de exceso → saldo a favor */}

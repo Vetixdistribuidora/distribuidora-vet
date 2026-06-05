@@ -53,6 +53,7 @@ export default function CuentasCorrientes() {
   const [montoPago, setMontoPago] = useState("")
   const [metodoPago, setMetodoPago] = useState("efectivo")
   const [notaPago, setNotaPago] = useState("")
+  const [descuentoPago, setDescuentoPago] = useState("")
   const [guardando, setGuardando] = useState(false)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
@@ -157,9 +158,15 @@ export default function CuentasCorrientes() {
   }
 
   async function registrarPago() {
-    if (!ventaPago || !montoPago || Number(montoPago) <= 0) { mostrarToast("Ingresá un monto válido", "error"); return }
-    const monto = Number(montoPago)
-    if (monto > ventaPago.saldo) { mostrarToast("El monto supera el saldo pendiente", "error"); return }
+    if (!ventaPago) { mostrarToast("Seleccioná una factura", "error"); return }
+    const monto = Number(montoPago) || 0
+    const pctDesc = Number(descuentoPago) || 0
+    // El descuento perdona parte del saldo (reduce el total de la factura)
+    const montoDesc = pctDesc > 0 ? Math.round(ventaPago.saldo * (pctDesc / 100) * 100) / 100 : 0
+    const saldoPagable = Math.round((ventaPago.saldo - montoDesc) * 100) / 100  // a pagar tras descuento
+    const totalCubre = Math.round((monto + montoDesc) * 100) / 100  // cuánto de la deuda se cancela
+    if (totalCubre <= 0) { mostrarToast("Ingresá un monto o descuento válido", "error"); return }
+    if (monto > saldoPagable + 0.01) { mostrarToast("El monto supera el saldo pendiente (con descuento)", "error"); return }
     setGuardando(true)
     try {
       // Generar número de recibo con secuencia atómica
@@ -182,27 +189,49 @@ export default function CuentasCorrientes() {
         nroRecibo = "001-" + String(Number(nroData)).padStart(6, "0")
       }
 
-      const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
-        cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto, metodo_pago: metodoPago || null, nota: notaPago || null, nro_recibo: nroRecibo
-      }])
-      if (error) { mostrarToast("Error: " + error.message, "error"); return }
-      // Registrar movimiento en cuentas_corrientes para mantener el saldo sincronizado
+      // Si hay descuento → reducir el total de la factura (perdona parte de la deuda)
+      if (montoDesc > 0) {
+        const nuevoTotalVenta = Math.max(0, Number(ventaPago.total) - montoDesc)
+        await supabase.from("ventas").update({ total: nuevoTotalVenta }).eq("id", ventaPago.id)
+      }
+
+      const notaFinal = [
+        notaPago || null,
+        montoDesc > 0 ? `Descuento ${pctDesc}% aplicado: ${fmt(montoDesc)}` : null,
+      ].filter(Boolean).join(" | ") || null
+
+      // Registrar el pago en plata (solo si hubo monto en efectivo)
+      if (monto > 0) {
+        const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
+          cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto, metodo_pago: metodoPago || null, nota: notaFinal, nro_recibo: nroRecibo
+        }])
+        if (error) { mostrarToast("Error: " + error.message, "error"); return }
+      }
+      // Registrar movimientos en cuentas_corrientes para mantener el saldo sincronizado
       const { data: ultimoCC } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", clienteActivo.id).order("id", { ascending: false }).limit(1).maybeSingle()
-      const saldoAnteriorCC = Number(ultimoCC?.saldo ?? 0)
-      const nuevoSaldoCC = Math.max(0, saldoAnteriorCC - monto)
-      await supabase.from("cuentas_corrientes").insert({ cliente_id: clienteActivo.id, venta_id: ventaPago.id, tipo: "pago", monto: -monto, saldo: nuevoSaldoCC, fecha: new Date() })
-      if (monto >= ventaPago.saldo) {
+      let saldoCC = Number(ultimoCC?.saldo ?? 0)
+      if (montoDesc > 0) {
+        saldoCC = Math.max(0, saldoCC - montoDesc)
+        await supabase.from("cuentas_corrientes").insert({ cliente_id: clienteActivo.id, venta_id: ventaPago.id, tipo: "descuento", monto: -montoDesc, saldo: saldoCC, fecha: new Date() })
+      }
+      if (monto > 0) {
+        saldoCC = Math.max(0, saldoCC - monto)
+        await supabase.from("cuentas_corrientes").insert({ cliente_id: clienteActivo.id, venta_id: ventaPago.id, tipo: "pago", monto: -monto, saldo: saldoCC, fecha: new Date() })
+      }
+      if (totalCubre >= ventaPago.saldo - 0.01) {
         await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaPago.id)
       }
       mostrarToast("✅ Pago registrado — Recibo " + nroRecibo, "ok")
-      // Imprimir recibo automáticamente
-      imprimirReciboCC(
-        { monto, nota: notaPago || null, nro_recibo: nroRecibo, fecha: new Date().toISOString() },
-        ventaPago,
-        clienteActivo,
-        ventaPago.saldo
-      )
-      setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo")
+      // Imprimir recibo automáticamente (solo si hubo pago en efectivo)
+      if (monto > 0) {
+        imprimirReciboCC(
+          { monto, nota: notaFinal, nro_recibo: nroRecibo, fecha: new Date().toISOString() },
+          ventaPago,
+          clienteActivo,
+          ventaPago.saldo
+        )
+      }
+      setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago("")
       await cargarVentas(clienteActivo.id)
       await calcularResumen(clientes)
     } catch (e: any) {
@@ -223,6 +252,9 @@ export default function CuentasCorrientes() {
   const deudaTotal = Object.values(resumen).reduce((s, r) => s + r.deuda, 0)
   const pendientesList = ventas.filter(v => v.estado === "cuenta_corriente" && v.saldo > 0)
   const montoInput = Number(montoPago)
+  const pctDescInput = Number(descuentoPago) || 0
+  const montoDescInput = ventaPago && pctDescInput > 0 ? Math.round(ventaPago.saldo * (pctDescInput / 100) * 100) / 100 : 0
+  const saldoPagableInput = ventaPago ? Math.round((ventaPago.saldo - montoDescInput) * 100) / 100 : 0
 
   if (cargando) return (
     <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: 300 }}>
@@ -430,7 +462,7 @@ export default function CuentasCorrientes() {
                                   ))}
                                 </div>
                               )}
-                              <button onClick={() => { setVentaPago(v); setMontoPago(String(v.saldo)); setNotaPago("") }}
+                              <button onClick={() => { setVentaPago(v); setMontoPago(String(v.saldo)); setNotaPago(""); setDescuentoPago("") }}
                                 style={{ width: "100%", marginTop: 12, padding: "10px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 9, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                                 + Registrar pago
                               </button>
@@ -502,7 +534,7 @@ export default function CuentasCorrientes() {
       {/* Modal pago */}
       {ventaPago && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
-          onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago("") }}>
+          onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setDescuentoPago("") }}>
           <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 400, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
             onClick={e => e.stopPropagation()}>
             <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: "0 0 4px" }}>Registrar pago</h2>
@@ -513,7 +545,7 @@ export default function CuentasCorrientes() {
             </div>
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               {[25, 50, 75, 100].map(pct => {
-                const val = Math.round(ventaPago.saldo * pct / 100)
+                const val = Math.round(saldoPagableInput * pct / 100)
                 return (
                   <button key={pct} onClick={() => setMontoPago(String(val))} style={{
                     flex: 1, padding: "7px 0", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8,
@@ -527,9 +559,30 @@ export default function CuentasCorrientes() {
             <div style={{ marginBottom: 12 }}>
               <label style={labelStyle}>Monto</label>
               <input type="number" value={montoPago} onChange={e => setMontoPago(e.target.value)} style={inputDarkStyle} />
-              {montoInput > 0 && (
-                <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: montoInput >= ventaPago.saldo ? "#4ade80" : "#fbbf24" }}>
-                  {montoInput >= ventaPago.saldo ? "✓ Salda la deuda completa" : `Quedarán ${fmt(ventaPago.saldo - montoInput)} pendientes`}
+              {(montoInput + montoDescInput) > 0 && (
+                <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: (montoInput + montoDescInput) >= ventaPago.saldo - 0.01 ? "#4ade80" : "#fbbf24" }}>
+                  {(montoInput + montoDescInput) >= ventaPago.saldo - 0.01 ? "✓ Salda la deuda completa" : `Quedarán ${fmt(ventaPago.saldo - montoInput - montoDescInput)} pendientes`}
+                </div>
+              )}
+            </div>
+
+            {/* Descuento por pronto pago */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Descuento (opcional)</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <input type="number" min="0" max="100" step="0.01" value={descuentoPago}
+                  onChange={e => setDescuentoPago(e.target.value)}
+                  placeholder="0" style={{ ...inputDarkStyle, width: 90, textAlign: "center" }} />
+                <span style={{ color: "#9ca3af", fontSize: 14, fontWeight: 700 }}>%</span>
+                {montoDescInput > 0 && (
+                  <span style={{ color: "#4ade80", fontSize: 13, fontWeight: 600 }}>
+                    − {fmt(montoDescInput)} · a pagar {fmt(saldoPagableInput)}
+                  </span>
+                )}
+              </div>
+              {montoDescInput > 0 && (
+                <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+                  El descuento reduce la deuda del cliente. Con {fmt(saldoPagableInput)} la factura queda saldada.
                 </div>
               )}
             </div>
@@ -549,8 +602,8 @@ export default function CuentasCorrientes() {
               <input type="text" value={notaPago} onChange={e => setNotaPago(e.target.value)} placeholder="Ej: transferencia mayo, banco Galicia..." style={inputDarkStyle} />
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo") }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
-              <button onClick={registrarPago} disabled={guardando || !montoPago || montoInput <= 0} style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardando || !montoPago || montoInput <= 0 ? 0.5 : 1 }}>
+              <button onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago("") }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+              <button onClick={registrarPago} disabled={guardando || (montoInput <= 0 && montoDescInput <= 0)} style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardando || (montoInput <= 0 && montoDescInput <= 0) ? 0.5 : 1 }}>
                 {guardando ? "Guardando..." : "Confirmar pago"}
               </button>
             </div>
