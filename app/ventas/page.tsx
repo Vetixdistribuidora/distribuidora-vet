@@ -113,7 +113,7 @@ thead th{background:#f1f5f9;padding:8px 8px;font-size:11px;font-weight:700;color
     <b>Cliente:</b> ${clienteSeleccionado.nombre} ${clienteSeleccionado.apellido} &nbsp;|&nbsp;
     <b>CUIT:</b> ${clienteSeleccionado.cuit || "-"} &nbsp;|&nbsp;
     <b>Tel:</b> ${clienteSeleccionado.telefono || "-"} &nbsp;|&nbsp;
-    <b>Dir:</b> ${clienteSeleccionado.localidad || "-"}
+    <b>Dir:</b> ${clienteSeleccionado.localidad || "-"}${saldoCliente > 0 ? ` &nbsp;|&nbsp; <b>Saldo c/c:</b> <span style="color:#b45309;">${f(saldoCliente)}</span>` : ""}
   </div>
   <table>
     <thead>
@@ -131,7 +131,6 @@ thead th{background:#f1f5f9;padding:8px 8px;font-size:11px;font-weight:700;color
     <p><span>Subtotal</span><span>${f(subtotal)}</span></p>
     <p><span>IVA (${ivaNum}%)</span><span>${f(subtotal * ivaNum / 100)}</span></p>
     <h2><span>Total</span><span>${f(total)}</span></h2>
-    ${saldoCliente > 0 ? `<div style="margin-top:10px;background:#fff3cd;border:1px solid #e67700;border-radius:8px;padding:10px 14px;text-align:center;"><p style="margin:0;font-size:12px;font-weight:700;color:#e67700;">Saldo total en cuenta corriente: ${f(saldoCliente)}</p></div>` : ""}
   </div></div>
   <div style="margin-top:16px;">${estadoHTML}</div>
   <div class="firma-box">
@@ -880,7 +879,7 @@ thead th:last-child{text-align:right}
         : ""
 
       if (tipo === "remito") {
-        // Remito: mantiene el formato propio de remito (sin precios, con firma)
+        // Remito: mantiene el formato propio de remito (sin precios, con firma) — sin saldo
         generarHTMLEImprimir({
           nroFactura: nroParaImprimir,
           clienteSeleccionado: clienteData || venta.clientes || {},
