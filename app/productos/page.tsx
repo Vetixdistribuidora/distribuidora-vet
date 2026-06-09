@@ -612,7 +612,21 @@ export default function Productos() {
     setImportando(true); setProgreso(0)
     const margenDefault = Number(margenImportacion)
     const fleteDefault = Number(fleteImportacion) || 0
-    const nombresExistentes = new Map(productos.map((p: any) => [p.nombre.toLowerCase().trim(), p]))
+    // IMPORTANTE: traer la lista FRESCA de productos desde la BD (no la caché en memoria,
+    // que puede estar incompleta/desactualizada). Si un producto existente se clasifica como
+    // "nuevo", el upsert por nombre le pisaría el stock a 0. Con la lista fresca se clasifica
+    // siempre como existente → se actualiza por id sin tocar el stock.
+    const existentesDB: { id: number; nombre: string }[] = []
+    let desdeNombres = 0
+    while (true) {
+      const { data, error } = await supabase.from("productos").select("id, nombre").order("id").range(desdeNombres, desdeNombres + 999)
+      if (error) { mostrarToast("❌ Error leyendo productos: " + error.message, "error"); setImportando(false); return }
+      if (!data?.length) break
+      existentesDB.push(...data)
+      if (data.length < 1000) break
+      desdeNombres += 1000
+    }
+    const nombresExistentes = new Map(existentesDB.map((p: any) => [p.nombre.toLowerCase().trim(), p]))
 
     // Separar nuevos de existentes
     const nuevos: any[] = []
