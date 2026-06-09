@@ -135,7 +135,7 @@ export default function CajaPage() {
 
   // Modales
   const [modalMov, setModalMov] = useState<null | "nuevo" | "editar">(null)
-  const [movForm, setMovForm] = useState<any>({ id: null, tipo: "egreso", categoria: "retiro", metodo_pago: "efectivo", monto: "", fecha: "", descripcion: "" })
+  const [movForm, setMovForm] = useState<any>({ id: null, tipo: "egreso", categoria: "retiro", categoriaTexto: "Retiros", metodo_pago: "efectivo", monto: "", fecha: "", descripcion: "" })
   const [guardandoMov, setGuardandoMov] = useState(false)
   const [confirmDel, setConfirmDel] = useState<any>(null)
 
@@ -368,7 +368,7 @@ export default function CajaPage() {
   // ── Guardar movimiento manual ──
   function abrirNuevoMov() {
     setMovForm({
-      id: null, tipo: "egreso", categoria: "retiro", metodo_pago: "efectivo", monto: "",
+      id: null, tipo: "egreso", categoria: "retiro", categoriaTexto: "Retiros", metodo_pago: "efectivo", monto: "",
       fecha: new Date(anio, mes, Math.min(hoy.getDate(), 28)).toLocaleDateString("sv-SE"),
       descripcion: "",
     })
@@ -377,6 +377,8 @@ export default function CajaPage() {
   function abrirEditarMov(m: any) {
     setMovForm({
       id: m.id, tipo: m.tipo, categoria: m.categoria, metodo_pago: m.metodo_pago || "efectivo",
+      // Para egresos, el combobox muestra la etiqueta de la categoría (o vacío si es custom bajo "otro_egreso")
+      categoriaTexto: m.tipo === "egreso" ? (CAT_EGRESO[m.categoria]?.label ?? "") : "",
       monto: String(m.monto), fecha: m.fecha, descripcion: m.descripcion || "",
     })
     setModalMov("editar")
@@ -387,9 +389,25 @@ export default function CajaPage() {
     if (!movForm.fecha) { mostrarToast("Elegí una fecha", "error"); return }
     setGuardandoMov(true)
     try {
+      // Para egresos: resolver la categoría escrita o elegida en el combobox.
+      let categoriaFinal = movForm.categoria
+      let descripcionFinal = (movForm.descripcion || "").trim()
+      if (movForm.tipo === "egreso") {
+        const txt = (movForm.categoriaTexto || "").trim()
+        const conocida = ORDEN_CAT_EGRESO.find(k => k !== "proveedores" && CAT_EGRESO[k].label.toLowerCase() === txt.toLowerCase())
+        if (conocida) {
+          categoriaFinal = conocida
+        } else if (txt) {
+          // Egreso nuevo escrito por el usuario → se guarda como "Otros egresos" con ese nombre
+          categoriaFinal = "otro_egreso"
+          descripcionFinal = descripcionFinal ? `${txt} — ${descripcionFinal}` : txt
+        } else {
+          categoriaFinal = "otro_egreso"
+        }
+      }
       const payload = {
-        fecha: movForm.fecha, tipo: movForm.tipo, categoria: movForm.categoria,
-        metodo_pago: movForm.metodo_pago || null, monto, descripcion: movForm.descripcion || null,
+        fecha: movForm.fecha, tipo: movForm.tipo, categoria: categoriaFinal,
+        metodo_pago: movForm.metodo_pago || null, monto, descripcion: descripcionFinal || null,
       }
       if (movForm.id) {
         const { error } = await supabase.from("movimientos_caja").update(payload).eq("id", movForm.id)
@@ -696,17 +714,27 @@ export default function CajaPage() {
           {/* Tipo */}
           <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
             {[["egreso", "Egreso", "#ef4444"], ["ingreso", "Ingreso", "#16a34a"]].map(([val, lab, col]) => (
-              <button key={val} onClick={() => setMovForm((p: any) => ({ ...p, tipo: val, categoria: val === "ingreso" ? "otro_ingreso" : "retiro" }))}
+              <button key={val} onClick={() => setMovForm((p: any) => ({ ...p, tipo: val, categoria: val === "ingreso" ? "otro_ingreso" : "retiro", categoriaTexto: val === "egreso" ? "Retiros" : "" }))}
                 style={{ flex: 1, padding: "10px", borderRadius: 10, border: movForm.tipo === val ? `2px solid ${col}` : "1px solid rgba(255,255,255,0.15)", background: movForm.tipo === val ? `${col}22` : "rgba(255,255,255,0.04)", color: movForm.tipo === val ? "white" : "#9ca3af", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                 {lab}
               </button>
             ))}
           </div>
           {movForm.tipo === "egreso" && (
-            <Campo label="Categoría">
-              <select value={movForm.categoria} onChange={e => setMovForm((p: any) => ({ ...p, categoria: e.target.value }))} style={selectClaro}>
-                {ORDEN_CAT_EGRESO.filter(k => k !== "proveedores").map(k => <option key={k} value={k}>{CAT_EGRESO[k].label}</option>)}
-              </select>
+            <Campo label="Categoría (elegí una o escribí una nueva)">
+              <input
+                list="cat-egresos-list"
+                value={movForm.categoriaTexto ?? ""}
+                onChange={e => setMovForm((p: any) => ({ ...p, categoriaTexto: e.target.value }))}
+                placeholder="Ej: Internet, Alquiler, Sueldos…"
+                style={inputDark}
+                autoComplete="off"
+              />
+              <datalist id="cat-egresos-list">
+                {ORDEN_CAT_EGRESO.filter(k => k !== "proveedores").map(k => (
+                  <option key={k} value={CAT_EGRESO[k].label} />
+                ))}
+              </datalist>
             </Campo>
           )}
           {movForm.tipo === "ingreso" && (
