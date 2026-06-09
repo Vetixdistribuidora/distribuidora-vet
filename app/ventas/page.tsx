@@ -1199,13 +1199,19 @@ thead th:last-child{text-align:right}
     generarHTMLEImprimir({ nroFactura, clienteSeleccionado, carrito: carritoEfectivo, subtotal, ivaNum, total, esCuentaCorriente, metodoCobro, saldoCliente }, tipo)
   }
 
-  const terminoBusqVentas = busquedaProducto.trim().replace(/\s+/g, " ").toLowerCase()
+  // Búsqueda tolerante: ignora acentos y matchea aunque junten o separen palabras
+  const sinAcentos = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+  const terminoBusqVentas = sinAcentos(busquedaProducto.trim().replace(/\s+/g, " "))
   const palabrasBusqVentas = terminoBusqVentas.split(" ").filter(Boolean)
+  const terminoSinEsp = terminoBusqVentas.replace(/\s+/g, "")
   const productosFiltrados = productos.filter(p => {
     if (!palabrasBusqVentas.length) return false
-    const campo = p.nombre.toLowerCase() + " " + (p.laboratorio || "").toLowerCase()
-    return (campo.includes(terminoBusqVentas) || palabrasBusqVentas.every(w => campo.includes(w))) &&
-      !carrito.find(i => i.producto_id === p.id)
+    const campo = sinAcentos(p.nombre + " " + (p.laboratorio || ""))
+    const campoSinEsp = campo.replace(/\s+/g, "")
+    const matchea = campo.includes(terminoBusqVentas)
+      || palabrasBusqVentas.every(w => campo.includes(w))
+      || (terminoSinEsp.length >= 3 && campoSinEsp.includes(terminoSinEsp))
+    return matchea && !carrito.find(i => i.producto_id === p.id)
   })
 
   const ventasFiltradas = ventas.filter(v => {
