@@ -42,6 +42,9 @@ const CAT_EGRESO: Record<string, { label: string; icon: string; color: string; a
 }
 const ORDEN_CAT_EGRESO = ["proveedores", "retiro", "flete", "gasto_distribuidora", "gasto_casa", "gasto_camioneta", "otro_egreso"]
 
+// Metadata de una categoría de egreso — si es custom (escrita por el usuario) usa un default
+const metaCatEgreso = (k: string) => CAT_EGRESO[k] || { label: k, icon: "📝", color: "#64748b" }
+
 // Categorías de ingreso manual
 const CAT_INGRESO: Record<string, { label: string; icon: string }> = {
   otro_ingreso: { label: "Otro ingreso", icon: "📥" },
@@ -324,7 +327,7 @@ export default function CajaPage() {
           }
           const catLabel = esIngreso
             ? (CAT_INGRESO[m.categoria]?.label || "Ingreso manual")
-            : (CAT_EGRESO[m.categoria]?.label || "Egreso manual")
+            : metaCatEgreso(m.categoria).label
           filasMes.push({
             id: "m-" + m.id, fecha: m.fecha,
             detalle: m.descripcion || catLabel,
@@ -377,8 +380,8 @@ export default function CajaPage() {
   function abrirEditarMov(m: any) {
     setMovForm({
       id: m.id, tipo: m.tipo, categoria: m.categoria, metodo_pago: m.metodo_pago || "efectivo",
-      // Para egresos, el combobox muestra la etiqueta de la categoría (o vacío si es custom bajo "otro_egreso")
-      categoriaTexto: m.tipo === "egreso" ? (CAT_EGRESO[m.categoria]?.label ?? "") : "",
+      // Para egresos, el combobox muestra la etiqueta de la categoría (o el nombre custom)
+      categoriaTexto: m.tipo === "egreso" ? metaCatEgreso(m.categoria).label : "",
       monto: String(m.monto), fecha: m.fecha, descripcion: m.descripcion || "",
     })
     setModalMov("editar")
@@ -398,9 +401,8 @@ export default function CajaPage() {
         if (conocida) {
           categoriaFinal = conocida
         } else if (txt) {
-          // Egreso nuevo escrito por el usuario → se guarda como "Otros egresos" con ese nombre
-          categoriaFinal = "otro_egreso"
-          descripcionFinal = descripcionFinal ? `${txt} — ${descripcionFinal}` : txt
+          // Egreso nuevo escrito por el usuario → categoría propia con ese nombre
+          categoriaFinal = txt
         } else {
           categoriaFinal = "otro_egreso"
         }
@@ -515,6 +517,11 @@ export default function CajaPage() {
     if (!filasPorBloque[bk]) filasPorBloque[bk] = []
     filasPorBloque[bk].push(f)
   }
+  // Bloques a renderizar = los fijos + las categorías de egreso custom que aparezcan
+  const bloquesCustom = Object.keys(filasPorBloque)
+    .filter(k => k !== "ingresos" && !BLOQUES.some(b => b.key === k))
+    .map(k => { const m = metaCatEgreso(k); return { key: k, label: m.label, icon: m.icon, color: m.color, modo: "egreso" as const } })
+  const bloquesRender = [...BLOQUES, ...bloquesCustom]
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const cardBase: React.CSSProperties = {
@@ -616,8 +623,11 @@ export default function CajaPage() {
           <h3 style={panelTitle}>📤 Egresos por categoría</h3>
           {egresosMes === 0 ? (
             <p style={{ color: "#94a3b8", fontSize: 13 }}>Sin egresos este mes.</p>
-          ) : ORDEN_CAT_EGRESO.filter(k => egresosPorCat[k]).map(k => {
-            const meta = CAT_EGRESO[k]
+          ) : [
+            ...ORDEN_CAT_EGRESO.filter(k => egresosPorCat[k]),
+            ...Object.keys(egresosPorCat).filter(k => egresosPorCat[k] && !ORDEN_CAT_EGRESO.includes(k)),
+          ].map(k => {
+            const meta = metaCatEgreso(k)
             return (
               <div key={k} style={lineaPanel}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -646,7 +656,7 @@ export default function CajaPage() {
         <div style={{ ...cardBase, textAlign: "center", color: "#94a3b8", fontSize: 13, padding: 30 }}>Sin movimientos en este mes.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {BLOQUES.map(b => {
+          {bloquesRender.map(b => {
             const rows = filasPorBloque[b.key]
             if (!rows || rows.length === 0) return null
             const subtotal = rows.reduce((s, r) => s + (b.modo === "ingreso" ? r.ingreso : r.egreso), 0)
@@ -722,23 +732,27 @@ export default function CajaPage() {
           </div>
           {movForm.tipo === "egreso" && (
             <Campo label="Categoría (elegí una o escribí una nueva)">
-              {/* Categorías existentes — tocá una para elegirla */}
+              {/* Categorías existentes (fijas + las custom ya usadas) — tocá una para elegirla */}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                {ORDEN_CAT_EGRESO.filter(k => k !== "proveedores").map(k => {
-                  const activa = (movForm.categoriaTexto || "").trim().toLowerCase() === CAT_EGRESO[k].label.toLowerCase()
+                {[
+                  ...ORDEN_CAT_EGRESO.filter(k => k !== "proveedores"),
+                  ...Object.keys(egresosPorCat).filter(k => egresosPorCat[k] && !ORDEN_CAT_EGRESO.includes(k)),
+                ].map(k => {
+                  const meta = metaCatEgreso(k)
+                  const activa = (movForm.categoriaTexto || "").trim().toLowerCase() === meta.label.toLowerCase()
                   return (
                     <button
                       key={k}
                       type="button"
-                      onClick={() => setMovForm((p: any) => ({ ...p, categoriaTexto: CAT_EGRESO[k].label }))}
+                      onClick={() => setMovForm((p: any) => ({ ...p, categoriaTexto: meta.label }))}
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 5,
                         padding: "6px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12, fontWeight: 700,
-                        border: activa ? `2px solid ${CAT_EGRESO[k].color}` : "1px solid rgba(255,255,255,0.15)",
-                        background: activa ? `${CAT_EGRESO[k].color}22` : "rgba(255,255,255,0.04)",
+                        border: activa ? `2px solid ${meta.color}` : "1px solid rgba(255,255,255,0.15)",
+                        background: activa ? `${meta.color}22` : "rgba(255,255,255,0.04)",
                         color: activa ? "white" : "#cbd5e1",
                       }}>
-                      <span>{CAT_EGRESO[k].icon}</span> {CAT_EGRESO[k].label}
+                      <span>{meta.icon}</span> {meta.label}
                     </button>
                   )
                 })}
