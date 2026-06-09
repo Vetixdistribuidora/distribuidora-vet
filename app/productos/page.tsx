@@ -486,13 +486,20 @@ export default function Productos() {
       const fleteNum   = Number(e.flete)   || 0
       const perdidaNum = Number(e.perdida) || 0
       const precioVenta = Math.round(costoNum * (1 + ivaNum / 100) * (1 + fleteNum / 100) * (1 + perdidaNum / 100) * 100) / 100
-      const { error } = await supabase.from("productos").update({ nombre: e.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, perdida: perdidaNum, precio_venta: precioVenta, stock: Number(e.stock) || 0, categoria: e.categoria || "", laboratorio: e.laboratorio || "" }).eq("id", productoId)
+      // SEGURIDAD: solo tocar el stock si el usuario lo cambió de verdad.
+      // Así editar el precio (u otro campo) nunca pisa el stock con un valor vacío o desactualizado.
+      const stockOriginal = productos.find((p: any) => p.id === productoId)?.stock
+      const stockValido = !(e.stock === "" || e.stock == null || isNaN(Number(e.stock)))
+      const stockCambiado = stockValido && Number(e.stock) !== Number(stockOriginal ?? NaN)
+      const campos: any = { nombre: e.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, perdida: perdidaNum, precio_venta: precioVenta, categoria: e.categoria || "", laboratorio: e.laboratorio || "" }
+      if (stockCambiado) campos.stock = Number(e.stock)
+      const { error } = await supabase.from("productos").update(campos).eq("id", productoId)
       if (error) { mostrarToast("❌ " + error.message, "error"); return }
       supabase.rpc("registrar_auditoria", { accion: "editar", tabla: "productos", registro_id: productoId }) // fire-and-forget
       mostrarToast("✅ Producto actualizado", "ok")
       setProductos(prev => prev.map(p =>
         p.id === productoId
-          ? { ...p, nombre: e.nombre, costo: costoNum, margen: ivaNum, flete: fleteNum, perdida: perdidaNum, precio_venta: precioVenta, stock: Number(e.stock) || 0, categoria: e.categoria || "", laboratorio: e.laboratorio || "" }
+          ? { ...p, ...campos }
           : p
       ))
       setEditando(prev => { const n = { ...prev }; delete n[productoId]; return n })
