@@ -722,19 +722,34 @@ export default function CajaPage() {
           </div>
           {movForm.tipo === "egreso" && (
             <Campo label="Categoría (elegí una o escribí una nueva)">
+              {/* Categorías existentes — tocá una para elegirla */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                {ORDEN_CAT_EGRESO.filter(k => k !== "proveedores").map(k => {
+                  const activa = (movForm.categoriaTexto || "").trim().toLowerCase() === CAT_EGRESO[k].label.toLowerCase()
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setMovForm((p: any) => ({ ...p, categoriaTexto: CAT_EGRESO[k].label }))}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 5,
+                        padding: "6px 10px", borderRadius: 999, cursor: "pointer", fontSize: 12, fontWeight: 700,
+                        border: activa ? `2px solid ${CAT_EGRESO[k].color}` : "1px solid rgba(255,255,255,0.15)",
+                        background: activa ? `${CAT_EGRESO[k].color}22` : "rgba(255,255,255,0.04)",
+                        color: activa ? "white" : "#cbd5e1",
+                      }}>
+                      <span>{CAT_EGRESO[k].icon}</span> {CAT_EGRESO[k].label}
+                    </button>
+                  )
+                })}
+              </div>
               <input
-                list="cat-egresos-list"
                 value={movForm.categoriaTexto ?? ""}
                 onChange={e => setMovForm((p: any) => ({ ...p, categoriaTexto: e.target.value }))}
-                placeholder="Ej: Internet, Alquiler, Sueldos…"
+                placeholder="…o escribí una nueva (ej: Internet, Alquiler, Sueldos)"
                 style={inputDark}
                 autoComplete="off"
               />
-              <datalist id="cat-egresos-list">
-                {ORDEN_CAT_EGRESO.filter(k => k !== "proveedores").map(k => (
-                  <option key={k} value={CAT_EGRESO[k].label} />
-                ))}
-              </datalist>
             </Campo>
           )}
           {movForm.tipo === "ingreso" && (
