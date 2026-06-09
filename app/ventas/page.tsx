@@ -1020,6 +1020,16 @@ thead th:last-child{text-align:right}
     setBusquedaCliente(c.nombre + " " + c.apellido)
     setClienteDropdown(false)
     setClienteIndice(-1)
+    // Recalcular precios del carrito con el % de recargo del nuevo cliente
+    // (si se agregaron productos antes de elegir el cliente, quedaban sin recargo → a costo)
+    const pct = Number(c?.porcentaje) || 0
+    setCarrito(prev => prev.map(item => {
+      if (item.precioManual) return item // respetar precios editados a mano
+      const prod = productos.find(p => p.id === item.producto_id)
+      if (!prod) return item
+      const base = Number(prod.precio_venta) || 0
+      return { ...item, precio: Math.round((base + base * pct / 100) * 100) / 100 }
+    }))
   }
 
   function limpiarCliente() {
@@ -1053,7 +1063,7 @@ thead th:last-child{text-align:right}
   function eliminarItem(i: number) { setCarrito(carrito.filter((_, idx) => idx !== i)) }
   function vaciarCarrito() { setCarrito([]) }
   function cambiarBonificacion(i: number, v: number) { const n = [...carrito]; n[i].bonificacion = v; setCarrito([...n]) }
-  function cambiarPrecio(i: number, v: number) { const n = [...carrito]; n[i].precio = v; setCarrito([...n]) }
+  function cambiarPrecio(i: number, v: number) { const n = [...carrito]; n[i].precio = v; n[i].precioManual = true; setCarrito([...n]) }
   function cambiarDescuento(i: number, v: number) { const n = [...carrito]; n[i].descuento = v; setCarrito([...n]) }
   function cambiarNombre(i: number, v: string) { const n = [...carrito]; n[i].nombre = v; setCarrito([...n]) }
   function cambiarTipoDescuento(i: number, tipo: "pesos" | "porcentaje") { const n = [...carrito]; n[i].tipoDescuento = tipo; n[i].descuento = 0; setCarrito([...n]) }
