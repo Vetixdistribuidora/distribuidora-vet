@@ -55,6 +55,7 @@ export default function CuentasCorrientes() {
   const [metodoPago, setMetodoPago] = useState("efectivo")
   const [notaPago, setNotaPago] = useState("")
   const [descuentoPago, setDescuentoPago] = useState("")
+  const [descuentoTipo, setDescuentoTipo] = useState<"pct" | "pesos">("pct")
   const [guardando, setGuardando] = useState(false)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
@@ -161,9 +162,12 @@ export default function CuentasCorrientes() {
   async function registrarPago() {
     if (!ventaPago) { mostrarToast("Seleccioná una factura", "error"); return }
     const monto = Number(montoPago) || 0
-    const pctDesc = Number(descuentoPago) || 0
-    // El descuento perdona parte del saldo (reduce el total de la factura)
-    const montoDesc = pctDesc > 0 ? Math.round(ventaPago.saldo * (pctDesc / 100) * 100) / 100 : 0
+    const descVal = Number(descuentoPago) || 0
+    // El descuento perdona parte del saldo (en % o en pesos). Nunca puede superar el saldo.
+    const montoDescBruto = descuentoTipo === "pesos"
+      ? descVal
+      : Math.round(ventaPago.saldo * (descVal / 100) * 100) / 100
+    const montoDesc = Math.min(Math.max(0, Math.round(montoDescBruto * 100) / 100), ventaPago.saldo)
     const saldoPagable = Math.round((ventaPago.saldo - montoDesc) * 100) / 100  // a pagar tras descuento
     const totalCubre = Math.round((monto + montoDesc) * 100) / 100  // cuánto de la deuda se cancela
     if (totalCubre <= 0) { mostrarToast("Ingresá un monto o descuento válido", "error"); return }
@@ -198,7 +202,7 @@ export default function CuentasCorrientes() {
 
       const notaFinal = [
         notaPago || null,
-        montoDesc > 0 ? `Descuento ${pctDesc}% aplicado: ${fmt(montoDesc)}` : null,
+        montoDesc > 0 ? `Descuento aplicado: ${fmt(montoDesc)}` : null,
       ].filter(Boolean).join(" | ") || null
 
       // Registrar el pago en plata (solo si hubo monto en efectivo)
@@ -234,7 +238,7 @@ export default function CuentasCorrientes() {
           saldoTotalCliente
         )
       }
-      setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago("")
+      setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct")
       await cargarVentas(clienteActivo.id)
       await calcularResumen(clientes)
     } catch (e: any) {
@@ -256,8 +260,12 @@ export default function CuentasCorrientes() {
   const deudaTotal = Object.values(resumen).reduce((s, r) => s + r.deuda, 0)
   const pendientesList = ventas.filter(v => v.estado === "cuenta_corriente" && v.saldo > 0)
   const montoInput = Number(montoPago)
-  const pctDescInput = Number(descuentoPago) || 0
-  const montoDescInput = ventaPago && pctDescInput > 0 ? Math.round(ventaPago.saldo * (pctDescInput / 100) * 100) / 100 : 0
+  const descValInput = Number(descuentoPago) || 0
+  const montoDescInput = (() => {
+    if (!ventaPago || descValInput <= 0) return 0
+    const bruto = descuentoTipo === "pesos" ? descValInput : Math.round(ventaPago.saldo * (descValInput / 100) * 100) / 100
+    return Math.min(Math.max(0, Math.round(bruto * 100) / 100), ventaPago.saldo)
+  })()
   const saldoPagableInput = ventaPago ? Math.round((ventaPago.saldo - montoDescInput) * 100) / 100 : 0
 
   if (cargando) return (
@@ -466,7 +474,7 @@ export default function CuentasCorrientes() {
                                   ))}
                                 </div>
                               )}
-                              <button onClick={() => { setVentaPago(v); setMontoPago(String(v.saldo)); setNotaPago(""); setDescuentoPago("") }}
+                              <button onClick={() => { setVentaPago(v); setMontoPago(String(v.saldo)); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct") }}
                                 style={{ width: "100%", marginTop: 12, padding: "10px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 9, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                                 + Registrar pago
                               </button>
@@ -538,7 +546,7 @@ export default function CuentasCorrientes() {
       {/* Modal pago */}
       {ventaPago && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
-          onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setDescuentoPago("") }}>
+          onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct") }}>
           <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 400, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
             onClick={e => e.stopPropagation()}>
             <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: "0 0 4px" }}>Registrar pago</h2>
@@ -570,14 +578,24 @@ export default function CuentasCorrientes() {
               )}
             </div>
 
-            {/* Descuento por pronto pago */}
+            {/* Descuento por pronto pago — en % o en pesos */}
             <div style={{ marginBottom: 12 }}>
               <label style={labelStyle}>Descuento (opcional)</label>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <input type="number" min="0" max="100" step="0.01" value={descuentoPago}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                {/* Selector % / $ */}
+                <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,0.15)" }}>
+                  {(["pct", "pesos"] as const).map(t => (
+                    <button key={t} type="button" onClick={() => setDescuentoTipo(t)}
+                      style={{ padding: "7px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer", border: "none",
+                        background: descuentoTipo === t ? "#16a34a" : "rgba(255,255,255,0.05)",
+                        color: descuentoTipo === t ? "white" : "#9ca3af" }}>
+                      {t === "pct" ? "%" : "$"}
+                    </button>
+                  ))}
+                </div>
+                <input type="number" min="0" step="0.01" value={descuentoPago}
                   onChange={e => setDescuentoPago(e.target.value)}
-                  placeholder="0" style={{ ...inputDarkStyle, width: 90, textAlign: "center" }} />
-                <span style={{ color: "#9ca3af", fontSize: 14, fontWeight: 700 }}>%</span>
+                  placeholder={descuentoTipo === "pct" ? "0 %" : "0 $"} style={{ ...inputDarkStyle, width: 110, textAlign: "center" }} />
                 {montoDescInput > 0 && (
                   <span style={{ color: "#4ade80", fontSize: 13, fontWeight: 600 }}>
                     − {fmt(montoDescInput)} · a pagar {fmt(saldoPagableInput)}
@@ -606,7 +624,7 @@ export default function CuentasCorrientes() {
               <input type="text" value={notaPago} onChange={e => setNotaPago(e.target.value)} placeholder="Ej: transferencia mayo, banco Galicia..." style={inputDarkStyle} />
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago("") }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+              <button onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct") }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
               <button onClick={registrarPago} disabled={guardando || (montoInput <= 0 && montoDescInput <= 0)} style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardando || (montoInput <= 0 && montoDescInput <= 0) ? 0.5 : 1 }}>
                 {guardando ? "Guardando..." : "Confirmar pago"}
               </button>
