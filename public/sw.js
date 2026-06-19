@@ -1,5 +1,5 @@
-const CACHE_DYNAMIC = "vetix-v7"
-const CACHE_STATIC  = "vetix-static-v7"
+const CACHE_DYNAMIC = "vetix-v8"
+const CACHE_STATIC  = "vetix-static-v8"
 
 // ── INSTALL ──────────────────────────────────────────────────────────────────
 self.addEventListener("install", (e) => {
@@ -39,11 +39,28 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url)
   if (url.origin !== location.origin) return
 
-  // 1. Navigation (HTML pages): always network-first, never serve stale HTML
-  //    → user always gets fresh app shell after a Vercel deploy
+  // 1. Navigation (HTML pages): network-first con timeout.
+  //    Si la red responde, servimos lo fresco (shell nuevo tras un deploy).
+  //    Si al abrir la PWA la red está colgada (no falla, simplemente no
+  //    responde), a los 3.5s servimos el shell cacheado para que la app
+  //    arranque igual — esto evita que quede en "cargando" para siempre.
   if (e.request.mode === "navigate") {
     e.respondWith(
-      fetch(e.request).catch(() => caches.match("/"))
+      new Promise((resolve) => {
+        let listo = false
+        const responder = (res) => { if (!listo && res) { listo = true; resolve(res) } }
+
+        const timer = setTimeout(() => {
+          caches.match("/").then(responder)
+        }, 3500)
+
+        fetch(e.request)
+          .then((res) => { clearTimeout(timer); responder(res) })
+          .catch(() => {
+            clearTimeout(timer)
+            caches.match("/").then((r) => responder(r || Response.error()))
+          })
+      })
     )
     return
   }
