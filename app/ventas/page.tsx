@@ -1451,7 +1451,9 @@ thead th:last-child{text-align:right}
                           {/* Precio */}
                           <div className="ventas-item-precio" style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 100 }}>
                             <label style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", whiteSpace: "nowrap" }}>Precio u.</label>
-                            <input type="number" step="0.01" value={Math.round(item.precio * 100) / 100} onChange={e => cambiarPrecio(i, Number(e.target.value))}
+                            <input type="number" step="0.01" value={item.precio ? Math.round(item.precio * 100) / 100 : ""} placeholder="0"
+                              onChange={e => cambiarPrecio(i, Number(e.target.value))}
+                              onFocus={e => e.target.select()}
                               style={{ flex: 1, padding: "5px 8px", border: "1px solid #e2e8f0", borderRadius: 7, fontSize: 12, outline: "none", boxSizing: "border-box", background: "white", minWidth: 60 }} />
                           </div>
                           {/* Bonificación */}
