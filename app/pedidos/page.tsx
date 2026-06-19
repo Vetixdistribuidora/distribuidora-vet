@@ -542,7 +542,7 @@ export default function Pedidos() {
           <div style={{ flex: 1, display: "flex", minHeight: 0, background: "#f8fafc", border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 14px 14px", overflow: "hidden" }}>
 
             {/* COLUMNA IZQ: buscar y agregar productos */}
-            <div style={{ width: 380, borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", background: "white", flexShrink: 0 }}>
+            <div style={{ flex: 1, minWidth: 0, borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", background: "white" }}>
 
               {/* Buscador estilo ventas/productos */}
               <div style={{ padding: "16px 18px", borderBottom: "1px solid #f1f5f9" }}>
