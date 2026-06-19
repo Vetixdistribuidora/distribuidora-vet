@@ -111,10 +111,16 @@ export default function ConfiguracionPage() {
   const est = estadoConfig[suscripcion?.estado || "trial"]
   const esOwner = suscripcion?.estado === "owner"
 
+  // VETIX es de uso interno de la distribuidora: no se muestran carteles de
+  // suscripción / activación / plan. La lógica queda intacta; sólo se oculta la UI.
+  // Para reactivar el cobro por plan, poner esto en true.
+  const MOSTRAR_SUSCRIPCION = false
+
   return (
     <div style={{ maxWidth: 600, margin: "0 auto" }}>
 
-      {/* ── Suscripción ──────────────────────────────────────────────────────── */}
+      {/* ── Suscripción (oculta para uso interno) ────────────────────────────── */}
+      {MOSTRAR_SUSCRIPCION && (
       <div style={{
         background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)",
         borderRadius: 20, padding: "28px 28px", marginBottom: 20,
@@ -268,6 +274,7 @@ export default function ConfiguracionPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* ── Cuenta ───────────────────────────────────────────────────────────── */}
       <div style={{
