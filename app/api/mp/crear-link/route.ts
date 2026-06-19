@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
     // Crear suscripción recurrente en MercadoPago (preapproval)
     const body = {
-      reason: `Floppa — ${nombre_negocio || email}`,
+      reason: `VETIX — ${nombre_negocio || email}`,
       auto_recurring: {
         frequency: 1,
         frequency_type: "months",
