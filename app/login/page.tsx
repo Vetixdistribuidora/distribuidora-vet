@@ -31,8 +31,6 @@ export default function LoginPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&display=swap');
-
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         .login-wrapper {
@@ -40,7 +38,7 @@ export default function LoginPage() {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: #0c0f1a;
+          background: linear-gradient(135deg, #fbeaf2 0%, #f6d8e6 55%, #eccfe0 100%);
           position: relative;
           overflow: hidden;
           font-family: 'DM Sans', sans-serif;
@@ -53,34 +51,33 @@ export default function LoginPage() {
           width: 600px;
           height: 600px;
           border-radius: 50%;
-          background: radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 70%);
-          top: -100px;
-          left: -100px;
+          background: radial-gradient(circle, rgba(29,52,97,0.10) 0%, transparent 70%);
+          top: -120px;
+          left: -120px;
           pointer-events: none;
         }
         .login-wrapper::after {
           content: '';
           position: absolute;
-          width: 400px;
-          height: 400px;
+          width: 420px;
+          height: 420px;
           border-radius: 50%;
-          background: radial-gradient(circle, rgba(99,102,241,0.1) 0%, transparent 70%);
-          bottom: -80px;
-          right: -80px;
+          background: radial-gradient(circle, rgba(246,201,221,0.55) 0%, transparent 70%);
+          bottom: -90px;
+          right: -90px;
           pointer-events: none;
         }
 
         .login-card {
           position: relative;
           z-index: 1;
-          background: rgba(255,255,255,0.03);
-          border: 1px solid rgba(255,255,255,0.08);
+          background: #ffffff;
+          border: 1px solid #f1d6e3;
           border-radius: 20px;
-          padding: 48px 44px;
+          padding: 44px 40px;
           width: 100%;
           max-width: 400px;
-          backdrop-filter: blur(12px);
-          box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+          box-shadow: 0 24px 64px rgba(21,38,74,0.18);
           animation: fadeUp 0.5s ease both;
         }
 
@@ -91,50 +88,22 @@ export default function LoginPage() {
 
         .logo-area {
           display: flex;
-          flex-direction: column;
-          align-items: center;
-          margin-bottom: 36px;
-          gap: 14px;
-        }
-
-        .logo-icon {
-          width: 58px;
-          height: 58px;
-          border-radius: 16px;
-          background: linear-gradient(145deg, #1e40af, #3b82f6);
-          display: flex;
-          align-items: center;
           justify-content: center;
-          box-shadow: 0 8px 24px rgba(59,130,246,0.45);
+          margin-bottom: 30px;
         }
 
-        .logo-text {
-          text-align: center;
-        }
-
-        .logo-text .brand {
-          font-family: 'Syne', sans-serif;
-          font-weight: 800;
-          font-size: 26px;
-          letter-spacing: 4px;
-          color: white;
-          line-height: 1;
-        }
-
-        .logo-text .sub {
-          font-size: 10px;
-          letter-spacing: 3px;
-          color: #3b82f6;
-          font-weight: 600;
-          margin-top: 4px;
-          text-transform: uppercase;
+        .logo-area img {
+          width: 220px;
+          max-width: 80%;
+          height: auto;
+          display: block;
         }
 
         .login-title {
           font-size: 14px;
-          color: #6b7280;
+          color: #64748b;
           text-align: center;
-          margin-bottom: 28px;
+          margin-bottom: 26px;
           font-weight: 500;
         }
 
@@ -145,8 +114,8 @@ export default function LoginPage() {
         .field label {
           display: block;
           font-size: 12px;
-          font-weight: 600;
-          color: #9ca3af;
+          font-weight: 700;
+          color: #64748b;
           letter-spacing: 0.5px;
           margin-bottom: 7px;
           text-transform: uppercase;
@@ -155,10 +124,10 @@ export default function LoginPage() {
         .field input {
           width: 100%;
           padding: 12px 16px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.1);
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
           border-radius: 10px;
-          color: white;
+          color: #0f172a;
           font-size: 14px;
           font-family: 'DM Sans', sans-serif;
           outline: none;
@@ -166,18 +135,18 @@ export default function LoginPage() {
         }
 
         .field input:focus {
-          border-color: #3b82f6;
-          background: rgba(59,130,246,0.06);
+          border-color: #1d3461;
+          background: #fffafc;
         }
 
         .field input::placeholder {
-          color: #4b5563;
+          color: #94a3b8;
         }
 
         .error-msg {
-          background: rgba(239,68,68,0.1);
-          border: 1px solid rgba(239,68,68,0.25);
-          color: #fca5a5;
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          color: #dc2626;
           font-size: 13px;
           padding: 10px 14px;
           border-radius: 8px;
@@ -188,7 +157,7 @@ export default function LoginPage() {
         .btn-login {
           width: 100%;
           padding: 13px;
-          background: linear-gradient(135deg, #2563eb, #3b82f6);
+          background: linear-gradient(135deg, #1d3461, #15264a);
           border: none;
           border-radius: 10px;
           color: white;
@@ -199,11 +168,11 @@ export default function LoginPage() {
           cursor: pointer;
           transition: opacity 0.2s, transform 0.15s;
           margin-top: 6px;
-          box-shadow: 0 4px 16px rgba(59,130,246,0.35);
+          box-shadow: 0 6px 18px rgba(21,38,74,0.30);
         }
 
         .btn-login:hover:not(:disabled) {
-          opacity: 0.9;
+          opacity: 0.92;
           transform: translateY(-1px);
         }
 
@@ -218,22 +187,8 @@ export default function LoginPage() {
 
           {/* LOGO */}
           <div className="logo-area">
-            <div className="logo-icon">
-              <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-                <polyline
-                  points="3,5 9,19 12,13 15,19 21,5"
-                  stroke="white"
-                  strokeWidth="2.2"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-                <circle cx="12" cy="4" r="1.3" fill="#93c5fd" />
-              </svg>
-            </div>
-            <div className="logo-text">
-              <div className="brand">VETIX</div>
-              <div className="sub">Distribuidora</div>
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="VETIX Distribuidora" />
           </div>
 
           <p className="login-title">Ingresá con tu cuenta</p>
@@ -271,9 +226,9 @@ export default function LoginPage() {
             {loading ? "Ingresando..." : "Ingresar"}
           </button>
 
-          <div style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: "#6b7280" }}>
+          <div style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: "#64748b" }}>
             ¿No tenés cuenta?{" "}
-            <a href="/registro" style={{ color: "#60a5fa", textDecoration: "none", fontWeight: 600 }}>
+            <a href="/registro" style={{ color: "#1d3461", textDecoration: "none", fontWeight: 700 }}>
               Registrarse
             </a>
           </div>

@@ -64,9 +64,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       fontSize: "14px",
       marginBottom: "6px",
       transition: "all 0.2s ease",
-      background: active ? "#1f2937" : "transparent",
-      color: active ? "white" : "#9ca3af",
-      borderLeft: active ? "3px solid #3b82f6" : "3px solid transparent",
+      background: active ? "rgba(246,201,221,0.16)" : "transparent",
+      color: active ? "white" : "#aeb9d4",
+      borderLeft: active ? "3px solid #f6c9dd" : "3px solid transparent",
     }
   }
 
@@ -192,7 +192,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return (
       <html lang="es">
         <head>
-          <meta name="theme-color" content="#1e40af" />
+          <meta name="theme-color" content="#15264a" />
           <link rel="manifest" href="/manifest.webmanifest" />
         </head>
         <body>
@@ -205,7 +205,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const SidebarContent = () => (
     <div style={{
       width: "230px",
-      background: "#111",
+      background: "linear-gradient(180deg, #1d3461 0%, #15264a 60%, #101d3a 100%)",
       color: "white",
       height: "100vh",
       display: "flex",
@@ -215,21 +215,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     }}>
       <div style={{ padding: "20px", flex: 1, overflowY: "auto", minHeight: 0 }}>
         {/* LOGO */}
-        <div style={{ marginBottom: "28px", display: "flex", alignItems: "center", gap: "12px" }}>
+        <div style={{ marginBottom: "28px" }}>
           <div style={{
-            width: "38px", height: "38px", borderRadius: "10px",
-            background: "linear-gradient(145deg, #1e40af, #3b82f6)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0, boxShadow: "0 4px 14px rgba(59,130,246,0.4)",
+            background: "white", borderRadius: "14px", padding: "14px 16px",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
           }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <polyline points="3,5 9,19 12,13 15,19 21,5" stroke="white" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" fill="none" />
-              <circle cx="12" cy="4" r="1.3" fill="#93c5fd" />
-            </svg>
-          </div>
-          <div style={{ overflow: "hidden" }}>
-            <div style={{ fontWeight: "800", fontSize: "15px", letterSpacing: "1px", color: "white", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>{orgNombre}</div>
-            <div style={{ fontSize: "9px", color: "#3b82f6", letterSpacing: "2px", marginTop: "3px", textTransform: "uppercase", fontWeight: "600" }}>Distribuidora</div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="VETIX Distribuidora" style={{ display: "block", width: "100%", height: "auto" }} />
           </div>
         </div>
 
@@ -353,7 +345,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <div style={{ borderTop: "1px solid #1f2937", padding: "14px 16px", display: "flex", alignItems: "center", gap: "10px" }}>
         <div style={{
           width: "34px", height: "34px", borderRadius: "50%",
-          background: "linear-gradient(135deg, #3b82f6, #6366f1)",
+          background: "linear-gradient(135deg, #1d3461, #f6c9dd)",
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: "13px", fontWeight: "700", color: "white", flexShrink: 0,
         }}>
@@ -379,13 +371,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#1e40af" />
+        <meta name="theme-color" content="#15264a" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="VETIX" />
         <link rel="manifest" href="/manifest.webmanifest" />
-        <link rel="apple-touch-icon" href="/api/icon-192" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
         <style>{`
           @media (max-width: 768px) {
             .desktop-sidebar { display: none !important; }
@@ -449,9 +441,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
               <div style={{
                 width: "36px", height: "36px", borderRadius: "10px",
-                background: "linear-gradient(135deg, #1e40af, #3b82f6)",
+                background: "linear-gradient(135deg, #1d3461, #15264a)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "16px", boxShadow: "0 2px 8px rgba(59,130,246,0.3)"
+                fontSize: "16px", boxShadow: "0 2px 8px rgba(21,38,74,0.3)"
               }}>
                 {getPageIcon()}
               </div>
@@ -468,7 +460,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 onClick={() => window.location.reload()}
                 title="Actualizar app"
                 style={{
-                  background: hayActualizacion ? "linear-gradient(135deg,#1e40af,#3b82f6)" : "none",
+                  background: hayActualizacion ? "linear-gradient(135deg,#1d3461,#15264a)" : "none",
                   border: hayActualizacion ? "none" : "1px solid #e2e8f0",
                   borderRadius: "8px",
                   padding: hayActualizacion ? "0 12px" : "0",
@@ -498,7 +490,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           )}
 
           {/* CONTENT */}
-          <div className="main-content" style={{ padding: "30px", overflowY: "auto", flex: 1, background: "#f1f5f9" }}>
+          <div className="main-content" style={{ padding: "30px", overflowY: "auto", flex: 1, background: "var(--rosa-bg)" }}>
             {children}
           </div>
         </main>

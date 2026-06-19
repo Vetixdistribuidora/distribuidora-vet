@@ -3,12 +3,19 @@
 
 :root {
   --font-app: 'DM Sans', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* ── Paleta VETIX: azul marino + rosa pastel ── */
+  --navy:        #15264a;  /* azul marino base (sidebar, encabezados) */
+  --navy-2:      #1d3461;  /* azul marino claro (degradés) */
+  --rosa:        #f6c9dd;  /* rosa pastel acento */
+  --rosa-soft:   #fbe4ee;  /* rosa pastel suave (fondos) */
+  --rosa-bg:     #fbeaf2;  /* canvas de la app */
 }
 
 body {
   margin: 0;
   font-family: var(--font-app);
-  background: #f1f5f9;
+  background: var(--rosa-bg);
   color: #111827;
   -webkit-font-smoothing: antialiased;
 }
