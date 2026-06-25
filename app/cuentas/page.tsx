@@ -4,6 +4,13 @@ import { useEffect, useState, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
 import { imprimirReciboCC, imprimirReciboCobroMasivo } from "@/lib/impresion"
 import { getSaldoCliente } from "@/lib/saldo"
+import { SelectorCheque, ChequeLite } from "@/components/SelectorCheque"
+
+// Construye el objeto cheque para el recibo a partir de un cheque (de la tabla cheques)
+function chequeParaRecibo(c: any) {
+  if (!c) return undefined
+  return { numero: c.numero, tipo: c.tipo, banco: c.banco, fecha: c.fecha, monto: Number(c.monto_ingresado ?? c.monto ?? 0) }
+}
 
 function fmt(n: number) {
   return "$" + Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -57,6 +64,7 @@ export default function CuentasCorrientes() {
   const [descuentoPago, setDescuentoPago] = useState("")
   const [descuentoTipo, setDescuentoTipo] = useState<"pct" | "pesos">("pct")
   const [guardando, setGuardando] = useState(false)
+  const [chequeSel, setChequeSel] = useState<ChequeLite | null>(null)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
@@ -156,6 +164,18 @@ export default function CuentasCorrientes() {
       const saldo = Math.max(0, Number(v.total) - totalPagado)
       return { ...v, total: Number(v.total), detalle_ventas: detalles, pagos, totalPagado, saldo }
     })
+    // Enriquecer pagos con su cheque vinculado (si la columna cheque_id existe)
+    try {
+      const { data: links, error: eL } = await supabase.from("pagos_cuenta_corriente")
+        .select("id, cheque_id").in("venta_id", ventaIds).not("cheque_id", "is", null)
+      if (!eL && links && links.length) {
+        const chIds = [...new Set(links.map((l: any) => l.cheque_id))]
+        const { data: chs } = await supabase.from("cheques").select("id, numero, tipo, banco, fecha, monto_ingresado").in("id", chIds)
+        const chById: Record<number, any> = Object.fromEntries((chs || []).map((c: any) => [c.id, c]))
+        const chByPago: Record<number, any> = Object.fromEntries(links.map((l: any) => [l.id, chById[l.cheque_id]]))
+        conDetalle.forEach((v: any) => v.pagos.forEach((p: any) => { if (chByPago[p.id]) p._cheque = chByPago[p.id] }))
+      }
+    } catch { /* la columna cheque_id todavía no existe — se ignora */ }
     setVentas(conDetalle)
   }
 
@@ -205,11 +225,16 @@ export default function CuentasCorrientes() {
         montoDesc > 0 ? `Descuento aplicado: ${fmt(montoDesc)}` : null,
       ].filter(Boolean).join(" | ") || null
 
+      // ¿Pago con cheque? (solo si el método es cheque/echeq y se eligió uno)
+      const chequeUsado = (metodoPago === "cheque" || metodoPago === "echeq") ? chequeSel : null
       // Registrar el pago en plata (solo si hubo monto en efectivo)
       if (monto > 0) {
-        const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
-          cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto, metodo_pago: metodoPago || null, nota: notaFinal, nro_recibo: nroRecibo
-        }])
+        const pagoRow: any = {
+          cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto,
+          metodo_pago: metodoPago || null, nota: notaFinal, nro_recibo: nroRecibo,
+        }
+        if (chequeUsado) pagoRow.cheque_id = chequeUsado.id
+        const { error } = await supabase.from("pagos_cuenta_corriente").insert([pagoRow])
         if (error) { mostrarToast("Error: " + error.message, "error"); return }
       }
       // Registrar movimientos en cuentas_corrientes para mantener el saldo sincronizado
@@ -235,10 +260,11 @@ export default function CuentasCorrientes() {
           ventaPago,
           clienteActivo,
           ventaPago.saldo,
-          saldoTotalCliente
+          saldoTotalCliente,
+          chequeUsado ? chequeParaRecibo(chequeUsado) : undefined
         )
       }
-      setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct")
+      setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct"); setChequeSel(null)
       await cargarVentas(clienteActivo.id)
       await calcularResumen(clientes)
     } catch (e: any) {
@@ -251,7 +277,7 @@ export default function CuentasCorrientes() {
   async function imprimirRecibo(pago: any, venta: any) {
     const saldoAnterior = Number(venta.total) - (Number(venta.totalPagado) - Number(pago.monto))
     const saldoTotalCliente = clienteActivo ? await getSaldoCliente(clienteActivo.id) : 0
-    imprimirReciboCC(pago, venta, clienteActivo, saldoAnterior, saldoTotalCliente)
+    imprimirReciboCC(pago, venta, clienteActivo, saldoAnterior, saldoTotalCliente, chequeParaRecibo(pago._cheque))
   }
 
   // ── Recibos de cobro: agrupa todos los pagos del cliente en "recibos" ────────
@@ -283,6 +309,7 @@ export default function CuentasCorrientes() {
       const totalCobrado = Math.round(grupo.reduce((s, p) => s + Number(p.monto), 0) * 100) / 100
       const creditoAplicado = Math.round(grupo.filter(p => p.metodo_pago === "otro").reduce((s, p) => s + Number(p.monto), 0) * 100) / 100
       const nota = grupo.map(p => p.nota).find(Boolean) || undefined
+      const cheque = grupo.map(p => p._cheque).find(Boolean) || undefined
 
       const porVenta: Record<number, any[]> = {}
       grupo.forEach(p => { (porVenta[p.venta_id] ||= []).push(p) })
@@ -306,7 +333,7 @@ export default function CuentasCorrientes() {
         }
       })
 
-      return { fechaMin, fechaRef, nroReciboBase, totalCobrado, creditoAplicado, nota, afectadas }
+      return { fechaMin, fechaRef, nroReciboBase, totalCobrado, creditoAplicado, nota, cheque, afectadas }
     }).sort((a, b) => b.fechaMin - a.fechaMin)
   }, [ventas])
 
@@ -314,7 +341,7 @@ export default function CuentasCorrientes() {
     const saldoTotalCliente = clienteActivo ? await getSaldoCliente(clienteActivo.id) : 0
     imprimirReciboCobroMasivo(
       r.totalCobrado, r.nroReciboBase, r.afectadas, clienteActivo,
-      r.nota, saldoTotalCliente, r.creditoAplicado
+      r.nota, saldoTotalCliente, r.creditoAplicado, chequeParaRecibo(r.cheque)
     )
   }
 
@@ -539,7 +566,7 @@ export default function CuentasCorrientes() {
                                   ))}
                                 </div>
                               )}
-                              <button onClick={() => { setVentaPago(v); setMontoPago(String(v.saldo)); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct") }}
+                              <button onClick={() => { setVentaPago(v); setMontoPago(String(v.saldo)); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct"); setMetodoPago("efectivo"); setChequeSel(null) }}
                                 style={{ width: "100%", marginTop: 12, padding: "10px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 9, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                                 + Registrar pago
                               </button>
@@ -648,7 +675,7 @@ export default function CuentasCorrientes() {
       {/* Modal pago */}
       {ventaPago && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
-          onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct") }}>
+          onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct"); setChequeSel(null) }}>
           <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 400, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
             onClick={e => e.stopPropagation()}>
             <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: "0 0 4px" }}>Registrar pago</h2>
@@ -721,12 +748,18 @@ export default function CuentasCorrientes() {
                 <option value="otro" style={{ color: "#000" }}>Otro</option>
               </select>
             </div>
+            {(metodoPago === "cheque" || metodoPago === "echeq") && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>Cheque recibido</label>
+                <SelectorCheque value={chequeSel} onSelect={c => { setChequeSel(c); if (c) setMontoPago(String(c.monto_ingresado)) }} />
+              </div>
+            )}
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Nota (opcional)</label>
               <input type="text" value={notaPago} onChange={e => setNotaPago(e.target.value)} placeholder="Ej: transferencia mayo, banco Galicia..." style={inputDarkStyle} />
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct") }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+              <button onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct"); setChequeSel(null) }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
               <button onClick={registrarPago} disabled={guardando || (montoInput <= 0 && montoDescInput <= 0)} style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardando || (montoInput <= 0 && montoDescInput <= 0) ? 0.5 : 1 }}>
                 {guardando ? "Guardando..." : "Confirmar pago"}
               </button>

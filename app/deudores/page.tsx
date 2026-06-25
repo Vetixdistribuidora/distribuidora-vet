@@ -4,6 +4,12 @@ import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { imprimirReciboCobroMasivo } from "@/lib/impresion"
 import { getSaldoCliente } from "@/lib/saldo"
+import { SelectorCheque, ChequeLite } from "@/components/SelectorCheque"
+
+function chequeParaRecibo(c: any) {
+  if (!c) return undefined
+  return { numero: c.numero, tipo: c.tipo, banco: c.banco, fecha: c.fecha, monto: Number(c.monto_ingresado ?? c.monto ?? 0) }
+}
 
 function fmt(num: number) {
   return "$" + num.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -38,11 +44,12 @@ export default function Deudores() {
   const [modalCobro, setModalCobro] = useState<any | null>(null)
   const [montoCobro, setMontoCobro] = useState("")
   const [metodoCobro, setMetodoCobro] = useState("efectivo")
+  const [chequeSelCobro, setChequeSelCobro] = useState<ChequeLite | null>(null)
   const [notaCobro, setNotaCobro] = useState("")
   const [procesando, setProcesando] = useState(false)
   const [errorCobro, setErrorCobro] = useState<string | null>(null)
   const [exitoCobro, setExitoCobro] = useState<string | null>(null)
-  const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string; saldoTotal?: number; creditoAplicado?: number } | null>(null)
+  const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string; saldoTotal?: number; creditoAplicado?: number; cheque?: any } | null>(null)
   const [facturasSeleccionadas, setFacturasSeleccionadas] = useState<Set<number>>(new Set())
   // Saldo a favor del cliente (notas de crédito por devolución)
   const [usarSaldo, setUsarSaldo] = useState(false)
@@ -165,6 +172,8 @@ export default function Deudores() {
     setUltimoRecibo(null)
     setFacturasSeleccionadas(new Set())
     setUsarSaldo(false)
+    setMetodoCobro("efectivo")
+    setChequeSelCobro(null)
   }
 
   // Efectivo a cobrar en modo selección = suma de facturas seleccionadas − crédito a favor (si se usa)
@@ -252,6 +261,9 @@ export default function Deudores() {
       // desde la cuenta corriente del cliente.
       const nroRecibo = nroReciboBase
 
+      // ¿Cobro con cheque? (solo si el método es cheque/echeq y se eligió uno)
+      const chequeCobro = (metodoCobro === "cheque" || metodoCobro === "echeq") ? chequeSelCobro : null
+
       // Saldo de cuenta corriente actual (lo decrementamos a medida que aplicamos)
       const { data: ccIni } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", modalCobro.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
       let saldoCC = Number(ccIni?.saldo ?? 0)
@@ -283,10 +295,12 @@ export default function Deudores() {
           await supabase.from("cuentas_corrientes").insert({ cliente_id: modalCobro.cliente_id, venta_id: f.id, tipo: "pago", monto: -credUsado, saldo: saldoCC, fecha: new Date() })
         }
         if (cashUsado > 0) {
-          const { error: e2 } = await supabase.from("pagos_cuenta_corriente").insert([{
+          const filaPago: any = {
             cliente_id: modalCobro.cliente_id, venta_id: f.id, monto: cashUsado,
             metodo_pago: metodoCobro || null, nota: notaBase, nro_recibo: nroRecibo,
-          }])
+          }
+          if (chequeCobro) filaPago.cheque_id = chequeCobro.id
+          const { error: e2 } = await supabase.from("pagos_cuenta_corriente").insert([filaPago])
           if (e2) throw new Error("Error en factura N°" + (f.nro_factura || f.id) + ": " + e2.message)
           saldoCC = Math.max(0, Math.round((saldoCC - cashUsado) * 100) / 100)
           await supabase.from("cuentas_corrientes").insert({ cliente_id: modalCobro.cliente_id, venta_id: f.id, tipo: "pago", monto: -cashUsado, saldo: saldoCC, fecha: new Date() })
@@ -332,6 +346,7 @@ export default function Deudores() {
         cliente: { nombre: modalCobro.nombre, apellido: modalCobro.apellido, telefono: modalCobro.telefono },
         nota: notaCobro.trim() || undefined,
         saldoTotal: saldoTotalCliente,
+        cheque: chequeCobro || undefined,
       }
       setUltimoRecibo(datosRecibo)
 
@@ -343,7 +358,8 @@ export default function Deudores() {
         { nombre: modalCobro.nombre, apellido: modalCobro.apellido, telefono: modalCobro.telefono },
         notaCobro.trim() || undefined,
         saldoTotalCliente,
-        totalCredito
+        totalCredito,
+        chequeCobro ? chequeParaRecibo(chequeCobro) : undefined
       )
 
       setExitoCobro(
@@ -554,7 +570,7 @@ export default function Deudores() {
                 <div style={{ color: "#4ade80", fontSize: 13, padding: "10px 14px" }}>{exitoCobro}</div>
                 {ultimoRecibo && (
                   <button
-                    onClick={() => imprimirReciboCobroMasivo(ultimoRecibo.totalCobrado, ultimoRecibo.nroReciboBase, ultimoRecibo.afectadas, ultimoRecibo.cliente, ultimoRecibo.nota, ultimoRecibo.saldoTotal, ultimoRecibo.creditoAplicado)}
+                    onClick={() => imprimirReciboCobroMasivo(ultimoRecibo.totalCobrado, ultimoRecibo.nroReciboBase, ultimoRecibo.afectadas, ultimoRecibo.cliente, ultimoRecibo.nota, ultimoRecibo.saldoTotal, ultimoRecibo.creditoAplicado, chequeParaRecibo(ultimoRecibo.cheque))}
                     style={{ width: "100%", padding: "8px 14px", background: "rgba(34,197,94,0.15)", border: "none", borderTop: "1px solid rgba(34,197,94,0.2)", color: "#4ade80", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "center" }}>
                     🖨️ Reimprimir recibo
                   </button>
@@ -622,6 +638,12 @@ export default function Deudores() {
                   <option value="otro" style={{ color: "#000" }}>Otro</option>
                 </select>
               </div>
+              {(metodoCobro === "cheque" || metodoCobro === "echeq") && (
+                <div style={{ marginBottom: 12 }}>
+                  <label style={labelStyle}>Cheque recibido</label>
+                  <SelectorCheque value={chequeSelCobro} onSelect={c => { setChequeSelCobro(c); if (c) setMontoCobro(String(c.monto_ingresado)) }} />
+                </div>
+              )}
               <div>
                 <label style={labelStyle}>Nota (opcional)</label>
                 <input type="text" value={notaCobro} onChange={e => setNotaCobro(e.target.value)}

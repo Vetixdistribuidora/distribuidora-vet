@@ -54,12 +54,42 @@ export interface ClienteRecibo {
   nombre: string; apellido?: string; cuit?: string; telefono?: string; localidad?: string
 }
 
+// Datos de un cheque con el que se pagó (opcional, para detallar en el recibo)
+export interface ChequeRecibo {
+  numero?: string; tipo?: string; banco?: string; fecha?: string; monto?: number
+}
+
+function tipoChequeLabel(tipo?: string) {
+  if (tipo === "ECHEQ") return "E-Cheq"
+  if (tipo === "F_CHEQ") return "Cheque diferido"
+  return "Cheque"
+}
+
+// Bloque HTML con el detalle del cheque usado en el pago
+function bloqueChequeHTML(cheque?: ChequeRecibo): string {
+  if (!cheque || !cheque.numero) return ""
+  const f = (n: number) => "$" + n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const fechaCh = cheque.fecha
+    ? new Date(cheque.fecha.includes("T") ? cheque.fecha : cheque.fecha + "T00:00:00").toLocaleDateString("es-AR")
+    : "—"
+  const item = (l: string, v: string) =>
+    `<span style="white-space:nowrap;"><b style="color:#1971c2;">${l}:</b> <span style="color:#333;">${v}</span></span>`
+  return `<div style="margin-top:14px;background:#e7f5ff;border:1px solid #1971c2;border-radius:8px;padding:10px 14px;font-size:12px;display:flex;gap:18px;flex-wrap:wrap;align-items:center;">
+    <span style="font-weight:800;color:#1971c2;">🧾 Pagado con ${tipoChequeLabel(cheque.tipo)}</span>
+    ${item("N°", cheque.numero)}
+    ${cheque.banco ? item("Banco", cheque.banco) : ""}
+    ${item("Fecha", fechaCh)}
+    ${cheque.monto ? item("Monto", f(Number(cheque.monto))) : ""}
+  </div>`
+}
+
 export function imprimirReciboCC(
   pago: { monto: number | string; nota?: string | null; nro_recibo?: string; fecha?: any },
   venta: { id: number; nro_factura?: string; total: number | string },
   cliente: ClienteRecibo,
   saldoAnterior: number,
-  saldoTotalCliente?: number
+  saldoTotalCliente?: number,
+  cheque?: ChequeRecibo
 ) {
   const logoUrl = window.location.origin + "/logo.png"
   const fecha = pago.fecha
@@ -89,6 +119,7 @@ export function imprimirReciboCC(
       ${pago.nota ? filaConcepto("Nota / Detalle", String(pago.nota)) : ""}
     </tbody>
   </table>
+  ${bloqueChequeHTML(cheque)}
   <div class="total-box"><div class="total-inner">
     <div class="total-pagado"><p class="total-pagado-label">Monto recibido</p><p class="total-pagado-monto">${f(Number(pago.monto))}</p></div>
     <div class="saldo-box ${saldoRestante > 0 ? "saldo-pendiente" : "saldo-saldado"}"><p class="saldo-label">${saldoRestante > 0 ? "Saldo restante de esta factura: " + f(saldoRestante) : "✓ Factura saldada completamente"}</p></div>
@@ -113,7 +144,8 @@ export function imprimirReciboCobroMasivo(
   cliente: ClienteRecibo,
   nota?: string,
   saldoTotalCliente?: number,
-  creditoAplicado?: number
+  creditoAplicado?: number,
+  cheque?: ChequeRecibo
 ) {
   const logoUrl = window.location.origin + "/logo.png"
   const fecha = new Date().toLocaleDateString("es-AR")
@@ -181,6 +213,7 @@ export function imprimirReciboCobroMasivo(
     <tbody>${filasFacturas}</tbody>
   </table>
   ${resumenHtml}
+  ${bloqueChequeHTML(cheque)}
   <div class="total-box"><div class="total-inner">
     <div class="total-pagado">
       <p class="total-pagado-label">${Number(creditoAplicado || 0) > 0 ? "Total aplicado" : "Total recibido"}</p>
