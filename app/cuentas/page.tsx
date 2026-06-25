@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
-import { imprimirReciboCC } from "@/lib/impresion"
+import { imprimirReciboCC, imprimirReciboCobroMasivo } from "@/lib/impresion"
 import { getSaldoCliente } from "@/lib/saldo"
 
 function fmt(n: number) {
@@ -46,7 +46,7 @@ export default function CuentasCorrientes() {
   const [cargandoVentas, setCargandoVentas] = useState(false)
   const [busqueda, setBusqueda] = useState("")
   const [filtro, setFiltro] = useState<"deudores" | "todos">("deudores")
-  const [tab, setTab] = useState<"pendientes" | "historial">("pendientes")
+  const [tab, setTab] = useState<"pendientes" | "historial" | "recibos">("pendientes")
   const [toast, setToast] = useState<any>(null)
   const [vistaMovil, setVistaMovil] = useState<"lista" | "detalle">("lista")
 
@@ -127,7 +127,7 @@ export default function CuentasCorrientes() {
     // Two-step: no FK declarada entre detalle_ventas y productos
     const [{ data: detallesRaw }, { data: todosPagos }] = await Promise.all([
       supabase.from("detalle_ventas").select("venta_id, producto_id, cantidad, precio").in("venta_id", ventaIds),
-      supabase.from("pagos_cuenta_corriente").select("id, venta_id, monto, fecha, nota, nro_recibo").in("venta_id", ventaIds).order("fecha", { ascending: true })
+      supabase.from("pagos_cuenta_corriente").select("id, venta_id, monto, fecha, nota, nro_recibo, metodo_pago").in("venta_id", ventaIds).order("fecha", { ascending: true })
     ])
     // Resolver nombres de productos en un solo query
     const prodIds = [...new Set((detallesRaw || []).map((d: any) => d.producto_id))]
@@ -252,6 +252,70 @@ export default function CuentasCorrientes() {
     const saldoAnterior = Number(venta.total) - (Number(venta.totalPagado) - Number(pago.monto))
     const saldoTotalCliente = clienteActivo ? await getSaldoCliente(clienteActivo.id) : 0
     imprimirReciboCC(pago, venta, clienteActivo, saldoAnterior, saldoTotalCliente)
+  }
+
+  // ── Recibos de cobro: agrupa todos los pagos del cliente en "recibos" ────────
+  // Cada cobro (sea de una factura o un pago general de varias) inserta sus filas
+  // juntas, en el mismo minuto. Agrupamos por minuto para reconstruir el recibo
+  // consolidado y poder reimprimirlo aunque no se haya guardado en el momento.
+  const recibos = useMemo(() => {
+    const ventaPorId: Record<number, any> = {}
+    ventas.forEach(v => { ventaPorId[v.id] = v })
+
+    const todos: any[] = []
+    ventas.forEach(v => (v.pagos || []).forEach((p: any) => todos.push({ ...p, _venta: v })))
+
+    const grupos: Record<string, any[]> = {}
+    todos.forEach(p => {
+      const d = new Date(p.fecha)
+      const key = isNaN(d.getTime())
+        ? String(p.nro_recibo || p.id)
+        : `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}-${d.getMinutes()}`
+      ;(grupos[key] ||= []).push(p)
+    })
+
+    return Object.values(grupos).map((grupo: any[]) => {
+      const tiempos = grupo.map(p => new Date(p.fecha).getTime()).filter(t => !isNaN(t))
+      const fechaMin = tiempos.length ? Math.min(...tiempos) : 0
+      const fechaRef = grupo.find(p => p.fecha)?.fecha || ""
+      const nros = grupo.map(p => p.nro_recibo).filter(Boolean).sort()
+      const nroReciboBase = nros[0] || "—"
+      const totalCobrado = Math.round(grupo.reduce((s, p) => s + Number(p.monto), 0) * 100) / 100
+      const creditoAplicado = Math.round(grupo.filter(p => p.metodo_pago === "otro").reduce((s, p) => s + Number(p.monto), 0) * 100) / 100
+      const nota = grupo.map(p => p.nota).find(Boolean) || undefined
+
+      const porVenta: Record<number, any[]> = {}
+      grupo.forEach(p => { (porVenta[p.venta_id] ||= []).push(p) })
+      const afectadas = Object.entries(porVenta).map(([vid, ps]: any) => {
+        const v = ventaPorId[Number(vid)]
+        const pago = Math.round(ps.reduce((s: number, p: any) => s + Number(p.monto), 0) * 100) / 100
+        // saldo antes de este cobro = total de la factura − pagos anteriores
+        const pagosPrevios = (v?.pagos || [])
+          .filter((pp: any) => new Date(pp.fecha).getTime() < fechaMin)
+          .reduce((s: number, pp: any) => s + Number(pp.monto), 0)
+        const totalV = Number(v?.total ?? pago)
+        const saldoAntes = Math.max(0, Math.round((totalV - pagosPrevios) * 100) / 100)
+        const saldoDespues = Math.max(0, Math.round((saldoAntes - pago) * 100) / 100)
+        return {
+          id: Number(vid),
+          nro_factura: v?.nro_factura,
+          total: totalV,
+          pago,
+          resultado: saldoDespues <= 0.01 ? "pagado" : "parcial",
+          saldo: saldoAntes,
+        }
+      })
+
+      return { fechaMin, fechaRef, nroReciboBase, totalCobrado, creditoAplicado, nota, afectadas }
+    }).sort((a, b) => b.fechaMin - a.fechaMin)
+  }, [ventas])
+
+  async function reimprimirReciboCobro(r: any) {
+    const saldoTotalCliente = clienteActivo ? await getSaldoCliente(clienteActivo.id) : 0
+    imprimirReciboCobroMasivo(
+      r.totalCobrado, r.nroReciboBase, r.afectadas, clienteActivo,
+      r.nota, saldoTotalCliente, r.creditoAplicado
+    )
   }
 
   const clientesFiltrados = clientes
@@ -412,6 +476,7 @@ export default function CuentasCorrientes() {
                 {[
                   { key: "pendientes", label: `Pendientes${pendientesList.length ? ` (${pendientesList.length})` : ""}` },
                   { key: "historial", label: "Historial" },
+                  { key: "recibos", label: `Recibos${recibos.length ? ` (${recibos.length})` : ""}` },
                 ].map((t: any) => (
                   <button key={t.key} onClick={() => setTab(t.key)} style={{
                     padding: "14px 16px", border: "none", background: "none", cursor: "pointer",
@@ -530,6 +595,43 @@ export default function CuentasCorrientes() {
                                   🖨️ Recibo
                                 </button>
                               )}
+                            </div>
+                          )
+                        })}
+                      </>
+                    )}
+
+                    {tab === "recibos" && (
+                      <>
+                        {recibos.length === 0 ? (
+                          <div style={{ textAlign: "center", padding: 40, color: "#6b7280" }}>
+                            Sin recibos de cobro todavía
+                          </div>
+                        ) : recibos.map((r, idx) => {
+                          const cantFact = r.afectadas.length
+                          return (
+                            <div key={idx} style={{ background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 12, padding: 14, marginBottom: 10 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                    <b style={{ color: "white", fontSize: 13 }}>Recibo {r.nroReciboBase}</b>
+                                    <span style={{ background: "rgba(59,130,246,0.15)", color: "#60a5fa", fontSize: 11, padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>
+                                      {cantFact} {cantFact === 1 ? "factura" : "facturas"}
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 3 }}>
+                                    {r.fechaRef ? fechaCorta(r.fechaRef) : ""} · Facturas: {r.afectadas.map((a: any) => "#" + (a.nro_factura || a.id)).join(", ")}
+                                  </div>
+                                  {r.nota && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2, fontStyle: "italic" }}>📝 {r.nota}</div>}
+                                </div>
+                                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                                  <div style={{ fontSize: 15, fontWeight: 800, color: "#4ade80" }}>{fmt(r.totalCobrado)}</div>
+                                  <button onClick={() => reimprimirReciboCobro(r)}
+                                    style={{ marginTop: 6, background: "rgba(59,130,246,0.15)", color: "#3b82f6", border: "none", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                                    🖨️ Reimprimir
+                                  </button>
+                                </div>
+                              </div>
                             </div>
                           )
                         })}

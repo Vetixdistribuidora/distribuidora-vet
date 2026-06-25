@@ -247,8 +247,10 @@ export default function Deudores() {
         // nroData es bigint → formatear como "001-006520"
         nroReciboBase = "001-" + String(Number(nroData)).padStart(6, "0")
       }
-      const baseNum = parseInt(nroReciboBase.replace(/^.*-/, ""), 10)
-      let offsetRecibo = 0
+      // Todas las filas de este cobro comparten el mismo nro de recibo
+      // (un pago general = un recibo), así se puede reagrupar y reimprimir
+      // desde la cuenta corriente del cliente.
+      const nroRecibo = nroReciboBase
 
       // Saldo de cuenta corriente actual (lo decrementamos a medida que aplicamos)
       const { data: ccIni } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", modalCobro.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
@@ -258,8 +260,6 @@ export default function Deudores() {
       let totalCash = 0, totalCredito = 0
 
       for (const f of afectadas) {
-        const nroRecibo = "001-" + String(baseNum + offsetRecibo).padStart(6, "0")
-        offsetRecibo++
         // Cubrir esta factura con el crédito (nota de crédito) primero, y el resto en efectivo
         const credUsado = Math.min(creditoRestante, f.pago)
         creditoRestante = Math.round((creditoRestante - credUsado) * 100) / 100
