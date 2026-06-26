@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { SelectorCheque, ChequeLite } from "@/components/SelectorCheque";
 
 interface Proveedor {
   id: string;
@@ -79,6 +80,7 @@ export default function ProveedoresPage() {
   const [loadingCompras, setLoadingCompras] = useState(false);
   const [montoPago, setMontoPago] = useState("");
   const [metodoPago, setMetodoPago] = useState("Transferencia");
+  const [chequesSelProv, setChequesSelProv] = useState<ChequeLite[]>([]);
   const [notaPago, setNotaPago] = useState("");
   const [procesandoPago, setProcesandoPago] = useState(false);
   const [errorPago, setErrorPago] = useState<string | null>(null);
@@ -216,6 +218,7 @@ export default function ProveedoresPage() {
     setModalPago(p);
     setMontoPago("");
     setMetodoPago("Transferencia");
+    setChequesSelProv([]);
     setNotaPago("");
     setErrorPago(null);
     setExito(null);
@@ -244,6 +247,7 @@ export default function ProveedoresPage() {
     setModalPago(null);
     setComprasPendientes([]);
     setMontoPago("");
+    setChequesSelProv([]);
     setErrorPago(null);
     setExito(null);
     setUsarSaldoFavor(false);
@@ -371,6 +375,19 @@ export default function ProveedoresPage() {
         await supabase.from("compras").update(updateCompra).eq("id", c.id);
       }
 
+      // 1b. Cheque(s) entregados al proveedor (endoso): enlazar al pago y marcar
+      //     entregada_a = proveedor para que figuren en la planilla de Cheques
+      const chequesProv = metodoPago === "Cheque" ? chequesSelProv : [];
+      if (chequesProv.length > 0 && afectadas.length > 0) {
+        const compraRef = afectadas[0].id;
+        await supabase.from("compra_cheques").insert(
+          chequesProv.map((c: ChequeLite) => ({ compra_id: compraRef, cheque_id: c.id, proveedor_id: modalPago.id }))
+        );
+        for (const c of chequesProv) {
+          await supabase.from("cheques").update({ entregada_a: modalPago.nombre }).eq("id", c.id);
+        }
+      }
+
       const totalAplicado = Math.round((totalCash + totalCredito) * 100) / 100;
       const exceso = seleccion ? 0 : Math.max(0, Math.round((monto + saldoExtra - totalAplicado) * 100) / 100);
 
@@ -420,6 +437,7 @@ export default function ProveedoresPage() {
       setUsarSaldoFavor(false);
       setComprasSeleccionadas(new Set());
       setDescuentoPago("");
+      setChequesSelProv([]);
     } catch (e: any) {
       setErrorPago(e.message || "Error al procesar el pago.");
     } finally {
@@ -745,6 +763,12 @@ export default function ProveedoresPage() {
                     placeholder="Ej: Pago mayo" style={inputStyle} />
                 </div>
               </div>
+              {metodoPago === "Cheque" && (
+                <div style={{ marginTop: 14 }}>
+                  <label style={labelStyle}>Cheque(s) a entregar</label>
+                  <SelectorCheque value={chequesSelProv} onChange={arr => { setChequesSelProv(arr); if (arr.length) setMontoPago(String(arr.reduce((s, c) => s + Number(c.monto_ingresado), 0))); }} />
+                </div>
+              )}
             </div>
 
             {/* Preview de facturas */}

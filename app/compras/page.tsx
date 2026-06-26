@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { SelectorCheque, ChequeLite } from "@/components/SelectorCheque";
 // XLSX se carga de forma diferida (lazy) — solo cuando el usuario exporta
 
 interface Proveedor { id: number; nombre: string; }
@@ -133,6 +134,7 @@ export default function ComprasPage() {
   const [tabDetalle, setTabDetalle] = useState<"detalle" | "pagos">("detalle");
   const [modalPago, setModalPago] = useState(false);
   const [formPago, setFormPago] = useState({ monto: "", metodo_pago: "Efectivo", notas: "", descuento: "" });
+  const [chequesSelCompra, setChequesSelCompra] = useState<ChequeLite[]>([]);
   const [guardandoPago, setGuardandoPago] = useState(false);
   const [saldoFavorDisponible, setSaldoFavorDisponible] = useState(0);
   const [usarSaldoFavor, setUsarSaldoFavor] = useState(false);
@@ -625,6 +627,19 @@ export default function ComprasPage() {
       });
       if (errPago) { setErrorForm("Error al registrar pago: " + errPago.message); return; }
 
+      // 1b. Si se pagó con cheque(s): enlazarlos a la compra y marcarlos como
+      //     entregados a este proveedor (así figuran en la planilla de Cheques)
+      const chequesCompra = formPago.metodo_pago === "Cheque" ? chequesSelCompra : [];
+      if (chequesCompra.length > 0) {
+        await supabase.from("compra_cheques").insert(
+          chequesCompra.map(c => ({ compra_id: compraVer.id, cheque_id: c.id, proveedor_id: compraVer.proveedor_id }))
+        );
+        const provNombre = compraVer.proveedores?.nombre || null;
+        for (const c of chequesCompra) {
+          await supabase.from("cheques").update({ entregada_a: provNombre }).eq("id", c.id);
+        }
+      }
+
       // 2. Actualizar total (si hubo descuento), total_pagado y estado de la compra
       const nuevoTotalPagado = compraVer.total_pagado + montoCancela;
       const nuevoEstado = nuevoTotalPagado >= nuevoTotalCompra ? "pagado" : "parcial";
@@ -659,7 +674,7 @@ export default function ComprasPage() {
         }
       }
 
-      setModalPago(false); setUsarSaldoFavor(false);
+      setModalPago(false); setUsarSaldoFavor(false); setChequesSelCompra([]);
       const camposActualizados = { total_pagado: nuevoTotalPagado, estado: nuevoEstado, ...(montoDesc > 0 ? { total: nuevoTotalCompra } : {}) };
       setCompraVer({ ...compraVer, ...camposActualizados });
       // Actualizar la fila en la lista local sin recargar todo
@@ -1155,6 +1170,7 @@ export default function ComprasPage() {
                   <button onClick={() => {
                     setFormPago({ monto: "", metodo_pago: "Efectivo", notas: "", descuento: "" });
                     setUsarSaldoFavor(false);
+                    setChequesSelCompra([]);
                     cargarSaldoFavor(compraVer.proveedor_id);
                     setModalPago(true);
                   }} style={{ flex: 1, padding: "10px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
@@ -1385,12 +1401,18 @@ export default function ComprasPage() {
                   {METODOS.map(m => <option key={m} style={{ background: "#1e293b", color: "white" }}>{m}</option>)}
                 </select>
               </div>
+              {formPago.metodo_pago === "Cheque" && (
+                <div style={{ marginBottom: 14 }}>
+                  <label style={labelStyle}>Cheque(s) a entregar</label>
+                  <SelectorCheque value={chequesSelCompra} onChange={arr => { setChequesSelCompra(arr); if (arr.length) setFormPago(fp => ({ ...fp, monto: String(arr.reduce((s, c) => s + Number(c.monto_ingresado), 0)) })); }} />
+                </div>
+              )}
               <div style={{ marginBottom: 24 }}>
                 <label style={labelStyle}>Notas</label>
                 <input type="text" value={formPago.notas} onChange={e => setFormPago({ ...formPago, notas: e.target.value })} placeholder="Opcional" style={inputDarkStyle} />
               </div>
               <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => { setModalPago(false); setUsarSaldoFavor(false); }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+                <button onClick={() => { setModalPago(false); setUsarSaldoFavor(false); setChequesSelCompra([]); }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
                 <button onClick={guardarPago} disabled={guardandoPago} style={{ flex: 1, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardandoPago ? 0.5 : 1 }}>
                   {guardandoPago ? "Guardando..." : "Confirmar pago"}
                 </button>
