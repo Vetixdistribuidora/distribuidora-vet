@@ -30,13 +30,13 @@ function fmtFecha(f?: string) {
 }
 
 /**
- * Selector con buscador de cheques RECIBIDOS (monto_ingresado > 0) que todavía
- * no fueron usados en ningún pago ni están rechazados. Se usa en el modal de
- * cobro de Cuentas y de Deudores cuando el método es Cheque / E-Cheq.
+ * Selector con buscador de cheques RECIBIDOS para pagar. Permite elegir VARIOS
+ * cheques (se van sumando). Excluye los rechazados, los marcados como pagados y
+ * los que ya fueron usados en otro pago. Se usa en Cuentas y Deudores.
  */
-export function SelectorCheque({ value, onSelect }: {
-  value: ChequeLite | null
-  onSelect: (c: ChequeLite | null) => void
+export function SelectorCheque({ value, onChange }: {
+  value: ChequeLite[]
+  onChange: (cheques: ChequeLite[]) => void
 }) {
   const [cheques, setCheques] = useState<ChequeLite[]>([])
   const [busq, setBusq] = useState("")
@@ -47,90 +47,104 @@ export function SelectorCheque({ value, onSelect }: {
     let cancel = false
     ;(async () => {
       setCargando(true)
-      const [{ data: chs }, { data: pgs, error: ePg }] = await Promise.all([
+      const [chRes, pcRes, pgRes, ccRes] = await Promise.all([
         supabase.from("cheques")
           .select("id, numero, tipo, banco, fecha, monto_ingresado, dueno")
-          .gt("monto_ingresado", 0).eq("rechazado", false)
+          .gt("monto_ingresado", 0).eq("rechazado", false).eq("pagado", false)
           .order("fecha", { ascending: false }),
+        supabase.from("pago_cheques").select("cheque_id"),
         supabase.from("pagos_cuenta_corriente").select("cheque_id").not("cheque_id", "is", null),
+        supabase.from("compra_cheques").select("cheque_id"),
       ])
-      // Si la columna cheque_id todavía no existe (migración sin correr), ePg trae error → tratamos como "ninguno usado".
-      const usados = new Set<number>((!ePg && pgs ? pgs : []).map((p: any) => p.cheque_id))
+      // Cheques ya usados: en cobros a clientes (pago_cheques + cheque_id viejo)
+      // o en pagos a proveedores (compra_cheques)
+      const usados = new Set<number>()
+      if (!pcRes.error && pcRes.data) pcRes.data.forEach((r: any) => usados.add(r.cheque_id))
+      if (!pgRes.error && pgRes.data) pgRes.data.forEach((r: any) => usados.add(r.cheque_id))
+      if (!ccRes.error && ccRes.data) ccRes.data.forEach((r: any) => usados.add(r.cheque_id))
       if (cancel) return
-      setCheques((chs || []).filter((c: any) => !usados.has(c.id)))
+      setCheques((chRes.data || []).filter((c: any) => !usados.has(c.id)))
       setCargando(false)
     })()
     return () => { cancel = true }
   }, [])
 
+  const selIds = new Set(value.map(c => c.id))
   const t = busq.trim().toLowerCase()
-  const lista = !t ? cheques : cheques.filter(c =>
-    (c.numero || "").toLowerCase().includes(t) ||
-    (c.banco || "").toLowerCase().includes(t) ||
-    (c.dueno || "").toLowerCase().includes(t)
+  const disponibles = cheques.filter(c =>
+    !selIds.has(c.id) && (!t ||
+      (c.numero || "").toLowerCase().includes(t) ||
+      (c.banco || "").toLowerCase().includes(t) ||
+      (c.dueno || "").toLowerCase().includes(t))
   )
+  const totalSel = value.reduce((s, c) => s + Number(c.monto_ingresado), 0)
 
-  const chipBase: React.CSSProperties = {
-    background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: 10, padding: "10px 12px", color: "white",
-  }
-
-  // Cheque ya elegido
-  if (value) {
-    return (
-      <div style={{ ...chipBase, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderColor: "rgba(96,165,250,0.5)", background: "rgba(59,130,246,0.1)" }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "white" }}>
-            {tipoChequeLabel(value.tipo)} N° {value.numero}
-          </div>
-          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-            {value.banco || "Banco —"} · {fmtFecha(value.fecha)} · {fmtMonto(value.monto_ingresado)}
-            {value.dueno ? ` · ${value.dueno}` : ""}
-          </div>
-        </div>
-        <button type="button" onClick={() => { onSelect(null); setBusq(""); setAbierto(false) }}
-          style={{ flexShrink: 0, background: "rgba(255,255,255,0.08)", border: "none", color: "#9ca3af", borderRadius: 7, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>
-          Cambiar
-        </button>
-      </div>
-    )
-  }
+  function agregar(c: ChequeLite) { onChange([...value, c]); setBusq(""); setAbierto(false) }
+  function quitar(id: number) { onChange(value.filter(c => c.id !== id)) }
 
   return (
-    <div style={{ position: "relative" }}>
-      <input
-        value={busq}
-        onChange={e => { setBusq(e.target.value); setAbierto(true) }}
-        onFocus={() => setAbierto(true)}
-        onBlur={() => setTimeout(() => setAbierto(false), 150)}
-        placeholder={cargando ? "Cargando cheques..." : "Buscar cheque por N°, banco o dueño..."}
-        style={{ width: "100%", padding: "10px 14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "white", fontSize: 14, outline: "none", boxSizing: "border-box" }}
-      />
-      {abierto && (
-        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 40, background: "#1e293b", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, maxHeight: 240, overflowY: "auto", boxShadow: "0 12px 30px rgba(0,0,0,0.5)" }}>
-          {lista.length === 0 ? (
-            <div style={{ padding: "12px 14px", fontSize: 12, color: "#94a3b8" }}>
-              {cargando ? "Cargando..." : "No hay cheques recibidos disponibles. Cargalos en la pestaña Cheques."}
-            </div>
-          ) : lista.map(c => (
-            <button key={c.id} type="button"
-              onMouseDown={() => { onSelect(c); setAbierto(false) }}
-              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.06)", cursor: "pointer", textAlign: "left" }}
-              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
-              onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+    <div>
+      {/* Cheques ya elegidos */}
+      {value.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+          {value.map(c => (
+            <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, background: "rgba(59,130,246,0.1)", border: "1px solid rgba(96,165,250,0.5)", borderRadius: 10, padding: "8px 12px" }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "white" }}>
-                  {tipoChequeLabel(c.tipo)} N° {c.numero}
+                <div style={{ fontSize: 13, fontWeight: 700, color: "white" }}>
+                  {tipoChequeLabel(c.tipo)} N° {c.numero} <span style={{ color: "#4ade80" }}>· {fmtMonto(c.monto_ingresado)}</span>
                 </div>
-                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
                   {c.banco || "Banco —"} · {fmtFecha(c.fecha)}{c.dueno ? ` · ${c.dueno}` : ""}
                 </div>
               </div>
-              <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, color: "#4ade80" }}>{fmtMonto(c.monto_ingresado)}</span>
-            </button>
+              <button type="button" onClick={() => quitar(c.id)}
+                style={{ flexShrink: 0, background: "rgba(255,255,255,0.08)", border: "none", color: "#9ca3af", borderRadius: 7, padding: "5px 9px", fontSize: 13, cursor: "pointer" }}>
+                ✕
+              </button>
+            </div>
           ))}
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#4ade80", textAlign: "right", paddingRight: 2 }}>
+            Total {value.length} cheque{value.length !== 1 ? "s" : ""}: {fmtMonto(totalSel)}
+          </div>
         </div>
       )}
+
+      {/* Buscador para agregar más */}
+      <div style={{ position: "relative" }}>
+        <input
+          value={busq}
+          onChange={e => { setBusq(e.target.value); setAbierto(true) }}
+          onFocus={() => setAbierto(true)}
+          onBlur={() => setTimeout(() => setAbierto(false), 150)}
+          placeholder={cargando ? "Cargando cheques..." : value.length > 0 ? "Agregar otro cheque..." : "Buscar cheque por N°, banco o dueño..."}
+          style={{ width: "100%", padding: "10px 14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "white", fontSize: 14, outline: "none", boxSizing: "border-box" }}
+        />
+        {abierto && (
+          <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 40, background: "#1e293b", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, maxHeight: 240, overflowY: "auto", boxShadow: "0 12px 30px rgba(0,0,0,0.5)" }}>
+            {disponibles.length === 0 ? (
+              <div style={{ padding: "12px 14px", fontSize: 12, color: "#94a3b8" }}>
+                {cargando ? "Cargando..." : "No hay cheques recibidos disponibles. Cargalos en la pestaña Cheques."}
+              </div>
+            ) : disponibles.map(c => (
+              <button key={c.id} type="button"
+                onMouseDown={() => agregar(c)}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.06)", cursor: "pointer", textAlign: "left" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "none")}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "white" }}>
+                    {tipoChequeLabel(c.tipo)} N° {c.numero}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                    {c.banco || "Banco —"} · {fmtFecha(c.fecha)}{c.dueno ? ` · ${c.dueno}` : ""}
+                  </div>
+                </div>
+                <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, color: "#4ade80" }}>{fmtMonto(c.monto_ingresado)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

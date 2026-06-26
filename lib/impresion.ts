@@ -65,21 +65,34 @@ function tipoChequeLabel(tipo?: string) {
   return "Cheque"
 }
 
-// Bloque HTML con el detalle del cheque usado en el pago
-function bloqueChequeHTML(cheque?: ChequeRecibo): string {
-  if (!cheque || !cheque.numero) return ""
+// Bloque HTML con el detalle del/los cheque(s) usado(s) en el pago
+function bloqueChequeHTML(cheques?: ChequeRecibo[]): string {
+  const lista = (cheques || []).filter(c => c && c.numero)
+  if (!lista.length) return ""
   const f = (n: number) => "$" + n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const fechaCh = cheque.fecha
-    ? new Date(cheque.fecha.includes("T") ? cheque.fecha : cheque.fecha + "T00:00:00").toLocaleDateString("es-AR")
-    : "—"
   const item = (l: string, v: string) =>
     `<span style="white-space:nowrap;"><b style="color:#1971c2;">${l}:</b> <span style="color:#333;">${v}</span></span>`
-  return `<div style="margin-top:14px;background:#e7f5ff;border:1px solid #1971c2;border-radius:8px;padding:10px 14px;font-size:12px;display:flex;gap:18px;flex-wrap:wrap;align-items:center;">
-    <span style="font-weight:800;color:#1971c2;">🧾 Pagado con ${tipoChequeLabel(cheque.tipo)}</span>
-    ${item("N°", cheque.numero)}
-    ${cheque.banco ? item("Banco", cheque.banco) : ""}
-    ${item("Fecha", fechaCh)}
-    ${cheque.monto ? item("Monto", f(Number(cheque.monto))) : ""}
+  const filas = lista.map(c => {
+    const fechaCh = c.fecha
+      ? new Date(c.fecha.includes("T") ? c.fecha : c.fecha + "T00:00:00").toLocaleDateString("es-AR")
+      : "—"
+    return `<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding:4px 0;">
+      <span style="font-weight:700;color:#1971c2;">${tipoChequeLabel(c.tipo)}</span>
+      ${item("N°", c.numero || "—")}
+      ${c.banco ? item("Banco", c.banco) : ""}
+      ${item("Fecha", fechaCh)}
+      ${c.monto ? item("Monto", f(Number(c.monto))) : ""}
+    </div>`
+  }).join("")
+  const total = lista.reduce((s, c) => s + Number(c.monto || 0), 0)
+  const totalLinea = lista.length > 1
+    ? `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #74c0fc;font-weight:800;color:#1971c2;text-align:right;">Total ${lista.length} cheques: ${f(total)}</div>`
+    : ""
+  const titulo = lista.length > 1 ? "🧾 Pagado con cheques" : "🧾 Pagado con cheque"
+  return `<div style="margin-top:14px;background:#e7f5ff;border:1px solid #1971c2;border-radius:8px;padding:10px 14px;font-size:12px;">
+    <div style="font-weight:800;color:#1971c2;margin-bottom:4px;">${titulo}</div>
+    ${filas}
+    ${totalLinea}
   </div>`
 }
 
@@ -89,7 +102,7 @@ export function imprimirReciboCC(
   cliente: ClienteRecibo,
   saldoAnterior: number,
   saldoTotalCliente?: number,
-  cheque?: ChequeRecibo
+  cheques?: ChequeRecibo[]
 ) {
   const logoUrl = window.location.origin + "/logo.png"
   const fecha = pago.fecha
@@ -119,7 +132,7 @@ export function imprimirReciboCC(
       ${pago.nota ? filaConcepto("Nota / Detalle", String(pago.nota)) : ""}
     </tbody>
   </table>
-  ${bloqueChequeHTML(cheque)}
+  ${bloqueChequeHTML(cheques)}
   <div class="total-box"><div class="total-inner">
     <div class="total-pagado"><p class="total-pagado-label">Monto recibido</p><p class="total-pagado-monto">${f(Number(pago.monto))}</p></div>
     <div class="saldo-box ${saldoRestante > 0 ? "saldo-pendiente" : "saldo-saldado"}"><p class="saldo-label">${saldoRestante > 0 ? "Saldo restante de esta factura: " + f(saldoRestante) : "✓ Factura saldada completamente"}</p></div>
@@ -145,7 +158,7 @@ export function imprimirReciboCobroMasivo(
   nota?: string,
   saldoTotalCliente?: number,
   creditoAplicado?: number,
-  cheque?: ChequeRecibo
+  cheques?: ChequeRecibo[]
 ) {
   const logoUrl = window.location.origin + "/logo.png"
   const fecha = new Date().toLocaleDateString("es-AR")
@@ -213,7 +226,7 @@ export function imprimirReciboCobroMasivo(
     <tbody>${filasFacturas}</tbody>
   </table>
   ${resumenHtml}
-  ${bloqueChequeHTML(cheque)}
+  ${bloqueChequeHTML(cheques)}
   <div class="total-box"><div class="total-inner">
     <div class="total-pagado">
       <p class="total-pagado-label">${Number(creditoAplicado || 0) > 0 ? "Total aplicado" : "Total recibido"}</p>

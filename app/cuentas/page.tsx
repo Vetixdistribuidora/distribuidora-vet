@@ -6,10 +6,9 @@ import { imprimirReciboCC, imprimirReciboCobroMasivo } from "@/lib/impresion"
 import { getSaldoCliente } from "@/lib/saldo"
 import { SelectorCheque, ChequeLite } from "@/components/SelectorCheque"
 
-// Construye el objeto cheque para el recibo a partir de un cheque (de la tabla cheques)
-function chequeParaRecibo(c: any) {
-  if (!c) return undefined
-  return { numero: c.numero, tipo: c.tipo, banco: c.banco, fecha: c.fecha, monto: Number(c.monto_ingresado ?? c.monto ?? 0) }
+// Construye los objetos cheque para el recibo a partir de cheques (tabla cheques)
+function chequesParaRecibo(arr?: any[]) {
+  return (arr || []).map((c: any) => ({ numero: c.numero, tipo: c.tipo, banco: c.banco, fecha: c.fecha, monto: Number(c.monto_ingresado ?? c.monto ?? 0) }))
 }
 
 function fmt(n: number) {
@@ -64,7 +63,7 @@ export default function CuentasCorrientes() {
   const [descuentoPago, setDescuentoPago] = useState("")
   const [descuentoTipo, setDescuentoTipo] = useState<"pct" | "pesos">("pct")
   const [guardando, setGuardando] = useState(false)
-  const [chequeSel, setChequeSel] = useState<ChequeLite | null>(null)
+  const [chequesSel, setChequesSel] = useState<ChequeLite[]>([])
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
@@ -164,18 +163,37 @@ export default function CuentasCorrientes() {
       const saldo = Math.max(0, Number(v.total) - totalPagado)
       return { ...v, total: Number(v.total), detalle_ventas: detalles, pagos, totalPagado, saldo }
     })
-    // Enriquecer pagos con su cheque vinculado (si la columna cheque_id existe)
+    // Enriquecer pagos con sus cheques vinculados (tabla pago_cheques por nro_recibo,
+    // + fallback al enlace viejo cheque_id de pagos hechos antes del multi-cheque)
     try {
-      const { data: links, error: eL } = await supabase.from("pagos_cuenta_corriente")
-        .select("id, cheque_id").in("venta_id", ventaIds).not("cheque_id", "is", null)
-      if (!eL && links && links.length) {
-        const chIds = [...new Set(links.map((l: any) => l.cheque_id))]
-        const { data: chs } = await supabase.from("cheques").select("id, numero, tipo, banco, fecha, monto_ingresado").in("id", chIds)
-        const chById: Record<number, any> = Object.fromEntries((chs || []).map((c: any) => [c.id, c]))
-        const chByPago: Record<number, any> = Object.fromEntries(links.map((l: any) => [l.id, chById[l.cheque_id]]))
-        conDetalle.forEach((v: any) => v.pagos.forEach((p: any) => { if (chByPago[p.id]) p._cheque = chByPago[p.id] }))
+      const cargarCheques = async (ids: number[]) => {
+        if (!ids.length) return {} as Record<number, any>
+        const { data: chs } = await supabase.from("cheques").select("id, numero, tipo, banco, fecha, monto_ingresado").in("id", ids)
+        return Object.fromEntries((chs || []).map((c: any) => [c.id, c])) as Record<number, any>
       }
-    } catch { /* la columna cheque_id todavía no existe — se ignora */ }
+      // Nuevo: por nro_recibo
+      const nros = [...new Set(conDetalle.flatMap((v: any) => v.pagos.map((p: any) => p.nro_recibo).filter(Boolean)))]
+      const porRecibo: Record<string, any[]> = {}
+      if (nros.length) {
+        const { data: pc, error: ePc } = await supabase.from("pago_cheques").select("nro_recibo, cheque_id").in("nro_recibo", nros as string[])
+        if (!ePc && pc && pc.length) {
+          const chById = await cargarCheques([...new Set(pc.map((r: any) => r.cheque_id))])
+          pc.forEach((r: any) => { if (chById[r.cheque_id]) { (porRecibo[r.nro_recibo] = porRecibo[r.nro_recibo] || []).push(chById[r.cheque_id]) } })
+        }
+      }
+      // Viejo: por fila de pago (cheque_id)
+      let viejoByPago: Record<number, any> = {}
+      const { data: links, error: eL } = await supabase.from("pagos_cuenta_corriente").select("id, cheque_id").in("venta_id", ventaIds).not("cheque_id", "is", null)
+      if (!eL && links && links.length) {
+        const chById = await cargarCheques([...new Set(links.map((l: any) => l.cheque_id))])
+        viejoByPago = Object.fromEntries(links.map((l: any) => [l.id, chById[l.cheque_id]]).filter((x: any) => x[1]))
+      }
+      conDetalle.forEach((v: any) => v.pagos.forEach((p: any) => {
+        const arr = porRecibo[p.nro_recibo]
+        if (arr && arr.length) p._cheques = arr
+        else if (viejoByPago[p.id]) p._cheques = [viejoByPago[p.id]]
+      }))
+    } catch { /* las tablas/columnas todavía no existen — se ignora */ }
     setVentas(conDetalle)
   }
 
@@ -225,17 +243,22 @@ export default function CuentasCorrientes() {
         montoDesc > 0 ? `Descuento aplicado: ${fmt(montoDesc)}` : null,
       ].filter(Boolean).join(" | ") || null
 
-      // ¿Pago con cheque? (solo si el método es cheque/echeq y se eligió uno)
-      const chequeUsado = (metodoPago === "cheque" || metodoPago === "echeq") ? chequeSel : null
+      // ¿Pago con cheque(s)? (solo si el método es cheque/echeq y se eligió alguno)
+      const chequesUsados = (metodoPago === "cheque" || metodoPago === "echeq") ? chequesSel : []
       // Registrar el pago en plata (solo si hubo monto en efectivo)
       if (monto > 0) {
-        const pagoRow: any = {
+        const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
           cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto,
           metodo_pago: metodoPago || null, nota: notaFinal, nro_recibo: nroRecibo,
-        }
-        if (chequeUsado) pagoRow.cheque_id = chequeUsado.id
-        const { error } = await supabase.from("pagos_cuenta_corriente").insert([pagoRow])
+        }])
         if (error) { mostrarToast("Error: " + error.message, "error"); return }
+      }
+      // Enlazar los cheques usados a este recibo
+      if (chequesUsados.length > 0) {
+        const { error: eCh } = await supabase.from("pago_cheques").insert(
+          chequesUsados.map(c => ({ nro_recibo: nroRecibo, cheque_id: c.id, cliente_id: clienteActivo.id }))
+        )
+        if (eCh) mostrarToast("Pago ok, pero no se pudieron enlazar los cheques: " + eCh.message, "error")
       }
       // Registrar movimientos en cuentas_corrientes para mantener el saldo sincronizado
       const { data: ultimoCC } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", clienteActivo.id).order("id", { ascending: false }).limit(1).maybeSingle()
@@ -261,10 +284,10 @@ export default function CuentasCorrientes() {
           clienteActivo,
           ventaPago.saldo,
           saldoTotalCliente,
-          chequeUsado ? chequeParaRecibo(chequeUsado) : undefined
+          chequesParaRecibo(chequesUsados)
         )
       }
-      setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct"); setChequeSel(null)
+      setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct"); setChequesSel([])
       await cargarVentas(clienteActivo.id)
       await calcularResumen(clientes)
     } catch (e: any) {
@@ -277,7 +300,7 @@ export default function CuentasCorrientes() {
   async function imprimirRecibo(pago: any, venta: any) {
     const saldoAnterior = Number(venta.total) - (Number(venta.totalPagado) - Number(pago.monto))
     const saldoTotalCliente = clienteActivo ? await getSaldoCliente(clienteActivo.id) : 0
-    imprimirReciboCC(pago, venta, clienteActivo, saldoAnterior, saldoTotalCliente, chequeParaRecibo(pago._cheque))
+    imprimirReciboCC(pago, venta, clienteActivo, saldoAnterior, saldoTotalCliente, chequesParaRecibo(pago._cheques))
   }
 
   // ── Recibos de cobro: agrupa todos los pagos del cliente en "recibos" ────────
@@ -309,7 +332,7 @@ export default function CuentasCorrientes() {
       const totalCobrado = Math.round(grupo.reduce((s, p) => s + Number(p.monto), 0) * 100) / 100
       const creditoAplicado = Math.round(grupo.filter(p => p.metodo_pago === "otro").reduce((s, p) => s + Number(p.monto), 0) * 100) / 100
       const nota = grupo.map(p => p.nota).find(Boolean) || undefined
-      const cheque = grupo.map(p => p._cheque).find(Boolean) || undefined
+      const cheques = grupo.map(p => p._cheques).find((a: any) => a && a.length) || []
 
       const porVenta: Record<number, any[]> = {}
       grupo.forEach(p => { (porVenta[p.venta_id] ||= []).push(p) })
@@ -333,7 +356,7 @@ export default function CuentasCorrientes() {
         }
       })
 
-      return { fechaMin, fechaRef, nroReciboBase, totalCobrado, creditoAplicado, nota, cheque, afectadas }
+      return { fechaMin, fechaRef, nroReciboBase, totalCobrado, creditoAplicado, nota, cheques, afectadas }
     }).sort((a, b) => b.fechaMin - a.fechaMin)
   }, [ventas])
 
@@ -341,7 +364,7 @@ export default function CuentasCorrientes() {
     const saldoTotalCliente = clienteActivo ? await getSaldoCliente(clienteActivo.id) : 0
     imprimirReciboCobroMasivo(
       r.totalCobrado, r.nroReciboBase, r.afectadas, clienteActivo,
-      r.nota, saldoTotalCliente, r.creditoAplicado, chequeParaRecibo(r.cheque)
+      r.nota, saldoTotalCliente, r.creditoAplicado, chequesParaRecibo(r.cheques)
     )
   }
 
@@ -566,7 +589,7 @@ export default function CuentasCorrientes() {
                                   ))}
                                 </div>
                               )}
-                              <button onClick={() => { setVentaPago(v); setMontoPago(String(v.saldo)); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct"); setMetodoPago("efectivo"); setChequeSel(null) }}
+                              <button onClick={() => { setVentaPago(v); setMontoPago(String(v.saldo)); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct"); setMetodoPago("efectivo"); setChequesSel([]) }}
                                 style={{ width: "100%", marginTop: 12, padding: "10px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 9, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                                 + Registrar pago
                               </button>
@@ -675,7 +698,7 @@ export default function CuentasCorrientes() {
       {/* Modal pago */}
       {ventaPago && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
-          onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct"); setChequeSel(null) }}>
+          onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct"); setChequesSel([]) }}>
           <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 400, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
             onClick={e => e.stopPropagation()}>
             <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: "0 0 4px" }}>Registrar pago</h2>
@@ -750,8 +773,8 @@ export default function CuentasCorrientes() {
             </div>
             {(metodoPago === "cheque" || metodoPago === "echeq") && (
               <div style={{ marginBottom: 12 }}>
-                <label style={labelStyle}>Cheque recibido</label>
-                <SelectorCheque value={chequeSel} onSelect={c => { setChequeSel(c); if (c) setMontoPago(String(c.monto_ingresado)) }} />
+                <label style={labelStyle}>Cheque(s) recibido(s)</label>
+                <SelectorCheque value={chequesSel} onChange={arr => { setChequesSel(arr); if (arr.length) setMontoPago(String(arr.reduce((s, c) => s + Number(c.monto_ingresado), 0))) }} />
               </div>
             )}
             <div style={{ marginBottom: 20 }}>
@@ -759,7 +782,7 @@ export default function CuentasCorrientes() {
               <input type="text" value={notaPago} onChange={e => setNotaPago(e.target.value)} placeholder="Ej: transferencia mayo, banco Galicia..." style={inputDarkStyle} />
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct"); setChequeSel(null) }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+              <button onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct"); setChequesSel([]) }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
               <button onClick={registrarPago} disabled={guardando || (montoInput <= 0 && montoDescInput <= 0)} style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardando || (montoInput <= 0 && montoDescInput <= 0) ? 0.5 : 1 }}>
                 {guardando ? "Guardando..." : "Confirmar pago"}
               </button>

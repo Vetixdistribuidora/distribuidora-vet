@@ -35,8 +35,13 @@ function fmt(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
 }
 
-// Color determinista para chips de "Entregada a"
+// Color para chips de "Entregada a".
+// Reglas fijas: VILLA NUEVA (y variantes) → amarillo, SIVET (y variantes) → rojo.
+// El resto recibe un color determinista por hash del nombre.
 function chipColor(name: string) {
+  const flat = name.toLowerCase().replace(/[^a-z0-9]/g, "")
+  if (flat.includes("sivet")) return { bg: "#fef2f2", color: "#dc2626", border: "#fecaca" }       // rojo
+  if (flat.includes("villa")) return { bg: "#fef9c3", color: "#a16207", border: "#fde68a" }       // amarillo
   const palette = [
     { bg: "#dcfce7", color: "#15803d", border: "#bbf7d0" },
     { bg: "#dbeafe", color: "#1d4ed8", border: "#bfdbfe" },
