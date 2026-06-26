@@ -326,7 +326,8 @@ export default function Productos() {
 
   async function exportarStock() {
     const XLSX = await import("xlsx")
-    const data = productos.map(p => ({
+    // Exporta lo que está filtrado (búsqueda + categoría); sin filtro = todos
+    const data = productosFiltrados.map(p => ({
       "Nombre": p.nombre,
       "Laboratorio": p.laboratorio || "",
       "Precio Neto ($)": p.costo,
@@ -342,11 +343,14 @@ export default function Productos() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Stock")
     XLSX.writeFile(wb, `stock_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    mostrarToast(`✅ ${data.length} producto${data.length !== 1 ? "s" : ""} exportado${data.length !== 1 ? "s" : ""}`, "ok")
   }
 
   async function exportarListaPrecios() {
     const XLSX = await import("xlsx")
-    const data = productos.filter(p => p.stock > 0).map(p => ({
+    // Exporta lo que está filtrado (búsqueda + categoría); sin filtro = todos.
+    // Incluye productos con y sin stock — no hace falta tenerlos para pasar precios.
+    const data = productosFiltrados.map(p => ({
       "Producto": p.nombre,
       "Precio Vet. ($)": Math.round(p.precio_venta * 1.30 * 100) / 100,
       "Precio Prod. ($)": Math.round(p.precio_venta * 1.58 * 100) / 100,
@@ -356,6 +360,7 @@ export default function Productos() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Lista de Precios")
     XLSX.writeFile(wb, `lista_precios_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    mostrarToast(`✅ ${data.length} precio${data.length !== 1 ? "s" : ""} exportado${data.length !== 1 ? "s" : ""}`, "ok")
   }
 
   async function cargar() {
