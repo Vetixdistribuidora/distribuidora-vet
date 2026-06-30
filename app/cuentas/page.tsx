@@ -207,9 +207,11 @@ export default function CuentasCorrientes() {
       : Math.round(ventaPago.saldo * (descVal / 100) * 100) / 100
     const montoDesc = Math.min(Math.max(0, Math.round(montoDescBruto * 100) / 100), ventaPago.saldo)
     const saldoPagable = Math.round((ventaPago.saldo - montoDesc) * 100) / 100  // a pagar tras descuento
-    const totalCubre = Math.round((monto + montoDesc) * 100) / 100  // cuánto de la deuda se cancela
-    if (totalCubre <= 0) { mostrarToast("Ingresá un monto o descuento válido", "error"); return }
-    if (monto > saldoPagable + 0.01) { mostrarToast("El monto supera el saldo pendiente (con descuento)", "error"); return }
+    // Si pagan de más, el excedente queda como saldo a favor (no afecta la factura)
+    const exceso = Math.max(0, Math.round((monto - saldoPagable) * 100) / 100)
+    const aplicado = Math.round((monto - exceso) * 100) / 100  // lo que se imputa a esta factura
+    const totalCubre = Math.round((aplicado + montoDesc) * 100) / 100  // cuánto de la deuda se cancela
+    if (monto <= 0 && montoDesc <= 0) { mostrarToast("Ingresá un monto o descuento válido", "error"); return }
     setGuardando(true)
     try {
       // Generar número de recibo con secuencia atómica
@@ -241,14 +243,15 @@ export default function CuentasCorrientes() {
       const notaFinal = [
         notaPago || null,
         montoDesc > 0 ? `Descuento aplicado: ${fmt(montoDesc)}` : null,
+        exceso > 0 ? `Recibido ${fmt(monto)} — ${fmt(exceso)} a saldo a favor` : null,
       ].filter(Boolean).join(" | ") || null
 
       // ¿Pago con cheque(s)? (solo si el método es cheque/echeq y se eligió alguno)
       const chequesUsados = (metodoPago === "cheque" || metodoPago === "echeq") ? chequesSel : []
-      // Registrar el pago en plata (solo si hubo monto en efectivo)
-      if (monto > 0) {
+      // Registrar el pago imputado a la factura (solo la parte que cancela deuda)
+      if (aplicado > 0) {
         const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
-          cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto,
+          cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto: aplicado,
           metodo_pago: metodoPago || null, nota: notaFinal, nro_recibo: nroRecibo,
         }])
         if (error) { mostrarToast("Error: " + error.message, "error"); return }
@@ -267,14 +270,21 @@ export default function CuentasCorrientes() {
         saldoCC = Math.max(0, saldoCC - montoDesc)
         await supabase.from("cuentas_corrientes").insert({ cliente_id: clienteActivo.id, venta_id: ventaPago.id, tipo: "descuento", monto: -montoDesc, saldo: saldoCC, fecha: new Date() })
       }
-      if (monto > 0) {
-        saldoCC = Math.max(0, saldoCC - monto)
-        await supabase.from("cuentas_corrientes").insert({ cliente_id: clienteActivo.id, venta_id: ventaPago.id, tipo: "pago", monto: -monto, saldo: saldoCC, fecha: new Date() })
+      if (aplicado > 0) {
+        saldoCC = Math.max(0, saldoCC - aplicado)
+        await supabase.from("cuentas_corrientes").insert({ cliente_id: clienteActivo.id, venta_id: ventaPago.id, tipo: "pago", monto: -aplicado, saldo: saldoCC, fecha: new Date() })
+      }
+      // Excedente → saldo a favor del cliente (reutilizable en pagos generales)
+      if (exceso > 0) {
+        await supabase.from("saldo_clientes").insert({
+          cliente_id: clienteActivo.id, monto: exceso,
+          notas: `Excedente de pago — factura ${ventaPago.nro_factura || ventaPago.id} (Recibo ${nroRecibo})`,
+        })
       }
       if (totalCubre >= ventaPago.saldo - 0.01) {
         await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", ventaPago.id)
       }
-      mostrarToast("✅ Pago registrado — Recibo " + nroRecibo, "ok")
+      mostrarToast(exceso > 0 ? `✅ Pago registrado · ${fmt(exceso)} quedó a favor` : "✅ Pago registrado — Recibo " + nroRecibo, "ok")
       // Imprimir recibo automáticamente (solo si hubo pago en efectivo)
       if (monto > 0) {
         const saldoTotalCliente = await getSaldoCliente(clienteActivo.id)
@@ -284,7 +294,8 @@ export default function CuentasCorrientes() {
           clienteActivo,
           ventaPago.saldo,
           saldoTotalCliente,
-          chequesParaRecibo(chequesUsados)
+          chequesParaRecibo(chequesUsados),
+          exceso
         )
       }
       setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct"); setChequesSel([])
@@ -381,6 +392,7 @@ export default function CuentasCorrientes() {
     return Math.min(Math.max(0, Math.round(bruto * 100) / 100), ventaPago.saldo)
   })()
   const saldoPagableInput = ventaPago ? Math.round((ventaPago.saldo - montoDescInput) * 100) / 100 : 0
+  const excesoInput = ventaPago ? Math.max(0, Math.round((montoInput - saldoPagableInput) * 100) / 100) : 0
 
   if (cargando) return (
     <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: 300 }}>
@@ -725,7 +737,9 @@ export default function CuentasCorrientes() {
               <input type="number" value={montoPago} onChange={e => setMontoPago(e.target.value)} style={inputDarkStyle} />
               {(montoInput + montoDescInput) > 0 && (
                 <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: (montoInput + montoDescInput) >= ventaPago.saldo - 0.01 ? "#4ade80" : "#fbbf24" }}>
-                  {(montoInput + montoDescInput) >= ventaPago.saldo - 0.01 ? "✓ Salda la deuda completa" : `Quedarán ${fmt(ventaPago.saldo - montoInput - montoDescInput)} pendientes`}
+                  {(montoInput + montoDescInput) >= ventaPago.saldo - 0.01
+                    ? (excesoInput > 0 ? `✓ Salda la deuda · ${fmt(excesoInput)} queda a favor` : "✓ Salda la deuda completa")
+                    : `Quedarán ${fmt(ventaPago.saldo - montoInput - montoDescInput)} pendientes`}
                 </div>
               )}
             </div>

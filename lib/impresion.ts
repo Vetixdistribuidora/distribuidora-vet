@@ -102,7 +102,8 @@ export function imprimirReciboCC(
   cliente: ClienteRecibo,
   saldoAnterior: number,
   saldoTotalCliente?: number,
-  cheques?: ChequeRecibo[]
+  cheques?: ChequeRecibo[],
+  creditoGenerado?: number
 ) {
   const logoUrl = window.location.origin + "/logo.png"
   const fecha = pago.fecha
@@ -136,6 +137,7 @@ export function imprimirReciboCC(
   <div class="total-box"><div class="total-inner">
     <div class="total-pagado"><p class="total-pagado-label">Monto recibido</p><p class="total-pagado-monto">${f(Number(pago.monto))}</p></div>
     <div class="saldo-box ${saldoRestante > 0 ? "saldo-pendiente" : "saldo-saldado"}"><p class="saldo-label">${saldoRestante > 0 ? "Saldo restante de esta factura: " + f(saldoRestante) : "✓ Factura saldada completamente"}</p></div>
+    ${creditoGenerado && creditoGenerado > 0 ? `<div class="saldo-box" style="background:#e7f5ff;border:1px solid #1971c2;color:#1971c2;"><p class="saldo-label">💚 Saldo a favor generado: ${f(Number(creditoGenerado))}</p></div>` : ""}
   </div></div>
   <div class="firma-box">
     <div class="firma-linea">Firma y aclaración<br/><span style="font-size:10px;color:#aaa;">Cliente</span></div>
