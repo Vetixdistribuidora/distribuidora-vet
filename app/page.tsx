@@ -112,20 +112,15 @@ export default function Dashboard() {
       supabase.from("pagos_cuenta_corriente").select("venta_id, monto").gte("fecha", inicioHoyUTC),
       supabase.from("pagos_cuenta_corriente").select("venta_id, monto").gte("fecha", inicioMesStr),
       // Ventas del MISMO tramo del mes anterior (para Crecimiento)
-      supabase.from("ventas").select("total")
+      supabase.from("ventas").select("id, total")
         .gte("fecha", prevMesInicioUTC).lt("fecha", prevMesHastaUTC).neq("estado", "anulada"),
     ])
 
     const k = kpisRes.data as any
     if (!k) return
 
-    // ── KPIs (todos vienen calculados del servidor) ───────────────────────────
-    // Crecimiento: lo que va del mes (total_mes) vs el MISMO tramo del mes anterior
-    // (no el mes anterior completo), para que la comparación sea justa desde el día 1.
-    const totalPrevMTD = (ventasPrevMTDRes.data || []).reduce((s: number, v: any) => s + Number(v.total || 0), 0)
-    const crecimiento = totalPrevMTD > 0
-      ? ((Number(k.total_mes) - totalPrevMTD) / totalPrevMTD) * 100 : 0
-    const margen = Number(k.total_mes) > 0 ? (Number(k.ganancia_mes) / Number(k.total_mes)) * 100 : 0
+    // Ganancia, ventas y crecimiento "reales" se calculan más abajo excluyendo los
+    // productos marcados excluir_stats (saldos migrados del sistema viejo).
 
     // ── Efectivo real ingresado (ventas directas cobradas + cobros de CC) ─────
     // IMPORTANTE: una venta directa inserta fila en `ventas` Y en `pagos_cuenta_corriente`.
@@ -153,10 +148,56 @@ export default function Dashboard() {
       ventasMesData.filter((v: any) => v.metodo_cobro != null).reduce((s: number, v: any) => s + Number(v.total), 0) +
       pagosMes.filter(esCobroCC).reduce((s: number, p: any) => s + Number(p.monto), 0)
 
+    // ── Ganancia / ventas / crecimiento REALES (sin saldos viejos) ────────────
+    // Se excluyen los productos con excluir_stats = true: no son mercadería ni
+    // margen (son cobro de deudas migradas del sistema anterior). El capital en
+    // stock ya se corrige en la base (stock 0 para esos productos).
+    const ventasMesIds = ventasMesData.map((v: any) => v.id)
+    const ventasPrev = ventasPrevMTDRes.data || []
+    const ventasPrevIds = ventasPrev.map((v: any) => v.id)
+    async function traerDetalle(ids: number[]) {
+      let out: any[] = []
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data } = await supabase.from("detalle_ventas")
+          .select("venta_id, producto_id, cantidad, precio, costo_unitario, bonificacion")
+          .in("venta_id", ids.slice(i, i + 200))
+        if (data) out = out.concat(data)
+      }
+      return out
+    }
+    const [detMes, detPrev] = await Promise.all([traerDetalle(ventasMesIds), traerDetalle(ventasPrevIds)])
+    const pidsInvol = [...new Set([...detMes, ...detPrev].map((d: any) => d.producto_id))]
+    const prodInfo: Record<number, { costo: number; excl: boolean }> = {}
+    for (let i = 0; i < pidsInvol.length; i += 300) {
+      const { data } = await supabase.from("productos").select("id, costo, excluir_stats").in("id", pidsInvol.slice(i, i + 300))
+      ;(data || []).forEach((p: any) => { prodInfo[p.id] = { costo: Number(p.costo) || 0, excl: !!p.excluir_stats } })
+    }
+    // Devuelve ganancia de mercadería real + ingreso de saldos viejos (a restar de ventas)
+    const calcular = (det: any[]) => {
+      let ganancia = 0, revSintetico = 0
+      for (const d of det) {
+        const info = prodInfo[d.producto_id] || { costo: 0, excl: false }
+        const cant = Number(d.cantidad) || 0
+        const pagan = Math.max(0, cant - (Number(d.bonificacion) || 0))
+        if (info.excl) { revSintetico += Number(d.precio) * cant; continue }
+        const costo = (d.costo_unitario && d.costo_unitario > 0) ? Number(d.costo_unitario) : info.costo
+        ganancia += Number(d.precio) * pagan - costo * cant
+      }
+      return { ganancia, revSintetico }
+    }
+    const mesCalc = calcular(detMes)
+    const prevCalc = calcular(detPrev)
+    const totalPrevMTD = ventasPrev.reduce((s: number, v: any) => s + Number(v.total || 0), 0)
+    const realTotalMes = Math.max(0, Number(k.total_mes) - mesCalc.revSintetico)
+    const realPrevMTD = Math.max(0, totalPrevMTD - prevCalc.revSintetico)
+    const crecimiento = realPrevMTD > 0 ? ((realTotalMes - realPrevMTD) / realPrevMTD) * 100 : 0
+    const gananciaReal = Math.round(mesCalc.ganancia * 100) / 100
+    const margen = realTotalMes > 0 ? (gananciaReal / realTotalMes) * 100 : 0
+
     setKpis({
       totalHoy: Number(k.total_hoy), cantidadHoy: Number(k.cant_hoy),
-      totalMes: Number(k.total_mes), cantidadVentas: Number(k.cant_mes),
-      ganancia: Number(k.ganancia_mes), margen,
+      totalMes: realTotalMes, cantidadVentas: Number(k.cant_mes),
+      ganancia: gananciaReal, margen,
       crecimiento, ticketPromedio: Number(k.ticket_promedio),
       capitalStock: Number(k.capital_stock),
       totalComprasMes: Number(k.total_compras_mes),

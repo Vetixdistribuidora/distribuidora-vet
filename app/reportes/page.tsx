@@ -94,7 +94,7 @@ export default function Reportes() {
       const antHastaUTC = new Date(antHasta + "T23:59:59").toISOString()
 
       // Todas las queries en paralelo
-      const [ventasRes, pagosRes, comprasRes, comprasPagosRes, ventasAntRes] = await Promise.all([
+      const [ventasRes, pagosRes, comprasRes, comprasPagosRes, ventasAntRes, flaggedRes] = await Promise.all([
         supabase.from("ventas")
           .select("id, total, cliente_id, fecha, estado, metodo_cobro")
           .gte("fecha", desdeUTC).lte("fecha", hastaUTC).neq("estado", "anulada"),
@@ -111,15 +111,26 @@ export default function Reportes() {
         supabase.from("ventas")
           .select("id, total")
           .gte("fecha", antDesdeUTC).lte("fecha", antHastaUTC).neq("estado", "anulada"),
+        // Productos excluidos de estadísticas (saldos migrados del sistema viejo)
+        supabase.from("productos").select("id").eq("excluir_stats", true),
       ])
 
       const ventas = ventasRes.data || []
+      const flaggedIds = new Set<number>((flaggedRes.data || []).map((p: any) => p.id))
 
-      // Período anterior
+      // Período anterior (excluyendo saldos viejos, igual que el período actual)
       const ventasAnt = ventasAntRes.data || []
       const totalAnt = ventasAnt.reduce((s: number, v: any) => s + (v.total || 0), 0)
       const cantAnt = ventasAnt.length
-      setAnterior({ total: totalAnt, ticket: cantAnt > 0 ? totalAnt / cantAnt : 0, cantVentas: cantAnt })
+      let revSinteticoAnt = 0
+      const ventasAntIds = ventasAnt.map((v: any) => v.id)
+      if (ventasAntIds.length && flaggedIds.size) {
+        const { data: fd } = await supabase.from("detalle_ventas")
+          .select("precio, cantidad").in("venta_id", ventasAntIds).in("producto_id", [...flaggedIds])
+        revSinteticoAnt = (fd || []).reduce((s: number, d: any) => s + Number(d.precio) * (Number(d.cantidad) || 0), 0)
+      }
+      const totalAntReal = Math.max(0, totalAnt - revSinteticoAnt)
+      setAnterior({ total: totalAntReal, ticket: cantAnt > 0 ? totalAntReal / cantAnt : 0, cantVentas: cantAnt })
 
       if (ventas.length === 0) {
         setKpis({ total: 0, ganancia: 0, ticket: 0, clientesUnicos: 0, cantVentas: 0, margen: 0, markup: 0, promedioDiario: 0, cobrado: 0, pendienteCC: 0, compras: 0, resultado: 0, diasPeriodo })
@@ -148,15 +159,21 @@ export default function Reportes() {
       }
 
       // ── KPIs base ─────────────────────────────────────────────────────────────
-      const totalVendido = ventas.reduce((s: number, v: any) => s + (v.total || 0), 0)
+      const totalBruto = ventas.reduce((s: number, v: any) => s + (v.total || 0), 0)
       const cantVentas = ventas.length
-      const ticket = cantVentas > 0 ? totalVendido / cantVentas : 0
       const clientesUnicos = new Set(ventas.filter((v: any) => v.cliente_id).map((v: any) => v.cliente_id)).size
-      const promedioDiario = totalVendido / diasPeriodo
 
       let ganancia = 0
       let totalCosto = 0
+      let revSintetico = 0   // ingreso de "saldos viejos" (no es venta de mercadería)
+      const sinteticoPorVenta: Record<number, number> = {}
       for (const d of detalles) {
+        if (flaggedIds.has(d.producto_id)) {
+          const rev = Number(d.precio) * (Number(d.cantidad) || 0)
+          revSintetico += rev
+          sinteticoPorVenta[d.venta_id] = (sinteticoPorVenta[d.venta_id] || 0) + rev
+          continue
+        }
         const costoReal = (d.costo_unitario && d.costo_unitario > 0)
           ? d.costo_unitario : (productosMap[d.producto_id]?.costoReal ?? 0)
         const bonif = d.bonificacion || 0
@@ -164,6 +181,10 @@ export default function Reportes() {
         ganancia += d.precio * pagan - costoReal * d.cantidad
         totalCosto += costoReal * d.cantidad
       }
+      // Facturación real = ventas menos los saldos viejos migrados
+      const totalVendido = Math.max(0, totalBruto - revSintetico)
+      const ticket = cantVentas > 0 ? totalVendido / cantVentas : 0
+      const promedioDiario = totalVendido / diasPeriodo
       const margen = totalVendido > 0 ? (ganancia / totalVendido) * 100 : 0
       const markup = totalCosto > 0 ? (ganancia / totalCosto) * 100 : 0
 
@@ -186,7 +207,14 @@ export default function Reportes() {
         .filter((p: any) => metodoCobroPorVenta[p.venta_id] == null)
         .reduce((s: number, p: any) => s + Number(p.monto), 0)
       const cobrado = cobradoVentas + pagosCCperiodo
-      const pendienteCC = ventasCC.reduce((s: number, v: any) => s + (v.total || 0), 0)
+      // Pendiente CC real = total de esas ventas − TODO lo ya pagado (no solo lo del período)
+      const ventasCCids = ventasCC.map((v: any) => v.id)
+      const pagosPorVentaCC: Record<number, number> = {}
+      if (ventasCCids.length) {
+        const { data: pcc } = await supabase.from("pagos_cuenta_corriente").select("venta_id, monto").in("venta_id", ventasCCids)
+        ;(pcc || []).forEach((p: any) => { pagosPorVentaCC[p.venta_id] = (pagosPorVentaCC[p.venta_id] || 0) + Number(p.monto) })
+      }
+      const pendienteCC = ventasCC.reduce((s: number, v: any) => s + Math.max(0, Number(v.total || 0) - (pagosPorVentaCC[v.id] || 0)), 0)
       const compras = (comprasRes.data || []).reduce((s: number, c: any) => s + Number(c.total || 0), 0)
       const comprasPagadas = (comprasPagosRes.data || []).reduce((s: number, p: any) => s + Number(p.monto || 0), 0)
       const resultado = cobrado - comprasPagadas
@@ -196,6 +224,7 @@ export default function Reportes() {
       // ── Top productos ─────────────────────────────────────────────────────────
       const prodMap: Record<string, any> = {}
       for (const d of detalles) {
+        if (flaggedIds.has(d.producto_id)) continue   // saldos viejos fuera del ranking
         const pid = String(d.producto_id)
         const costoReal = (d.costo_unitario && d.costo_unitario > 0)
           ? d.costo_unitario : (productosMap[d.producto_id]?.costoReal ?? 0)
@@ -218,7 +247,7 @@ export default function Reportes() {
         if (!v.cliente_id) continue
         const cid = String(v.cliente_id)
         if (!clienteMap[cid]) clienteMap[cid] = { cliente_id: v.cliente_id, total: 0, cant: 0 }
-        clienteMap[cid].total += v.total || 0
+        clienteMap[cid].total += Math.max(0, (v.total || 0) - (sinteticoPorVenta[v.id] || 0))
         clienteMap[cid].cant += 1
       }
       const topClientesData = Object.values(clienteMap).sort((a, b) => b.total - a.total).slice(0, 10)
@@ -234,7 +263,7 @@ export default function Reportes() {
       const diasMap: Record<string, number> = {}
       for (const v of ventas) {
         const fecha = new Date(v.fecha).toLocaleDateString("sv-SE")
-        diasMap[fecha] = (diasMap[fecha] || 0) + (v.total || 0)
+        diasMap[fecha] = (diasMap[fecha] || 0) + Math.max(0, (v.total || 0) - (sinteticoPorVenta[v.id] || 0))
       }
       setGraficoDiario(Object.entries(diasMap).sort(([a], [b]) => a.localeCompare(b))
         .map(([fecha, total]) => ({ fecha: fecha.slice(8, 10) + "/" + fecha.slice(5, 7), total: Math.round(total) })))
@@ -325,10 +354,10 @@ export default function Reportes() {
       color: "#dc2626", bg: "#fef2f2", sub: "Total gastado en stock",
     },
     {
-      label: "Resultado neto", value: fmt(kpis.resultado), icon: kpis.resultado >= 0 ? "🟢" : "🔴",
+      label: "Flujo de caja", value: fmt(kpis.resultado), icon: kpis.resultado >= 0 ? "🟢" : "🔴",
       color: kpis.resultado >= 0 ? "#16a34a" : "#dc2626",
       bg: kpis.resultado >= 0 ? "#f0fdf4" : "#fef2f2",
-      sub: "Cobrado − pagado a proveedores",
+      sub: "Cobrado − pagado a prov. (no es ganancia)",
     },
   ]
 
@@ -390,7 +419,7 @@ export default function Reportes() {
 
       {/* ── Resultado del período ── */}
       <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: 13, fontWeight: 700, color: "#64748b", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>💼 Resultado del período</h2>
+        <h2 style={{ fontSize: 13, fontWeight: 700, color: "#64748b", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>💼 Flujo de caja del período</h2>
         <div className="rep-flujo" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
           {flujoCards.map(item => (
             <div key={item.label} style={{ background: "white", borderRadius: 14, padding: "18px 20px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>

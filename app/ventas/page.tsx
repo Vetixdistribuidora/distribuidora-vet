@@ -664,7 +664,7 @@ thead th:last-child{text-align:right}
       const [{ data: c }, primeraPageData, { data: ultima }] = await Promise.all([
         supabase.from("clientes").select("*").order("nombre"),
         supabase.from("productos")
-          .select("id, nombre, precio_venta, stock, categoria, laboratorio")
+          .select("id, nombre, precio_venta, stock, categoria, laboratorio, costo, excluir_stats")
           .order("nombre")
           .range(0, 999)
           .then(r => r.data || []),
@@ -677,7 +677,7 @@ thead th:last-child{text-align:right}
       while (primeraPageData.length === 1000) {
         const { data } = await supabase
           .from("productos")
-          .select("id, nombre, precio_venta, stock, categoria, laboratorio")
+          .select("id, nombre, precio_venta, stock, categoria, laboratorio, costo, excluir_stats")
           .order("nombre")
           .range(desde, desde + 999)
         if (!data?.length) break
@@ -706,7 +706,7 @@ thead th:last-child{text-align:right}
       while (true) {
         const { data } = await supabase
           .from("productos")
-          .select("id, nombre, precio_venta, stock, categoria, laboratorio")
+          .select("id, nombre, precio_venta, stock, categoria, laboratorio, costo, excluir_stats")
           .order("nombre")
           .range(desde, desde + 999)
         if (!data?.length) break
@@ -1044,15 +1044,17 @@ thead th:last-child{text-align:right}
     const cant = Number(cantidad)
     const enCarrito = carrito.find(i => i.producto_id === producto.id)
     const cantidadEnCarrito = enCarrito?.cantidad || 0
+    // Los productos excluidos de stats (saldos viejos) no son inventario real → sin control de stock
+    const sinControlStock = !!producto.excluir_stats
     const stockDisponible = producto.stock - cantidadEnCarrito
-    if (cant > stockDisponible) { mostrarToast("Stock insuficiente. Disponible: " + stockDisponible, "error"); return }
+    if (!sinControlStock && cant > stockDisponible) { mostrarToast("Stock insuficiente. Disponible: " + stockDisponible, "error"); return }
     const base = producto.precio_venta
     const porcentaje = clienteSeleccionado?.porcentaje || 0
     const precioFinal = Math.round((base + (base * porcentaje / 100)) * 100) / 100
     if (enCarrito) {
       setCarrito(carrito.map(i => i.producto_id === producto.id ? { ...i, cantidad: i.cantidad + cant } : i))
     } else {
-      setCarrito([...carrito, { producto_id: producto.id, nombre: producto.nombre, cantidad: cant, precio: precioFinal, bonificacion: 0, descuento: 0, tipoDescuento: "pesos", stockDisponible: producto.stock }])
+      setCarrito([...carrito, { producto_id: producto.id, nombre: producto.nombre, cantidad: cant, precio: precioFinal, bonificacion: 0, descuento: 0, tipoDescuento: "pesos", stockDisponible: sinControlStock ? 999999 : producto.stock }])
     }
     setProductoId(""); setBusquedaProducto(""); setCantidad("1")
   }
@@ -1086,7 +1088,7 @@ thead th:last-child{text-align:right}
     if (!clienteId || carrito.length === 0) { mostrarToast("Faltan datos", "error"); return }
     for (const item of carrito) {
       const producto = productos.find(p => p.id === item.producto_id)
-      if (producto && item.cantidad > producto.stock) { mostrarToast("Sin stock para: " + item.nombre, "error"); return }
+      if (producto && !producto.excluir_stats && item.cantidad > producto.stock) { mostrarToast("Sin stock para: " + item.nombre, "error"); return }
     }
     setGuardando(true)
     try {
@@ -1122,7 +1124,9 @@ thead th:last-child{text-align:right}
             cantidad: item.cantidad,
             precio: precioEfectivo(item),
             bonificacion: item.bonificacion || 0,
-            costo_unitario: prod?.costo ?? 0,
+            // Guardamos el costo real del momento. Para productos excluidos de stats
+            // (saldos viejos) usamos el precio como costo → margen 0.
+            costo_unitario: prod?.excluir_stats ? precioEfectivo(item) : (prod?.costo ?? 0),
           }
         })
       )
