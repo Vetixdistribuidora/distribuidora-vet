@@ -6,11 +6,14 @@ import Link from "next/link"
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+import { getTema } from "@/lib/temas"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [usuario, setUsuario] = useState<any>(null)
   const [orgNombre, setOrgNombre] = useState<string>("VETIX")
+  const [tema, setTema] = useState<string>("")
+  const t = getTema(tema)
   const [sidebarAbierto, setSidebarAbierto] = useState(false)
   const router = useRouter()
   // Refs para acceder siempre al valor actualizado dentro del callback (evitar stale closure)
@@ -37,8 +40,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         if (usuarioIdRef.current === session.user.id) return
         usuarioIdRef.current = session.user.id
         setUsuario(session.user)
-        const { data: org } = await supabase.from("organizaciones").select("nombre").single()
-        if (org) setOrgNombre(org.nombre)
+        const { data: org } = await supabase.from("organizaciones").select("nombre, tema").single()
+        if (org) { setOrgNombre(org.nombre); setTema(org.tema || "") }
       }
     })
     return () => subscription.unsubscribe()
@@ -64,9 +67,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       fontSize: "14px",
       marginBottom: "6px",
       transition: "all 0.2s ease",
-      background: active ? "rgba(246,201,221,0.16)" : "transparent",
+      background: active ? t.activeBg : "transparent",
       color: active ? "white" : "#aeb9d4",
-      borderLeft: active ? "3px solid #f6c9dd" : "3px solid transparent",
+      borderLeft: active ? `3px solid ${t.accent}` : "3px solid transparent",
     }
   }
 
@@ -205,7 +208,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const SidebarContent = () => (
     <div style={{
       width: "230px",
-      background: "linear-gradient(180deg, #1d3461 0%, #15264a 60%, #101d3a 100%)",
+      background: t.sidebarBg,
       color: "white",
       height: "100vh",
       display: "flex",
@@ -345,7 +348,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <div style={{ borderTop: "1px solid #1f2937", padding: "14px 16px", display: "flex", alignItems: "center", gap: "10px" }}>
         <div style={{
           width: "34px", height: "34px", borderRadius: "50%",
-          background: "linear-gradient(135deg, #1d3461, #f6c9dd)",
+          background: t.grad,
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: "13px", fontWeight: "700", color: "white", flexShrink: 0,
         }}>
@@ -391,7 +394,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }
         `}</style>
       </head>
-      <body style={{ display: "flex" }}>
+      <body style={{ display: "flex", ["--accent" as any]: t.page, ["--accent-dark" as any]: t.pageDark, ["--accent-light" as any]: t.pageLight }}>
 
         {/* SIDEBAR desktop — fijo */}
         <aside className="desktop-sidebar" style={{ position: "sticky", top: 0, height: "100vh" }}>
@@ -441,9 +444,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
               <div style={{
                 width: "36px", height: "36px", borderRadius: "10px",
-                background: "linear-gradient(135deg, #1d3461, #15264a)",
+                background: t.grad,
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "16px", boxShadow: "0 2px 8px rgba(21,38,74,0.3)"
+                fontSize: "16px", boxShadow: `0 2px 8px ${t.glow}`
               }}>
                 {getPageIcon()}
               </div>
@@ -460,7 +463,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 onClick={() => window.location.reload()}
                 title="Actualizar app"
                 style={{
-                  background: hayActualizacion ? "linear-gradient(135deg,#1d3461,#15264a)" : "none",
+                  background: hayActualizacion ? t.grad : "none",
                   border: hayActualizacion ? "none" : "1px solid #e2e8f0",
                   borderRadius: "8px",
                   padding: hayActualizacion ? "0 12px" : "0",
@@ -490,7 +493,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           )}
 
           {/* CONTENT */}
-          <div className="main-content" style={{ padding: "30px", overflowY: "auto", flex: 1, background: "var(--rosa-bg)" }}>
+          <div className="main-content" style={{ padding: "30px", overflowY: "auto", flex: 1, background: t.pageBg }}>
             {children}
           </div>
         </main>

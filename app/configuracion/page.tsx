@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { TEMAS } from "@/lib/temas"
 
 function fmt(n: number) {
   return "$" + Math.round(n).toLocaleString("es-AR")
@@ -21,6 +22,8 @@ export default function ConfiguracionPage() {
   const [guardandoNombre, setGuardandoNombre] = useState(false)
   const [nombreEdit, setNombreEdit] = useState("")
   const [editandoNombre, setEditandoNombre] = useState(false)
+  const [orgId, setOrgId] = useState<number | null>(null)
+  const [temaSel, setTemaSel] = useState("rosa")
 
   useEffect(() => { cargar() }, [])
 
@@ -29,6 +32,10 @@ export default function ConfiguracionPage() {
     const { data: { user } } = await supabase.auth.getUser()
     setUsuario(user)
     if (!user?.email) { setLoading(false); return }
+
+    // Organización (para el color/tema del menú)
+    const { data: org } = await supabase.from("organizaciones").select("id, tema").maybeSingle()
+    if (org) { setOrgId(org.id); setTemaSel(org.tema || "rosa") }
 
     const { data } = await supabase
       .from("suscripciones")
@@ -81,6 +88,14 @@ export default function ConfiguracionPage() {
     } finally {
       setCreandoLink(false)
     }
+  }
+
+  async function guardarTema(key: string) {
+    if (!orgId) return
+    setTemaSel(key)
+    await supabase.from("organizaciones").update({ tema: key }).eq("id", orgId)
+    // Recargar para que el nuevo color se aplique en todo el layout
+    window.location.reload()
   }
 
   async function guardarNombre() {
@@ -275,6 +290,34 @@ export default function ConfiguracionPage() {
         )}
       </div>
       )}
+
+      {/* ── Color / tema del menú ────────────────────────────────────────────── */}
+      <div style={{
+        background: "white", border: "1px solid #e2e8f0",
+        borderRadius: 20, padding: "24px 28px", marginBottom: 20,
+        boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+      }}>
+        <h2 style={{ margin: "0 0 4px", color: "#0f172a", fontSize: 17, fontWeight: 700 }}>🎨 Color del menú</h2>
+        <p style={{ margin: "0 0 18px", color: "#64748b", fontSize: 13 }}>
+          Elegí la paleta del menú lateral y los acentos. Se aplica al instante (se recarga la página).
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          {Object.entries(TEMAS).map(([key, tm]) => {
+            const sel = temaSel === key
+            return (
+              <button key={key} onClick={() => guardarTema(key)} style={{
+                border: sel ? "2px solid #0f172a" : "1px solid #e2e8f0", borderRadius: 12, padding: 8,
+                background: "white", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 7, width: 96,
+              }}>
+                <span style={{ width: "100%", height: 38, borderRadius: 8, background: tm.sidebarBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ width: 18, height: 18, borderRadius: "50%", background: tm.accent }} />
+                </span>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a" }}>{tm.label}{sel ? " ✓" : ""}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
       {/* ── Cuenta ───────────────────────────────────────────────────────────── */}
       <div style={{

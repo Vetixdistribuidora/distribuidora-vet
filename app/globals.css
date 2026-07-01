@@ -10,6 +10,11 @@
   --rosa:        #f6c9dd;  /* rosa pastel acento */
   --rosa-soft:   #fbe4ee;  /* rosa pastel suave (fondos) */
   --rosa-bg:     #fbeaf2;  /* canvas de la app */
+
+  /* Acento de contenido — lo pisa el tema elegido (ver lib/temas.ts) */
+  --accent:       #1d3461;
+  --accent-dark:  #15264a;
+  --accent-light: #3f5f9e;
 }
 
 body {
