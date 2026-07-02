@@ -350,13 +350,19 @@ export default function Productos() {
     const XLSX = await import("xlsx")
     // Exporta lo que está filtrado (búsqueda + categoría); sin filtro = todos.
     // Incluye productos con y sin stock — no hace falta tenerlos para pasar precios.
-    const data = productosFiltrados.map(p => ({
+    // Ordenado por laboratorio y luego por nombre para que sea fácil de buscar.
+    const ordenados = [...productosFiltrados].sort((a, b) =>
+      (a.laboratorio || "").localeCompare(b.laboratorio || "", "es") ||
+      (a.nombre || "").localeCompare(b.nombre || "", "es")
+    )
+    const data = ordenados.map(p => ({
+      "Laboratorio": p.laboratorio || "",
       "Producto": p.nombre,
       "Precio Vet. ($)": Math.round(p.precio_venta * 1.30 * 100) / 100,
       "Precio Prod. ($)": Math.round(p.precio_venta * 1.58 * 100) / 100,
     }))
     const ws = XLSX.utils.json_to_sheet(data)
-    ws["!cols"] = [{ wch: 45 }, { wch: 16 }, { wch: 16 }]
+    ws["!cols"] = [{ wch: 22 }, { wch: 45 }, { wch: 16 }, { wch: 16 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Lista de Precios")
     XLSX.writeFile(wb, `lista_precios_${new Date().toISOString().slice(0, 10)}.xlsx`)
