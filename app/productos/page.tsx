@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
+import { exportarExcelVetix } from "@/lib/exportExcel"
 // XLSX se carga de forma diferida (lazy) — solo cuando el usuario hace click en exportar/importar
 
 function Toast({ mensaje, tipo }: { mensaje: string, tipo: "ok" | "error" }) {
@@ -324,49 +325,57 @@ export default function Productos() {
     }
   }
 
+  const MONEY = '"$"\\ #,##0.00'
+
   async function exportarStock() {
-    const XLSX = await import("xlsx")
     // Exporta lo que está filtrado (búsqueda + categoría); sin filtro = todos
-    const data = productosFiltrados.map(p => ({
-      "Nombre": p.nombre,
-      "Laboratorio": p.laboratorio || "",
-      "Precio Neto ($)": p.costo,
-      "IVA (%)": p.margen,
-      "Flete (%)": p.flete ?? 0,
-      "Costo ($)": p.costo,
-      "Precio Venta ($)": p.precio_venta,
-      "Stock (u.)": p.stock,
-      "Capital ($)": Math.round(p.precio_venta * p.stock * 100) / 100,
-    }))
-    const ws = XLSX.utils.json_to_sheet(data)
-    ws["!cols"] = [{ wch: 40 }, { wch: 22 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 14 }]
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, "Stock")
-    XLSX.writeFile(wb, `stock_${new Date().toISOString().slice(0, 10)}.xlsx`)
-    mostrarToast(`✅ ${data.length} producto${data.length !== 1 ? "s" : ""} exportado${data.length !== 1 ? "s" : ""}`, "ok")
+    const fecha = new Date().toISOString().slice(0, 10)
+    await exportarExcelVetix({
+      archivo: `Vetix Stock ${fecha}.xlsx`,
+      hoja: "Stock",
+      columnas: [
+        { header: "Producto", width: 60, align: "left" },
+        { header: "Laboratorio", width: 24, align: "center" },
+        { header: "Costo ($)", width: 15, align: "center", numFmt: MONEY },
+        { header: "IVA (%)", width: 10, align: "center" },
+        { header: "Flete (%)", width: 10, align: "center" },
+        { header: "Precio Venta ($)", width: 18, align: "center", numFmt: MONEY },
+        { header: "Stock (u.)", width: 12, align: "center" },
+        { header: "Capital ($)", width: 16, align: "center", numFmt: MONEY },
+      ],
+      filas: productosFiltrados.map(p => [
+        p.nombre, p.laboratorio || "", Number(p.costo) || 0, Number(p.margen) || 0,
+        Number(p.flete ?? 0), Number(p.precio_venta) || 0, Number(p.stock) || 0,
+        Math.round((Number(p.precio_venta) || 0) * (Number(p.stock) || 0) * 100) / 100,
+      ]),
+    })
+    mostrarToast(`✅ ${productosFiltrados.length} producto${productosFiltrados.length !== 1 ? "s" : ""} exportado${productosFiltrados.length !== 1 ? "s" : ""}`, "ok")
   }
 
   async function exportarListaPrecios() {
-    const XLSX = await import("xlsx")
-    // Exporta lo que está filtrado (búsqueda + categoría); sin filtro = todos.
-    // Incluye productos con y sin stock — no hace falta tenerlos para pasar precios.
+    // Exporta lo filtrado; incluye productos con y sin stock.
     // Ordenado por laboratorio y luego por nombre para que sea fácil de buscar.
     const ordenados = [...productosFiltrados].sort((a, b) =>
       (a.laboratorio || "").localeCompare(b.laboratorio || "", "es") ||
       (a.nombre || "").localeCompare(b.nombre || "", "es")
     )
-    const data = ordenados.map(p => ({
-      "Laboratorio": p.laboratorio || "",
-      "Producto": p.nombre,
-      "Precio Vet. ($)": Math.round(p.precio_venta * 1.30 * 100) / 100,
-      "Precio Prod. ($)": Math.round(p.precio_venta * 1.58 * 100) / 100,
-    }))
-    const ws = XLSX.utils.json_to_sheet(data)
-    ws["!cols"] = [{ wch: 22 }, { wch: 45 }, { wch: 16 }, { wch: 16 }]
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, "Lista de Precios")
-    XLSX.writeFile(wb, `lista_precios_${new Date().toISOString().slice(0, 10)}.xlsx`)
-    mostrarToast(`✅ ${data.length} precio${data.length !== 1 ? "s" : ""} exportado${data.length !== 1 ? "s" : ""}`, "ok")
+    const fecha = new Date().toISOString().slice(0, 10)
+    await exportarExcelVetix({
+      archivo: `Vetix Lista de Precios ${fecha}.xlsx`,
+      hoja: "Lista de Precios",
+      columnas: [
+        { header: "Laboratorio", width: 24, align: "center" },
+        { header: "Producto", width: 62, align: "left" },
+        { header: "Precio Vet. ($)", width: 17, align: "center", numFmt: MONEY },
+        { header: "Precio Prod. ($)", width: 17, align: "center", numFmt: MONEY },
+      ],
+      filas: ordenados.map(p => [
+        p.laboratorio || "", p.nombre,
+        Math.round((Number(p.precio_venta) || 0) * 1.30 * 100) / 100,
+        Math.round((Number(p.precio_venta) || 0) * 1.58 * 100) / 100,
+      ]),
+    })
+    mostrarToast(`✅ ${ordenados.length} precio${ordenados.length !== 1 ? "s" : ""} exportado${ordenados.length !== 1 ? "s" : ""}`, "ok")
   }
 
   async function cargar() {
