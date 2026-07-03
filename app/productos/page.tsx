@@ -234,6 +234,7 @@ export default function Productos() {
   const [colNombre, setColNombre] = useState("")
   const [colCosto, setColCosto] = useState("")
   const [colLaboratorio, setColLaboratorio] = useState("")
+  const [labsExcluidos, setLabsExcluidos] = useState<Set<string>>(new Set())
   const [rawRows, setRawRows] = useState<any[]>([])
   const [laboratorio, setLaboratorio] = useState("")
   const [fleteProducto, setFleteProducto] = useState("")
@@ -570,7 +571,7 @@ export default function Productos() {
 
   async function leerArchivo(file: File) {
     setArchivo(file)
-    setColumnas([]); setColNombre(""); setColCosto(""); setColLaboratorio(""); setRawRows([]); setPreview([])
+    setColumnas([]); setColNombre(""); setColCosto(""); setColLaboratorio(""); setRawRows([]); setPreview([]); setLabsExcluidos(new Set())
     try {
       const data = await file.arrayBuffer()
       let rows: any[] = []
@@ -616,7 +617,45 @@ export default function Productos() {
         costo: parsePrecio(r[colCosto]),
         laboratorio: colLaboratorio ? String(r[colLaboratorio] || "").trim() : "",
       }))
-      .filter(r => r.nombre && !isNaN(r.costo))
+      .filter(r => r.nombre && !isNaN(r.costo) && !labsExcluidos.has(r.laboratorio))
+  }
+
+  // Laboratorios presentes en el archivo importado (con cantidad de filas)
+  function labsDelArchivo(): { lab: string; count: number }[] {
+    if (!colLaboratorio) return []
+    const m = new Map<string, number>()
+    for (const r of rawRows) {
+      const lab = String(r[colLaboratorio] || "").trim()
+      m.set(lab, (m.get(lab) || 0) + 1)
+    }
+    return [...m.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "es"))
+      .map(([lab, count]) => ({ lab, count }))
+  }
+
+  function toggleLab(lab: string) {
+    setLabsExcluidos(prev => {
+      const n = new Set(prev)
+      if (n.has(lab)) n.delete(lab); else n.add(lab)
+      return n
+    })
+    setPreview([])
+  }
+
+  // Descarga el Excel con SOLO los laboratorios elegidos, conservando las columnas originales
+  async function descargarExcelFiltrado() {
+    const XLSX = await import("xlsx")
+    const filtradas = rawRows.filter(r => {
+      const lab = colLaboratorio ? String(r[colLaboratorio] || "").trim() : ""
+      return !labsExcluidos.has(lab)
+    })
+    if (filtradas.length === 0) { mostrarToast("⚠️ No quedan filas con los laboratorios elegidos", "error"); return }
+    const ws = XLSX.utils.json_to_sheet(filtradas)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Filtrado")
+    const base = (archivo?.name || "lista").replace(/\.[^.]+$/, "")
+    XLSX.writeFile(wb, `${base}_filtrado.xlsx`)
+    mostrarToast(`✅ ${filtradas.length} filas exportadas`, "ok")
   }
 
   function contarDescartados() {
@@ -970,7 +1009,7 @@ export default function Productos() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
                 <div>
                   <label style={labelStyle}>Columna de laboratorio</label>
-                  <select value={colLaboratorio} onChange={e => { setColLaboratorio(e.target.value); setPreview([]) }}
+                  <select value={colLaboratorio} onChange={e => { setColLaboratorio(e.target.value); setPreview([]); setLabsExcluidos(new Set()) }}
                     style={{ width: "100%", padding: "9px 12px", background: "#1e293b", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "white", fontSize: 13, outline: "none", cursor: "pointer" }}>
                     <option value="" style={{ background: "#1e293b", color: "white" }}>— ninguna —</option>
                     {columnas.map(c => <option key={c} value={c} style={{ background: "#1e293b", color: "white" }}>{c}</option>)}
@@ -1010,6 +1049,49 @@ export default function Productos() {
             </div>
           )}
 
+          {/* Selector de laboratorios a importar */}
+          {colLaboratorio && rawRows.length > 0 && (() => {
+            const labs = labsDelArchivo()
+            const incluidos = labs.filter(l => !labsExcluidos.has(l.lab))
+            return (
+              <div style={{ marginBottom: 14, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                  <p style={{ ...labelStyle, margin: 0 }}>
+                    Laboratorios a importar — <b style={{ color: "#4ade80" }}>{incluidos.length}</b>/{labs.length}
+                  </p>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => { setLabsExcluidos(new Set()); setPreview([]) }}
+                      style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, color: "#cbd5e1", padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Incluir todos</button>
+                    <button onClick={() => { setLabsExcluidos(new Set(labs.map(l => l.lab))); setPreview([]) }}
+                      style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, color: "#cbd5e1", padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Excluir todos</button>
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 170, overflowY: "auto" }}>
+                  {labs.map(({ lab, count }) => {
+                    const on = !labsExcluidos.has(lab)
+                    return (
+                      <button key={lab || "(vacío)"} onClick={() => toggleLab(lab)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 20, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                          border: on ? "1px solid rgba(74,222,128,0.5)" : "1px solid rgba(255,255,255,0.1)",
+                          background: on ? "rgba(74,222,128,0.12)" : "rgba(255,255,255,0.03)",
+                          color: on ? "#4ade80" : "#6b7280",
+                          textDecoration: on ? "none" : "line-through",
+                        }}>
+                        <span>{on ? "✓" : "✕"}</span>
+                        <span>{lab || "(sin laboratorio)"}</span>
+                        <span style={{ opacity: 0.7, fontSize: 11 }}>· {count}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <p style={{ fontSize: 11, color: "#6b7280", marginTop: 8 }}>
+                  Tocá un laboratorio para incluirlo/excluirlo. Solo se importan (y se actualizan precios de) los que estén en verde.
+                </p>
+              </div>
+            )
+          })()}
+
           {/* Preview and action */}
           {colNombre && colCosto && (() => {
             const mapped = previsualizarMapeo()
@@ -1031,8 +1113,13 @@ export default function Productos() {
                       </span>
                     )}
                   </span>
+                  <button onClick={descargarExcelFiltrado} disabled={importando || mapped.length === 0}
+                    title="Descarga un Excel con solo los laboratorios elegidos, para revisarlo o guardarlo"
+                    style={{ marginLeft: "auto", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, color: "#cbd5e1", padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: mapped.length > 0 ? "pointer" : "not-allowed", opacity: mapped.length === 0 || importando ? 0.5 : 1 }}>
+                    ⬇️ Excel filtrado
+                  </button>
                   <button onClick={importarConMapeo} disabled={importando || mapped.length === 0 || !margenImportacion}
-                    style={{ marginLeft: "auto", background: mapped.length > 0 && margenImportacion ? "linear-gradient(135deg, #16a34a, #22c55e)" : "rgba(255,255,255,0.05)", border: "none", borderRadius: 8, color: "white", padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: mapped.length > 0 && margenImportacion ? "pointer" : "not-allowed", opacity: importando ? 0.6 : 1 }}>
+                    style={{ background: mapped.length > 0 && margenImportacion ? "linear-gradient(135deg, #16a34a, #22c55e)" : "rgba(255,255,255,0.05)", border: "none", borderRadius: 8, color: "white", padding: "9px 20px", fontSize: 13, fontWeight: 700, cursor: mapped.length > 0 && margenImportacion ? "pointer" : "not-allowed", opacity: importando ? 0.6 : 1 }}>
                     {importando ? `Importando... ${progreso}%` : `📥 Importar ${mapped.length} productos`}
                   </button>
                 </div>
