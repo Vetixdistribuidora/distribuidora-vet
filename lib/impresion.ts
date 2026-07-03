@@ -160,7 +160,8 @@ export function imprimirReciboCobroMasivo(
   nota?: string,
   saldoTotalCliente?: number,
   creditoAplicado?: number,
-  cheques?: ChequeRecibo[]
+  cheques?: ChequeRecibo[],
+  creditoGenerado?: number
 ) {
   const logoUrl = window.location.origin + "/logo.png"
   const fecha = new Date().toLocaleDateString("es-AR")
@@ -235,6 +236,7 @@ export function imprimirReciboCobroMasivo(
       <p class="total-pagado-monto">${f(totalCobrado)}</p>
     </div>
     ${Number(creditoAplicado || 0) > 0 ? `<div style="margin-top:8px;background:#e7f5ff;border:1px solid #1971c2;border-radius:8px;padding:10px 16px;text-align:left;font-size:12px;"><p style="margin:0 0 3px;color:#555;display:flex;justify-content:space-between;"><span>Nota de crédito aplicada:</span><span style="font-weight:700;color:#1971c2;">${f(Number(creditoAplicado))}</span></p><p style="margin:0;color:#555;display:flex;justify-content:space-between;"><span>Efectivo recibido:</span><span style="font-weight:700;color:#2f9e44;">${f(Math.max(0, totalCobrado - Number(creditoAplicado)))}</span></p></div>` : ""}
+    ${creditoGenerado && creditoGenerado > 0 ? `<div class="saldo-box" style="margin-top:8px;background:#e7f5ff;border:1px solid #1971c2;color:#1971c2;"><p class="saldo-label">💚 Saldo a favor generado: ${f(Number(creditoGenerado))}</p></div>` : ""}
   </div></div>
   <div class="firma-box">
     <div class="firma-linea">Firma y aclaración<br/><span style="font-size:10px;color:#aaa;">Cliente</span></div>

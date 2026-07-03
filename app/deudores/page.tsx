@@ -48,7 +48,7 @@ export default function Deudores() {
   const [procesando, setProcesando] = useState(false)
   const [errorCobro, setErrorCobro] = useState<string | null>(null)
   const [exitoCobro, setExitoCobro] = useState<string | null>(null)
-  const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string; saldoTotal?: number; creditoAplicado?: number; cheques?: any[] } | null>(null)
+  const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string; saldoTotal?: number; creditoAplicado?: number; cheques?: any[]; creditoGenerado?: number } | null>(null)
   const [facturasSeleccionadas, setFacturasSeleccionadas] = useState<Set<number>>(new Set())
   // Saldo a favor del cliente (notas de crédito por devolución)
   const [usarSaldo, setUsarSaldo] = useState(false)
@@ -177,6 +177,9 @@ export default function Deudores() {
 
   // Efectivo a cobrar en modo selección = suma de facturas seleccionadas − crédito a favor (si se usa)
   function recomputarMontoCobro(sel: Set<number>, facturas: any[], usarCred: boolean) {
+    // Si se paga con cheque(s), el monto lo fija el cheque (no la selección de facturas):
+    // así el excedente sobre las facturas elegidas queda como saldo a favor.
+    if (chequesSelCobro.length > 0) return
     if (sel.size === 0) { setMontoCobro(""); return }
     const suma = facturas.filter(f => sel.has(f.id)).reduce((s, f) => s + f.saldo, 0)
     const credito = usarCred ? (Number(modalCobro?.creditoDisponible) || 0) : 0
@@ -202,10 +205,18 @@ export default function Deudores() {
     })
   }
 
-  function calcularPreviewSeleccionado(facturas: any[], seleccionadas: Set<number>) {
+  // Distribuye `monto` sobre las facturas SELECCIONADAS (en orden). Si el monto
+  // alcanza para todas, quedan pagadas; lo que sobra se maneja como saldo a favor.
+  // Si no alcanza, la última queda parcial. Si no se pasa monto, paga todas (compat).
+  function calcularPreviewSeleccionado(facturas: any[], seleccionadas: Set<number>, monto?: number) {
+    let restante = monto == null ? Infinity : monto
     return facturas.map(f => {
       if (!seleccionadas.has(f.id)) return { ...f, pago: 0, resultado: "sin_cambio" }
-      return { ...f, pago: Math.round(f.saldo * 100) / 100, resultado: "pagado" }
+      const saldo = Math.round(f.saldo * 100) / 100
+      if (restante <= 0) return { ...f, pago: 0, resultado: "sin_cambio" }
+      const pago = Math.min(restante, saldo)
+      restante = restante === Infinity ? Infinity : Math.round((restante - pago) * 100) / 100
+      return { ...f, pago: Math.round(pago * 100) / 100, resultado: pago >= saldo - 0.01 ? "pagado" : "parcial" }
     })
   }
 
@@ -231,7 +242,7 @@ export default function Deudores() {
     setErrorCobro(null)
 
     const preview = facturasSeleccionadas.size > 0
-      ? calcularPreviewSeleccionado(modalCobro.facturas, facturasSeleccionadas)
+      ? calcularPreviewSeleccionado(modalCobro.facturas, facturasSeleccionadas, monto + creditoDisp)
       : calcularPreview(modalCobro.facturas, monto + creditoDisp)
     const afectadas = preview.filter((f: any) => f.pago > 0)
 
@@ -327,6 +338,16 @@ export default function Deudores() {
         }
       }
 
+      // Excedente: si el efectivo/cheque recibido supera lo aplicado a las facturas,
+      // la diferencia queda como saldo a favor del cliente (reutilizable), no se pierde.
+      const exceso = Math.max(0, Math.round((monto - totalCash) * 100) / 100)
+      if (exceso > 0) {
+        await supabase.from("saldo_clientes").insert({
+          cliente_id: modalCobro.cliente_id, monto: exceso,
+          notas: `Excedente de cobro — Recibo ${nroReciboBase}`,
+        })
+      }
+
       // Enlazar los cheques usados a este recibo (un cobro general = un nro de recibo)
       if (chequesCobro.length > 0) {
         await supabase.from("pago_cheques").insert(
@@ -351,6 +372,7 @@ export default function Deudores() {
         nota: notaCobro.trim() || undefined,
         saldoTotal: saldoTotalCliente,
         cheques: chequesCobro,
+        creditoGenerado: exceso,
       }
       setUltimoRecibo(datosRecibo)
 
@@ -363,14 +385,16 @@ export default function Deudores() {
         notaCobro.trim() || undefined,
         saldoTotalCliente,
         totalCredito,
-        chequesParaRecibo(chequesCobro)
+        chequesParaRecibo(chequesCobro),
+        exceso
       )
 
       setExitoCobro(
         `✅ ${fmt(totalCobrado)} aplicado.` +
         (totalCredito > 0 ? ` Nota de crédito usada: ${fmt(totalCredito)}.` : "") +
         (saldadas > 0 ? ` ${saldadas} factura${saldadas !== 1 ? "s" : ""} saldada${saldadas !== 1 ? "s" : ""}.` : "") +
-        (parciales > 0 ? ` ${parciales} parcial.` : "")
+        (parciales > 0 ? ` ${parciales} parcial.` : "") +
+        (exceso > 0 ? ` ${fmt(exceso)} quedó a favor.` : "")
       )
       setMontoCobro("")
       setUsarSaldo(false)
@@ -574,7 +598,7 @@ export default function Deudores() {
                 <div style={{ color: "#4ade80", fontSize: 13, padding: "10px 14px" }}>{exitoCobro}</div>
                 {ultimoRecibo && (
                   <button
-                    onClick={() => imprimirReciboCobroMasivo(ultimoRecibo.totalCobrado, ultimoRecibo.nroReciboBase, ultimoRecibo.afectadas, ultimoRecibo.cliente, ultimoRecibo.nota, ultimoRecibo.saldoTotal, ultimoRecibo.creditoAplicado, chequesParaRecibo(ultimoRecibo.cheques))}
+                    onClick={() => imprimirReciboCobroMasivo(ultimoRecibo.totalCobrado, ultimoRecibo.nroReciboBase, ultimoRecibo.afectadas, ultimoRecibo.cliente, ultimoRecibo.nota, ultimoRecibo.saldoTotal, ultimoRecibo.creditoAplicado, chequesParaRecibo(ultimoRecibo.cheques), ultimoRecibo.creditoGenerado)}
                     style={{ width: "100%", padding: "8px 14px", background: "rgba(34,197,94,0.15)", border: "none", borderTop: "1px solid rgba(34,197,94,0.2)", color: "#4ade80", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "center" }}>
                     🖨️ Reimprimir recibo
                   </button>
@@ -674,8 +698,9 @@ export default function Deudores() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
                   {(() => {
                     const monto = parseFloat(montoCobro.replace(",", ".")) || 0
+                    const credDisp = usarSaldo ? (Number(modalCobro.creditoDisponible) || 0) : 0
                     const preview = facturasSeleccionadas.size > 0
-                      ? calcularPreviewSeleccionado(modalCobro.facturas, facturasSeleccionadas)
+                      ? calcularPreviewSeleccionado(modalCobro.facturas, facturasSeleccionadas, monto + credDisp)
                       : monto > 0
                         ? calcularPreview(modalCobro.facturas, monto)
                         : modalCobro.facturas.map((f: any) => ({ ...f, pago: 0, resultado: "sin_cambio" }))
@@ -733,12 +758,13 @@ export default function Deudores() {
                   if (monto <= 0 && creditoDisp <= 0) return null
                   const seleccion = facturasSeleccionadas.size > 0
                   const preview = seleccion
-                    ? calcularPreviewSeleccionado(modalCobro.facturas, facturasSeleccionadas)
+                    ? calcularPreviewSeleccionado(modalCobro.facturas, facturasSeleccionadas, monto + creditoDisp)
                     : calcularPreview(modalCobro.facturas, monto + creditoDisp)
                   const totalAplicado = preview.reduce((s: number, f: any) => s + f.pago, 0)
                   const creditoUsado = Math.min(creditoDisp, totalAplicado)
                   const cashReal = Math.max(0, Math.round((totalAplicado - creditoUsado) * 100) / 100)
-                  const excedente = seleccion ? 0 : Math.max(0, Math.round((monto + creditoDisp - totalAplicado) * 100) / 100)
+                  // Excedente (efectivo/cheque que sobra de lo aplicado) → queda como saldo a favor
+                  const excedente = Math.max(0, Math.round((monto + creditoDisp - totalAplicado) * 100) / 100)
                   const saldadas = preview.filter((f: any) => f.resultado === "pagado").length
                   const parciales = preview.filter((f: any) => f.resultado === "parcial").length
                   return (
@@ -778,8 +804,8 @@ export default function Deudores() {
                       </div>
                       {excedente > 0 && (
                         <div style={{ display: "flex", justifyContent: "space-between", color: "#9ca3af" }}>
-                          <span>Excedente (supera la deuda):</span>
-                          <span style={{ color: "#f87171", fontWeight: 700 }}>{fmt(excedente)}</span>
+                          <span>💚 Excedente → saldo a favor:</span>
+                          <span style={{ color: "#4ade80", fontWeight: 700 }}>{fmt(excedente)}</span>
                         </div>
                       )}
                     </div>
