@@ -377,13 +377,13 @@ export default function ComprasPage() {
         });
         if (errorDetalle) throw new Error("Error en detalle de " + it.nombre + ": " + errorDetalle.message);
 
-        await supabase.from("lotes").insert({
+        const { error: errorLote } = await supabase.from("lotes").insert({
           producto_id: it.producto_id,
           cantidad: cantidadTotal,       // lote con todas las unidades recibidas
           fecha_vencimiento: it.fecha_vencimiento || null,
           compra_id: compra.id,
-          nro_remito: form.numero_remito || null,
         });
+        if (errorLote) throw new Error("Error en lote de " + it.nombre + ": " + errorLote.message);
 
         const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single();
         await supabase.from("productos").update({ stock: (prod?.stock ?? 0) + cantidadTotal }).eq("id", it.producto_id);

@@ -498,7 +498,7 @@ thead th:last-child{text-align:right}
         const qty = ncCantidades[it.producto_id] || 0
         const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
         if (prod) await supabase.from("productos").update({ stock: (prod.stock || 0) + qty }).eq("id", it.producto_id)
-        await supabase.from("lotes").insert({ producto_id: it.producto_id, cantidad: qty, fecha_vencimiento: null, nro_remito: "NC " + nroNota })
+        // (No se crea lote acá: la restauración de stock por nota de crédito se refleja en productos.stock)
       }
 
       // Descontar de la venta original
@@ -532,7 +532,6 @@ thead th:last-child{text-align:right}
         const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
         if (prod) await supabase.from("productos").update({ stock: Math.max(0, (prod.stock || 0) - it.cantidad) }).eq("id", it.producto_id)
       }
-      await supabase.from("lotes").delete().eq("nro_remito", "NC " + nc.nro_nota)
       // Restaurar total de la venta original
       const { data: ventaOrig } = await supabase.from("ventas").select("total, estado, cliente_id").eq("id", nc.venta_id).single()
       if (ventaOrig) {
@@ -776,7 +775,6 @@ thead th:last-child{text-align:right}
             const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
             if (prod) await supabase.from("productos").update({ stock: Math.max(0, (prod.stock || 0) - it.cantidad) }).eq("id", it.producto_id)
           }
-          await supabase.from("lotes").delete().eq("nro_remito", "NC " + nc.nro_nota)
         }
         await supabase.from("notas_credito").update({ estado: "anulada" }).eq("venta_id", confirmAnular.id)
       }
@@ -826,7 +824,6 @@ thead th:last-child{text-align:right}
             const { data: prod } = await supabase.from("productos").select("stock").eq("id", it.producto_id).single()
             if (prod) await supabase.from("productos").update({ stock: Math.max(0, (prod.stock || 0) - it.cantidad) }).eq("id", it.producto_id)
           }
-          await supabase.from("lotes").delete().eq("nro_remito", "NC " + nc.nro_nota)
         }
         await supabase.from("notas_credito").update({ estado: "anulada" }).eq("venta_id", confirmEliminarVenta.id)
       }
