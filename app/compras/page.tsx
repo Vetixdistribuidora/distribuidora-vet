@@ -1404,7 +1404,7 @@ export default function ComprasPage() {
               {formPago.metodo_pago === "Cheque" && (
                 <div style={{ marginBottom: 14 }}>
                   <label style={labelStyle}>Cheque(s) a entregar</label>
-                  <SelectorCheque value={chequesSelCompra} onChange={arr => { setChequesSelCompra(arr); if (arr.length) setFormPago(fp => ({ ...fp, monto: String(arr.reduce((s, c) => s + Number(c.monto_ingresado), 0)) })); }} />
+                  <SelectorCheque contexto="proveedor" value={chequesSelCompra} onChange={arr => { setChequesSelCompra(arr); if (arr.length) setFormPago(fp => ({ ...fp, monto: String(arr.reduce((s, c) => s + Number(c.monto_ingresado), 0)) })); }} />
                 </div>
               )}
               <div style={{ marginBottom: 24 }}>

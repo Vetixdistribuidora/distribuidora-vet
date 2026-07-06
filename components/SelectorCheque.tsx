@@ -34,9 +34,13 @@ function fmtFecha(f?: string) {
  * cheques (se van sumando). Excluye los rechazados, los marcados como pagados y
  * los que ya fueron usados en otro pago. Se usa en Cuentas y Deudores.
  */
-export function SelectorCheque({ value, onChange }: {
+export function SelectorCheque({ value, onChange, contexto = "cliente" }: {
   value: ChequeLite[]
   onChange: (cheques: ChequeLite[]) => void
+  // "cliente" (cobros): excluye cheques ya cobrados a un cliente o endosados a proveedor.
+  // "proveedor" (endoso): solo excluye los ya endosados a un proveedor — un cheque cobrado
+  // a un cliente sigue en tus manos y se puede endosar a un proveedor.
+  contexto?: "cliente" | "proveedor"
 }) {
   const [cheques, setCheques] = useState<ChequeLite[]>([])
   const [busq, setBusq] = useState("")
@@ -56,12 +60,15 @@ export function SelectorCheque({ value, onChange }: {
         supabase.from("pagos_cuenta_corriente").select("cheque_id").not("cheque_id", "is", null),
         supabase.from("compra_cheques").select("cheque_id"),
       ])
-      // Cheques ya usados: en cobros a clientes (pago_cheques + cheque_id viejo)
-      // o en pagos a proveedores (compra_cheques)
+      // Un cheque endosado a un proveedor (compra_cheques) SIEMPRE se excluye: ya no lo tenés.
       const usados = new Set<number>()
-      if (!pcRes.error && pcRes.data) pcRes.data.forEach((r: any) => usados.add(r.cheque_id))
-      if (!pgRes.error && pgRes.data) pgRes.data.forEach((r: any) => usados.add(r.cheque_id))
       if (!ccRes.error && ccRes.data) ccRes.data.forEach((r: any) => usados.add(r.cheque_id))
+      // Los cobrados a un cliente (pago_cheques + cheque_id viejo) solo se excluyen en
+      // cobros a clientes; para endosar a un proveedor siguen disponibles.
+      if (contexto === "cliente") {
+        if (!pcRes.error && pcRes.data) pcRes.data.forEach((r: any) => usados.add(r.cheque_id))
+        if (!pgRes.error && pgRes.data) pgRes.data.forEach((r: any) => usados.add(r.cheque_id))
+      }
       if (cancel) return
       setCheques((chRes.data || []).filter((c: any) => !usados.has(c.id)))
       setCargando(false)

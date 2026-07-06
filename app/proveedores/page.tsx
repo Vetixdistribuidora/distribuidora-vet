@@ -766,7 +766,7 @@ export default function ProveedoresPage() {
               {metodoPago === "Cheque" && (
                 <div style={{ marginTop: 14 }}>
                   <label style={labelStyle}>Cheque(s) a entregar</label>
-                  <SelectorCheque value={chequesSelProv} onChange={arr => { setChequesSelProv(arr); if (arr.length) setMontoPago(String(arr.reduce((s, c) => s + Number(c.monto_ingresado), 0))); }} />
+                  <SelectorCheque contexto="proveedor" value={chequesSelProv} onChange={arr => { setChequesSelProv(arr); if (arr.length) setMontoPago(String(arr.reduce((s, c) => s + Number(c.monto_ingresado), 0))); }} />
                 </div>
               )}
             </div>
