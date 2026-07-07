@@ -632,11 +632,16 @@ thead th:last-child{text-align:right}
     const clienteObj = b ? (b.cliente_id ? clientes.find((c: any) => c.id === b.cliente_id) || null : null) : borrClienteObj
     if (items.length === 0) { mostrarToast("⚠️ El borrador no tiene productos", "error"); return }
     const porcentajeCliente = clienteObj?.porcentaje || 0
+    let algunoActualizado = false
     setCarrito(items.map((it: any) => {
       const prod = productos.find((p: any) => p.id === it.producto_id)
+      // Usar SIEMPRE el precio actual del producto (no el guardado en el borrador),
+      // así una actualización de la lista de precios se refleja y no se vende con precio viejo.
+      const precioBase = prod?.precio_venta ?? it.precio
+      if (prod && Math.abs(Number(prod.precio_venta) - Number(it.precio)) > 0.01) algunoActualizado = true
       const precioFinal = porcentajeCliente > 0
-        ? Math.round((it.precio * (1 + porcentajeCliente / 100)) * 100) / 100
-        : it.precio
+        ? Math.round((precioBase * (1 + porcentajeCliente / 100)) * 100) / 100
+        : precioBase
       return {
         producto_id: it.producto_id, nombre: it.nombre,
         precio: precioFinal, cantidad: it.cantidad, bonificacion: it.bonificacion || 0,
@@ -653,7 +658,9 @@ thead th:last-child{text-align:right}
     }
     cerrarBorrador()
     setTab("nueva")
-    mostrarToast("✅ Pedido cargado — revisá y confirmá la venta", "ok")
+    mostrarToast(algunoActualizado
+      ? "✅ Pedido cargado — se actualizaron precios a la lista actual. Revisá y confirmá."
+      : "✅ Pedido cargado — revisá y confirmá la venta", "ok")
   }
   // ────────────────────────────────────────────────────────────────────────────
 

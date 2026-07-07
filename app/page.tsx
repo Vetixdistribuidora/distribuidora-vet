@@ -98,7 +98,7 @@ export default function Dashboard() {
       supabase.from("lotes_con_stock").select("*")
         .lte("fecha_vencimiento", en90Str).order("fecha_vencimiento", { ascending: true }),
       supabase.from("ventas")
-        .select("id, total, nro_factura, fecha, clientes(nombre, apellido)")
+        .select("id, total, nro_factura, fecha, estado, metodo_cobro, clientes(nombre, apellido)")
         .eq("estado", "cuenta_corriente").order("id", { ascending: false }),
       supabase.from("ventas")
         .select("id, total, nro_factura, fecha, estado, metodo_cobro, clientes(nombre, apellido)")
