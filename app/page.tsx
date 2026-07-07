@@ -194,6 +194,21 @@ export default function Dashboard() {
     const gananciaReal = Math.round(mesCalc.ganancia * 100) / 100
     const margen = realTotalMes > 0 ? (gananciaReal / realTotalMes) * 100 : 0
 
+    // ── Cuentas corrientes REALES: saldo pendiente (total − pagos) de las ventas
+    //    que SIGUEN en cuenta corriente. No incluye las ya saldadas ni la parte ya
+    //    pagada de las parciales (el RPC contaba de más e iba creciendo siempre).
+    const ccVentas = ccRes.data || []
+    const ccIds = ccVentas.map((v: any) => v.id)
+    const pagosCC: Record<number, number> = {}
+    for (let i = 0; i < ccIds.length; i += 300) {
+      const { data } = await supabase.from("pagos_cuenta_corriente").select("venta_id, monto").in("venta_id", ccIds.slice(i, i + 300))
+      ;(data || []).forEach((p: any) => { pagosCC[p.venta_id] = (pagosCC[p.venta_id] || 0) + Number(p.monto) })
+    }
+    const ccConSaldo = ccVentas
+      .map((v: any) => ({ ...v, saldo: Math.round((Number(v.total) - (pagosCC[v.id] || 0)) * 100) / 100 }))
+      .filter((v: any) => v.saldo > 0.01)
+    const totalCCReal = Math.round(ccConSaldo.reduce((s: number, v: any) => s + v.saldo, 0) * 100) / 100
+
     setKpis({
       totalHoy: Number(k.total_hoy), cantidadHoy: Number(k.cant_hoy),
       totalMes: realTotalMes, cantidadVentas: Number(k.cant_mes),
@@ -201,7 +216,7 @@ export default function Dashboard() {
       crecimiento, ticketPromedio: Number(k.ticket_promedio),
       capitalStock: Number(k.capital_stock),
       totalComprasMes: Number(k.total_compras_mes),
-      totalCC: Number(k.total_cc), cantidadCC: Number(k.cant_cc),
+      totalCC: totalCCReal, cantidadCC: ccConSaldo.length,
       cobradoHoy, cobradoMes,
     })
 
@@ -219,7 +234,7 @@ export default function Dashboard() {
 
     // ── Listas para modales ───────────────────────────────────────────────────
     setLotesPorVencer(lotesRes.data || [])
-    setCcPendientes(ccRes.data || [])
+    setCcPendientes(ccConSaldo)
     setVentasHoyLista(ventasHoyData)
     setVentasMesLista(ventasMesData)
 
@@ -533,7 +548,7 @@ export default function Dashboard() {
                 </p>
                 {ccPendientes.length === 0 ? (
                   <p style={{ color: "#4ade80", fontSize: 14 }}>✓ No hay cuentas corrientes pendientes</p>
-                ) : [...ccPendientes].sort((a, b) => Number(b.total) - Number(a.total)).map((v: any) => (
+                ) : [...ccPendientes].sort((a, b) => Number(b.saldo ?? b.total) - Number(a.saldo ?? a.total)).map((v: any) => (
                   <div key={v.id}
                     onClick={() => verDetalleVenta(v)}
                     style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8, marginBottom: 6, border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}
@@ -549,7 +564,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ color: "#f87171", fontWeight: 700, fontSize: 14 }}>{fmtExacto(v.total)}</div>
+                      <div style={{ color: "#f87171", fontWeight: 700, fontSize: 14 }}>{fmtExacto(v.saldo ?? v.total)}</div>
                       <div style={{ color: "#3b82f6", fontSize: 10, marginTop: 2 }}>Ver detalle →</div>
                     </div>
                   </div>
