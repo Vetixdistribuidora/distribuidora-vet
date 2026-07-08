@@ -619,7 +619,7 @@ export default function Deudores() {
                 <div>
                   <div style={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>💚 Usar nota de crédito / saldo a favor: {fmt(modalCobro.creditoDisponible)}</div>
                   {usarSaldo && <div style={{ color: "#86efac", fontSize: 11, marginTop: 2 }}>
-                    {facturasSeleccionadas.size > 0 ? "Cubre las facturas seleccionadas; el resto lo cobrás en efectivo" : "Se aplica al cobro automáticamente"}
+                    ⚠️ Este monto se suma solo, aparte de lo que pongas abajo. Si solo querés usar el crédito, dejá "Monto cobrado" en 0.
                   </div>}
                 </div>
               </div>
@@ -628,12 +628,12 @@ export default function Deudores() {
             {/* Inputs */}
             <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
               <div>
-                <label style={labelStyle}>Monto cobrado</label>
+                <label style={labelStyle}>{usarSaldo ? "Monto cobrado (además del crédito, dejá 0 si no hay más)" : "Monto cobrado"}</label>
                 <input
                   type="number" min="0" step="0.01"
                   value={montoCobro}
                   onChange={e => { setMontoCobro(e.target.value); setErrorCobro(null); setExitoCobro(null) }}
-                  placeholder={`Máx: ${fmt(modalCobro.totalDeuda)}`}
+                  placeholder={usarSaldo ? "0" : `Máx: ${fmt(modalCobro.totalDeuda)}`}
                   style={inputDarkStyle}
                   autoFocus
                 />
