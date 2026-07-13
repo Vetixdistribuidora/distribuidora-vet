@@ -294,6 +294,9 @@ export default function Ventas() {
     const f = (n: number) => "$" + n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const cliente = nc.clientes || {}
     const nroVenta = nc.ventas?.nro_factura ?? nc.venta_id ?? "-"
+    const subtotalNC = items.reduce((acc: number, it: any) => acc + Number(it.cantidad) * Number(it.precio), 0)
+    const ivaPctRaw = subtotalNC > 0 ? Math.round((Number(nc.total) / subtotalNC - 1) * 100) : 0
+    const ivaPct = ivaPctRaw > 0 ? ivaPctRaw : 0
     const filas = items.map((it: any) =>
       `<tr>
         <td style="padding:7px 10px;font-size:12px;color:#111;border-bottom:1px solid #f0f0f0;text-align:left;">${it.nombre || "-"}</td>
@@ -372,6 +375,7 @@ thead th:last-child{text-align:right}
     <tbody>${filas}</tbody>
   </table>
   <div class="total-box"><div class="total-inner">
+    ${ivaPct > 0 ? `<p><span>Subtotal</span><span>${f(subtotalNC)}</span></p><p><span>IVA (${ivaPct}%)</span><span>${f(Number(nc.total) - subtotalNC)}</span></p>` : ""}
     <h2><span>Total acreditado</span><span>${f(Number(nc.total))}</span></h2>
     <p style="color:#6b7280;font-size:11px;margin-top:4px;">Importe descontado del comprobante original</p>
   </div></div>
@@ -474,7 +478,20 @@ thead th:last-child{text-align:right}
         nroNota = "NC-" + String(Number(nroNotaData)).padStart(5, "0")
       }
 
-      const totalNC = itemsDevueltos.reduce((acc: number, it: any) => acc + it.precio * (ncCantidades[it.producto_id] || 0), 0)
+      // Los precios en detalle_ventas/items son SIN IVA (el IVA se aplica una sola vez
+      // sobre el subtotal, ver `total` de ventas). Para que la NC acredite lo mismo que
+      // se le facturó al cliente, hay que sumarle el mismo % de IVA de la venta original.
+      const subtotalNC = itemsDevueltos.reduce((acc: number, it: any) => acc + it.precio * (ncCantidades[it.producto_id] || 0), 0)
+      let ivaNum = 21
+      const { data: fi } = await supabase.from("facturas_impresion").select("datos").eq("venta_id", modalNC.venta.id).order("id", { ascending: false }).limit(1).maybeSingle()
+      if (fi?.datos?.ivaNum != null) {
+        ivaNum = Number(fi.datos.ivaNum)
+      } else {
+        const subtotalVenta = modalNC.items.reduce((acc: number, it: any) => acc + Math.max(0, it.cantidad - (it.bonificacion || 0)) * it.precio, 0)
+        const ivaRaw = subtotalVenta > 0 ? Math.round((Number(modalNC.venta.total) / subtotalVenta - 1) * 100) : 21
+        ivaNum = (ivaRaw >= 0 && ivaRaw <= 30) ? ivaRaw : 21
+      }
+      const totalNC = Math.round(subtotalNC * (1 + ivaNum / 100) * 100) / 100
       const ncItemsData = itemsDevueltos.map((it: any) => ({
         producto_id: it.producto_id,
         nombre: it.productos?.nombre || "",
@@ -509,7 +526,10 @@ thead th:last-child{text-align:right}
         const { data: ultimo } = await supabase.from("cuentas_corrientes").select("id, saldo").eq("cliente_id", modalNC.venta.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
         if (ultimo) {
           const nuevoSaldoCC = Math.max(0, Number(ultimo.saldo) - totalNC)
-          await supabase.from("cuentas_corrientes").insert({ cliente_id: modalNC.venta.cliente_id, tipo: "nota_credito", monto: -totalNC, saldo: nuevoSaldoCC, venta_id: modalNC.venta.id, fecha: new Date() })
+          // tipo "pago" porque cuentas_corrientes tiene un constraint que solo permite 'venta'/'pago'
+          // (insertar 'nota_credito' viola el constraint y falla en silencio); el detalle de que es
+          // una nota de crédito queda en la tabla notas_credito.
+          await supabase.from("cuentas_corrientes").insert({ cliente_id: modalNC.venta.cliente_id, tipo: "pago", monto: -totalNC, saldo: nuevoSaldoCC, venta_id: modalNC.venta.id, fecha: new Date() })
         }
       }
 
@@ -541,7 +561,9 @@ thead th:last-child{text-align:right}
           const { data: ultimo } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", ventaOrig.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
           if (ultimo) {
             const nuevoSaldoCC = Number(ultimo.saldo) + Number(nc.total)
-            await supabase.from("cuentas_corrientes").insert({ cliente_id: ventaOrig.cliente_id, tipo: "anulacion_nc", monto: Number(nc.total), saldo: nuevoSaldoCC, venta_id: nc.venta_id, fecha: new Date() })
+            // tipo "venta" porque cuentas_corrientes tiene un constraint que solo permite 'venta'/'pago',
+            // y esta entrada aumenta el saldo (como una venta) en vez de disminuirlo
+            await supabase.from("cuentas_corrientes").insert({ cliente_id: ventaOrig.cliente_id, tipo: "venta", monto: Number(nc.total), saldo: nuevoSaldoCC, venta_id: nc.venta_id, fecha: new Date() })
           }
         }
       }
@@ -802,7 +824,9 @@ thead th:last-child{text-align:right}
           const { data: ultimo } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", confirmAnular.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
           const saldoActualCC = Number(ultimo?.saldo || 0)
           const nuevoSaldo = Math.max(0, saldoActualCC - saldoPendiente)
-          await supabase.from("cuentas_corrientes").insert({ cliente_id: confirmAnular.cliente_id, tipo: "anulacion", monto: -saldoPendiente, saldo: nuevoSaldo, venta_id: confirmAnular.id, fecha: new Date() })
+          // tipo "pago" porque cuentas_corrientes tiene un constraint que solo permite 'venta'/'pago'
+          // (insertar 'anulacion' viola el constraint y falla en silencio)
+          await supabase.from("cuentas_corrientes").insert({ cliente_id: confirmAnular.cliente_id, tipo: "pago", monto: -saldoPendiente, saldo: nuevoSaldo, venta_id: confirmAnular.id, fecha: new Date() })
         }
       }
       await supabase.from("ventas").update({ estado: "anulada" }).eq("id", confirmAnular.id)

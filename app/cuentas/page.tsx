@@ -268,7 +268,10 @@ export default function CuentasCorrientes() {
       let saldoCC = Number(ultimoCC?.saldo ?? 0)
       if (montoDesc > 0) {
         saldoCC = Math.max(0, saldoCC - montoDesc)
-        await supabase.from("cuentas_corrientes").insert({ cliente_id: clienteActivo.id, venta_id: ventaPago.id, tipo: "descuento", monto: -montoDesc, saldo: saldoCC, fecha: new Date() })
+        // tipo "pago" porque cuentas_corrientes tiene un constraint que solo permite 'venta'/'pago'
+        // (insertar 'descuento' viola el constraint y falla en silencio); el detalle de que fue
+        // un descuento queda en la nota del pago (pagos_cuenta_corriente).
+        await supabase.from("cuentas_corrientes").insert({ cliente_id: clienteActivo.id, venta_id: ventaPago.id, tipo: "pago", monto: -montoDesc, saldo: saldoCC, fecha: new Date() })
       }
       if (aplicado > 0) {
         saldoCC = Math.max(0, saldoCC - aplicado)
