@@ -1171,12 +1171,15 @@ thead th:last-child{text-align:right}
         await supabase.from("cuentas_corrientes").insert({ cliente_id: Number(clienteId), tipo: "venta", monto: total, saldo: nuevoSaldo, venta_id: venta.id, fecha: new Date() })
       }
       for (const item of carrito) {
-        const producto = productos.find(p => p.id === item.producto_id)
-        if (!producto) continue
+        if (!item.producto_id) continue
         // Leer el stock FRESCO de la base antes de descontar (evita pisar stock que cambió
-        // por una compra u otra venta mientras esta página estaba abierta con datos viejos)
+        // por una compra u otra venta mientras esta página estaba abierta con datos viejos).
+        // Importante: NO depender del array local `productos` para decidir si descontar —
+        // si el producto no estaba cargado en memoria, el descuento se salteaba en silencio
+        // y el stock quedaba inflado. Nos basamos en la existencia del registro en la base.
         const { data: prodFresh } = await supabase.from("productos").select("stock").eq("id", item.producto_id).single()
-        const stockActual = Number(prodFresh?.stock ?? producto.stock)
+        if (!prodFresh) continue
+        const stockActual = Number(prodFresh.stock ?? 0)
         await supabase.from("productos").update({ stock: Math.max(0, stockActual - item.cantidad) }).eq("id", item.producto_id)
         let cantidadRestante = item.cantidad
         const { data: lotes } = await supabase.from("lotes").select("id, cantidad").eq("producto_id", item.producto_id).gt("cantidad", 0).order("fecha_vencimiento", { ascending: true })
