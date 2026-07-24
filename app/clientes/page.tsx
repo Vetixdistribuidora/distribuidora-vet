@@ -4,6 +4,16 @@ import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { generarHTMLEImprimir, imprimirReciboCC } from "@/lib/impresion"
 import { getSaldoCliente } from "@/lib/saldo"
+import { FormasDePago } from "@/components/FormasDePago"
+import {
+  FormaPago, nuevaFormaPago, totalFormas, montoForma,
+  chequesDeFormas, repartirPago, resumenPorMetodo, Fuente,
+} from "@/lib/formasPago"
+
+// Construye los objetos cheque para el recibo a partir de cheques (tabla cheques)
+function chequesParaRecibo(arr?: any[]) {
+  return (arr || []).map((c: any) => ({ numero: c.numero, tipo: c.tipo, banco: c.banco, fecha: c.fecha, monto: Number(c.monto_ingresado ?? c.monto ?? 0) }))
+}
 
 function fmt(num: number) {
   return "$" + Number(num).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -84,9 +94,8 @@ export default function Clientes() {
 
   const [modalPago, setModalPago] = useState(false)
   const [ventaParaPagar, setVentaParaPagar] = useState<any>(null)
-  const [montoPago, setMontoPago] = useState("")
+  const [formasPago, setFormasPago] = useState<FormaPago[]>([nuevaFormaPago("efectivo")])
   const [notaPago, setNotaPago] = useState("")
-  const [metodoPago, setMetodoPago] = useState("efectivo")
   const [guardandoPago, setGuardandoPago] = useState(false)
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
@@ -254,13 +263,13 @@ export default function Clientes() {
   }
 
   function abrirPago(venta: any) {
-    setVentaParaPagar(venta); setMontoPago(String(venta.saldo)); setNotaPago(""); setMetodoPago("efectivo"); setModalPago(true)
+    setVentaParaPagar(venta); setFormasPago([{ ...nuevaFormaPago("efectivo"), monto: venta.saldo }]); setNotaPago(""); setModalPago(true)
   }
 
   async function registrarPago() {
-    if (!montoPago || Number(montoPago) <= 0) { mostrarToast("Ingresá un monto válido", "error"); return }
-    const monto = Number(montoPago)
-    if (monto > ventaParaPagar.saldo) { mostrarToast("El monto supera el saldo pendiente", "error"); return }
+    const monto = totalFormas(formasPago)
+    if (monto <= 0) { mostrarToast("Agregá al menos una forma de pago", "error"); return }
+    if (monto > ventaParaPagar.saldo + 0.01) { mostrarToast("El monto supera el saldo pendiente", "error"); return }
     setGuardandoPago(true)
     try {
       // Generar nro_recibo usando la secuencia atómica
@@ -279,10 +288,24 @@ export default function Clientes() {
       } else {
         nroRecibo = "001-" + String(Number(nroData)).padStart(6, "0")
       }
-      const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
-        cliente_id: modalHistorial.id, venta_id: ventaParaPagar.id, monto, metodo_pago: metodoPago || null, nota: notaPago || null, nro_recibo: nroRecibo
-      }])
-      if (error) { mostrarToast("Error: " + error.message, "error"); return }
+      // Repartir el pago entre las formas (una fila por método) → Caja y saldo exactos
+      const chequesUsados = chequesDeFormas(formasPago)
+      const fuentes: Fuente[] = []
+      for (const fp of formasPago) { const m = montoForma(fp); if (m > 0) fuentes.push({ metodo: fp.metodo, disponible: m }) }
+      const filasPago = repartirPago([{ id: ventaParaPagar.id, pago: monto }], fuentes)
+      const formasResumen = resumenPorMetodo(filasPago)
+      for (const fila of filasPago) {
+        const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
+          cliente_id: modalHistorial.id, venta_id: ventaParaPagar.id, monto: fila.monto, metodo_pago: fila.metodo, nota: notaPago || null, nro_recibo: nroRecibo
+        }])
+        if (error) { mostrarToast("Error: " + error.message, "error"); return }
+      }
+      // Enlazar los cheques usados a este recibo
+      if (chequesUsados.length > 0) {
+        await supabase.from("pago_cheques").insert(
+          chequesUsados.map(c => ({ nro_recibo: nroRecibo, cheque_id: c.id, cliente_id: modalHistorial.id }))
+        )
+      }
       // Registrar movimiento en cuentas_corrientes para mantener el saldo sincronizado
       const { data: ultimoCC } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", modalHistorial.id).order("id", { ascending: false }).limit(1).maybeSingle()
       let saldoBase = Number(ultimoCC?.saldo || 0)
@@ -304,7 +327,10 @@ export default function Clientes() {
         ventaParaPagar,
         modalHistorial,
         ventaParaPagar.saldo,
-        saldoTotalClientePago
+        saldoTotalClientePago,
+        chequesParaRecibo(chequesUsados),
+        undefined,
+        formasResumen
       )
       setModalPago(false); setVentaParaPagar(null)
       // Recargar solo el historial del cliente y recalcular deudas (sin refetch de toda la lista)
@@ -713,38 +739,18 @@ export default function Clientes() {
               <div><div style={{ fontSize: 11, color: "#6b7280" }}>Total</div><div style={{ fontSize: 16, fontWeight: 800, color: "white" }}>{fmt(ventaParaPagar.total)}</div></div>
               <div style={{ textAlign: "right" }}><div style={{ fontSize: 11, color: "#6b7280" }}>Saldo</div><div style={{ fontSize: 16, fontWeight: 800, color: "#fbbf24" }}>{fmt(ventaParaPagar.saldo)}</div></div>
             </div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              {[25, 50, 75, 100].map(pct => {
-                const val = Math.round(ventaParaPagar.saldo * pct / 100)
-                return (
-                  <button key={pct} onClick={() => setMontoPago(String(val))} style={{
-                    flex: 1, padding: "7px 0", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8,
-                    background: Number(montoPago) === val ? "#3b82f6" : "rgba(255,255,255,0.05)",
-                    color: Number(montoPago) === val ? "white" : "#9ca3af",
-                    fontSize: 12, fontWeight: 600, cursor: "pointer"
-                  }}>{pct}%</button>
-                )
-              })}
-            </div>
             <div style={{ marginBottom: 12 }}>
-              <label style={labelStyle}>Monto</label>
-              <input type="number" value={montoPago} onChange={e => setMontoPago(e.target.value)} style={inputDarkStyle} />
-              {Number(montoPago) > 0 && (
-                <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: Number(montoPago) >= ventaParaPagar.saldo ? "#4ade80" : "#fbbf24" }}>
-                  {Number(montoPago) >= ventaParaPagar.saldo ? "✓ Salda la deuda completa" : `Quedarán ${fmt(ventaParaPagar.saldo - Number(montoPago))} pendientes`}
+              <FormasDePago
+                value={formasPago}
+                onChange={setFormasPago}
+                montoObjetivo={ventaParaPagar.saldo}
+                disabled={guardandoPago}
+              />
+              {totalFormas(formasPago) > 0 && (
+                <div style={{ fontSize: 11, marginTop: 8, fontWeight: 600, color: totalFormas(formasPago) >= ventaParaPagar.saldo - 0.01 ? "#4ade80" : "#fbbf24" }}>
+                  {totalFormas(formasPago) >= ventaParaPagar.saldo - 0.01 ? "✓ Salda la deuda completa" : `Quedarán ${fmt(ventaParaPagar.saldo - totalFormas(formasPago))} pendientes`}
                 </div>
               )}
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={labelStyle}>Método de pago</label>
-              <select value={metodoPago} onChange={e => setMetodoPago(e.target.value)} style={{ ...inputDarkStyle, cursor: "pointer", background: "#1e293b" }}>
-                <option value="efectivo" style={{ color: "#000" }}>Efectivo</option>
-                <option value="transferencia" style={{ color: "#000" }}>Transferencia</option>
-                <option value="cheque" style={{ color: "#000" }}>Cheque</option>
-                <option value="echeq" style={{ color: "#000" }}>E-Cheq</option>
-                <option value="tarjeta" style={{ color: "#000" }}>Tarjeta</option>
-                <option value="otro" style={{ color: "#000" }}>Otro</option>
-              </select>
             </div>
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Nota (opcional)</label>
@@ -752,7 +758,7 @@ export default function Clientes() {
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => { setModalPago(false); setVentaParaPagar(null) }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
-              <button onClick={registrarPago} disabled={guardandoPago || !montoPago || Number(montoPago) <= 0} style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardandoPago || !montoPago || Number(montoPago) <= 0 ? 0.5 : 1 }}>
+              <button onClick={registrarPago} disabled={guardandoPago || totalFormas(formasPago) <= 0} style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardandoPago || totalFormas(formasPago) <= 0 ? 0.5 : 1 }}>
                 {guardandoPago ? "Guardando..." : "Confirmar pago"}
               </button>
             </div>

@@ -4,7 +4,11 @@ import { useEffect, useState, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
 import { imprimirReciboCC, imprimirReciboCobroMasivo } from "@/lib/impresion"
 import { getSaldoCliente } from "@/lib/saldo"
-import { SelectorCheque, ChequeLite } from "@/components/SelectorCheque"
+import { FormasDePago } from "@/components/FormasDePago"
+import {
+  FormaPago, nuevaFormaPago, totalFormas, montoForma,
+  chequesDeFormas, repartirPago, resumenPorMetodo, Fuente,
+} from "@/lib/formasPago"
 
 // Construye los objetos cheque para el recibo a partir de cheques (tabla cheques)
 function chequesParaRecibo(arr?: any[]) {
@@ -57,13 +61,11 @@ export default function CuentasCorrientes() {
   const [vistaMovil, setVistaMovil] = useState<"lista" | "detalle">("lista")
 
   const [ventaPago, setVentaPago] = useState<any>(null)
-  const [montoPago, setMontoPago] = useState("")
-  const [metodoPago, setMetodoPago] = useState("efectivo")
+  const [formasPago, setFormasPago] = useState<FormaPago[]>([nuevaFormaPago("efectivo")])
   const [notaPago, setNotaPago] = useState("")
   const [descuentoPago, setDescuentoPago] = useState("")
   const [descuentoTipo, setDescuentoTipo] = useState<"pct" | "pesos">("pct")
   const [guardando, setGuardando] = useState(false)
-  const [chequesSel, setChequesSel] = useState<ChequeLite[]>([])
 
   function mostrarToast(mensaje: string, tipo: "ok" | "error") {
     setToast({ mensaje, tipo })
@@ -199,7 +201,7 @@ export default function CuentasCorrientes() {
 
   async function registrarPago() {
     if (!ventaPago) { mostrarToast("Seleccioná una factura", "error"); return }
-    const monto = Number(montoPago) || 0
+    const monto = totalFormas(formasPago)   // total recibido entre todas las formas de pago
     const descVal = Number(descuentoPago) || 0
     // El descuento perdona parte del saldo (en % o en pesos). Nunca puede superar el saldo.
     const montoDescBruto = descuentoTipo === "pesos"
@@ -246,15 +248,23 @@ export default function CuentasCorrientes() {
         exceso > 0 ? `Recibido ${fmt(monto)} — ${fmt(exceso)} a saldo a favor` : null,
       ].filter(Boolean).join(" | ") || null
 
-      // ¿Pago con cheque(s)? (solo si el método es cheque/echeq y se eligió alguno)
-      const chequesUsados = (metodoPago === "cheque" || metodoPago === "echeq") ? chequesSel : []
+      // Cheques de todas las formas cheque/e-cheq (para enlazar al recibo)
+      const chequesUsados = chequesDeFormas(formasPago)
+      // Repartir lo aplicado a la factura entre las formas de pago (en orden).
+      // Una fila por método → así la Caja y el saldo quedan exactos.
+      const fuentes: Fuente[] = []
+      for (const fp of formasPago) { const m = montoForma(fp); if (m > 0) fuentes.push({ metodo: fp.metodo, disponible: m }) }
+      const filasPago = repartirPago([{ id: ventaPago.id, pago: aplicado }], fuentes)
+      const formasResumen = resumenPorMetodo(filasPago)
       // Registrar el pago imputado a la factura (solo la parte que cancela deuda)
       if (aplicado > 0) {
-        const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
-          cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto: aplicado,
-          metodo_pago: metodoPago || null, nota: notaFinal, nro_recibo: nroRecibo,
-        }])
-        if (error) { mostrarToast("Error: " + error.message, "error"); return }
+        for (const fila of filasPago) {
+          const { error } = await supabase.from("pagos_cuenta_corriente").insert([{
+            cliente_id: clienteActivo.id, venta_id: ventaPago.id, monto: fila.monto,
+            metodo_pago: fila.metodo, nota: notaFinal, nro_recibo: nroRecibo,
+          }])
+          if (error) { mostrarToast("Error: " + error.message, "error"); return }
+        }
       }
       // Enlazar los cheques usados a este recibo
       if (chequesUsados.length > 0) {
@@ -298,10 +308,11 @@ export default function CuentasCorrientes() {
           ventaPago.saldo,
           saldoTotalCliente,
           chequesParaRecibo(chequesUsados),
-          exceso
+          exceso,
+          formasResumen
         )
       }
-      setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct"); setChequesSel([])
+      setVentaPago(null); setFormasPago([nuevaFormaPago("efectivo")]); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct")
       await cargarVentas(clienteActivo.id)
       await calcularResumen(clientes)
     } catch (e: any) {
@@ -347,6 +358,11 @@ export default function CuentasCorrientes() {
       const creditoAplicado = Math.round(grupo.filter(p => p.metodo_pago === "otro").reduce((s, p) => s + Number(p.monto), 0) * 100) / 100
       const nota = grupo.map(p => p.nota).find(Boolean) || undefined
       const cheques = grupo.map(p => p._cheques).find((a: any) => a && a.length) || []
+      // Desglose por método (excluye "otro" = nota de crédito, que se muestra aparte)
+      const formasResumen = resumenPorMetodo(
+        grupo.filter(p => p.metodo_pago && p.metodo_pago !== "otro")
+          .map(p => ({ venta_id: p.venta_id, metodo: p.metodo_pago, monto: Number(p.monto) }))
+      )
 
       const porVenta: Record<number, any[]> = {}
       grupo.forEach(p => { (porVenta[p.venta_id] ||= []).push(p) })
@@ -370,7 +386,7 @@ export default function CuentasCorrientes() {
         }
       })
 
-      return { fechaMin, fechaRef, nroReciboBase, totalCobrado, creditoAplicado, nota, cheques, afectadas }
+      return { fechaMin, fechaRef, nroReciboBase, totalCobrado, creditoAplicado, nota, cheques, afectadas, formasResumen }
     }).sort((a, b) => b.fechaMin - a.fechaMin)
   }, [ventas])
 
@@ -378,7 +394,7 @@ export default function CuentasCorrientes() {
     const saldoTotalCliente = clienteActivo ? await getSaldoCliente(clienteActivo.id) : 0
     imprimirReciboCobroMasivo(
       r.totalCobrado, r.nroReciboBase, r.afectadas, clienteActivo,
-      r.nota, saldoTotalCliente, r.creditoAplicado, chequesParaRecibo(r.cheques)
+      r.nota, saldoTotalCliente, r.creditoAplicado, chequesParaRecibo(r.cheques), undefined, r.formasResumen
     )
   }
 
@@ -387,7 +403,7 @@ export default function CuentasCorrientes() {
     .filter(c => (c.nombre + " " + c.apellido).toLowerCase().includes(busqueda.toLowerCase()))
   const deudaTotal = Object.values(resumen).reduce((s, r) => s + r.deuda, 0)
   const pendientesList = ventas.filter(v => v.estado === "cuenta_corriente" && v.saldo > 0)
-  const montoInput = Number(montoPago)
+  const montoInput = totalFormas(formasPago)
   const descValInput = Number(descuentoPago) || 0
   const montoDescInput = (() => {
     if (!ventaPago || descValInput <= 0) return 0
@@ -604,7 +620,7 @@ export default function CuentasCorrientes() {
                                   ))}
                                 </div>
                               )}
-                              <button onClick={() => { setVentaPago(v); setMontoPago(String(v.saldo)); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct"); setMetodoPago("efectivo"); setChequesSel([]) }}
+                              <button onClick={() => { setVentaPago(v); setFormasPago([{ ...nuevaFormaPago("efectivo"), monto: v.saldo }]); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct") }}
                                 style={{ width: "100%", marginTop: 12, padding: "10px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 9, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                                 + Registrar pago
                               </button>
@@ -713,7 +729,7 @@ export default function CuentasCorrientes() {
       {/* Modal pago */}
       {ventaPago && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}
-          onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct"); setChequesSel([]) }}>
+          onClick={() => { setVentaPago(null); setFormasPago([nuevaFormaPago("efectivo")]); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct") }}>
           <div style={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "32px 28px", width: "100%", maxWidth: 400, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}
             onClick={e => e.stopPropagation()}>
             <h2 style={{ color: "white", fontSize: 17, fontWeight: 700, margin: "0 0 4px" }}>Registrar pago</h2>
@@ -722,31 +738,6 @@ export default function CuentasCorrientes() {
               <div><div style={{ fontSize: 11, color: "#6b7280" }}>Total</div><div style={{ fontSize: 16, fontWeight: 800, color: "white" }}>{fmt(ventaPago.total)}</div></div>
               <div style={{ textAlign: "right" }}><div style={{ fontSize: 11, color: "#6b7280" }}>Saldo</div><div style={{ fontSize: 16, fontWeight: 800, color: "#fbbf24" }}>{fmt(ventaPago.saldo)}</div></div>
             </div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              {[25, 50, 75, 100].map(pct => {
-                const val = Math.round(saldoPagableInput * pct / 100)
-                return (
-                  <button key={pct} onClick={() => setMontoPago(String(val))} style={{
-                    flex: 1, padding: "7px 0", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8,
-                    background: montoInput === val ? "#3b82f6" : "rgba(255,255,255,0.05)",
-                    color: montoInput === val ? "white" : "#9ca3af",
-                    fontSize: 12, fontWeight: 600, cursor: "pointer"
-                  }}>{pct}%</button>
-                )
-              })}
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={labelStyle}>Monto</label>
-              <input type="number" value={montoPago} onChange={e => setMontoPago(e.target.value)} style={inputDarkStyle} />
-              {(montoInput + montoDescInput) > 0 && (
-                <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: (montoInput + montoDescInput) >= ventaPago.saldo - 0.01 ? "#4ade80" : "#fbbf24" }}>
-                  {(montoInput + montoDescInput) >= ventaPago.saldo - 0.01
-                    ? (excesoInput > 0 ? `✓ Salda la deuda · ${fmt(excesoInput)} queda a favor` : "✓ Salda la deuda completa")
-                    : `Quedarán ${fmt(ventaPago.saldo - montoInput - montoDescInput)} pendientes`}
-                </div>
-              )}
-            </div>
-
             {/* Descuento por pronto pago — en % o en pesos */}
             <div style={{ marginBottom: 12 }}>
               <label style={labelStyle}>Descuento (opcional)</label>
@@ -778,28 +769,26 @@ export default function CuentasCorrientes() {
               )}
             </div>
             <div style={{ marginBottom: 12 }}>
-              <label style={labelStyle}>Método de pago</label>
-              <select value={metodoPago} onChange={e => setMetodoPago(e.target.value)} style={{ ...inputDarkStyle, cursor: "pointer", background: "#1e293b" }}>
-                <option value="efectivo" style={{ color: "#000" }}>Efectivo</option>
-                <option value="transferencia" style={{ color: "#000" }}>Transferencia</option>
-                <option value="cheque" style={{ color: "#000" }}>Cheque</option>
-                <option value="echeq" style={{ color: "#000" }}>E-Cheq</option>
-                <option value="tarjeta" style={{ color: "#000" }}>Tarjeta</option>
-                <option value="otro" style={{ color: "#000" }}>Otro</option>
-              </select>
+              <FormasDePago
+                value={formasPago}
+                onChange={setFormasPago}
+                montoObjetivo={saldoPagableInput}
+                disabled={guardando}
+              />
+              {(montoInput + montoDescInput) > 0 && (
+                <div style={{ fontSize: 11, marginTop: 8, fontWeight: 600, color: (montoInput + montoDescInput) >= ventaPago.saldo - 0.01 ? "#4ade80" : "#fbbf24" }}>
+                  {(montoInput + montoDescInput) >= ventaPago.saldo - 0.01
+                    ? (excesoInput > 0 ? `✓ Salda la deuda · ${fmt(excesoInput)} queda a favor` : "✓ Salda la deuda completa")
+                    : `Quedarán ${fmt(ventaPago.saldo - montoInput - montoDescInput)} pendientes`}
+                </div>
+              )}
             </div>
-            {(metodoPago === "cheque" || metodoPago === "echeq") && (
-              <div style={{ marginBottom: 12 }}>
-                <label style={labelStyle}>Cheque(s) recibido(s)</label>
-                <SelectorCheque value={chequesSel} onChange={arr => { setChequesSel(arr); if (arr.length) setMontoPago(String(arr.reduce((s, c) => s + Number(c.monto_ingresado), 0))) }} />
-              </div>
-            )}
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Nota (opcional)</label>
               <input type="text" value={notaPago} onChange={e => setNotaPago(e.target.value)} placeholder="Ej: transferencia mayo, banco Galicia..." style={inputDarkStyle} />
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => { setVentaPago(null); setMontoPago(""); setNotaPago(""); setMetodoPago("efectivo"); setDescuentoPago(""); setDescuentoTipo("pct"); setChequesSel([]) }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
+              <button onClick={() => { setVentaPago(null); setFormasPago([nuevaFormaPago("efectivo")]); setNotaPago(""); setDescuentoPago(""); setDescuentoTipo("pct") }} style={{ flex: 1, padding: "11px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#9ca3af", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
               <button onClick={registrarPago} disabled={guardando || (montoInput <= 0 && montoDescInput <= 0)} style={{ flex: 2, padding: "11px", background: "linear-gradient(135deg, #16a34a, #22c55e)", border: "none", borderRadius: 10, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: guardando || (montoInput <= 0 && montoDescInput <= 0) ? 0.5 : 1 }}>
                 {guardando ? "Guardando..." : "Confirmar pago"}
               </button>

@@ -34,13 +34,15 @@ function fmtFecha(f?: string) {
  * cheques (se van sumando). Excluye los rechazados, los marcados como pagados y
  * los que ya fueron usados en otro pago. Se usa en Cuentas y Deudores.
  */
-export function SelectorCheque({ value, onChange, contexto = "cliente" }: {
+export function SelectorCheque({ value, onChange, contexto = "cliente", excluirIds = [] }: {
   value: ChequeLite[]
   onChange: (cheques: ChequeLite[]) => void
   // "cliente" (cobros): excluye cheques ya cobrados a un cliente o endosados a proveedor.
   // "proveedor" (endoso): solo excluye los ya endosados a un proveedor — un cheque cobrado
   // a un cliente sigue en tus manos y se puede endosar a un proveedor.
   contexto?: "cliente" | "proveedor"
+  // IDs de cheques ya elegidos en OTRO renglón del mismo cobro (evita elegir el mismo dos veces).
+  excluirIds?: number[]
 }) {
   const [cheques, setCheques] = useState<ChequeLite[]>([])
   const [busq, setBusq] = useState("")
@@ -76,7 +78,7 @@ export function SelectorCheque({ value, onChange, contexto = "cliente" }: {
     return () => { cancel = true }
   }, [])
 
-  const selIds = new Set(value.map(c => c.id))
+  const selIds = new Set([...value.map(c => c.id), ...excluirIds])
   const t = busq.trim().toLowerCase()
   const disponibles = cheques.filter(c =>
     !selIds.has(c.id) && (!t ||

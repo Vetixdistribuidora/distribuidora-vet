@@ -4,7 +4,11 @@ import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { imprimirReciboCobroMasivo } from "@/lib/impresion"
 import { getSaldoCliente } from "@/lib/saldo"
-import { SelectorCheque, ChequeLite } from "@/components/SelectorCheque"
+import { FormasDePago } from "@/components/FormasDePago"
+import {
+  FormaPago, nuevaFormaPago, totalFormas, montoForma,
+  chequesDeFormas, repartirPago, resumenPorMetodo, Fuente,
+} from "@/lib/formasPago"
 
 function chequesParaRecibo(arr?: any[]) {
   return (arr || []).map((c: any) => ({ numero: c.numero, tipo: c.tipo, banco: c.banco, fecha: c.fecha, monto: Number(c.monto_ingresado ?? c.monto ?? 0) }))
@@ -41,14 +45,12 @@ export default function Deudores() {
 
   // ── Modal cobro masivo ──────────────────────────────────────────────────────
   const [modalCobro, setModalCobro] = useState<any | null>(null)
-  const [montoCobro, setMontoCobro] = useState("")
-  const [metodoCobro, setMetodoCobro] = useState("efectivo")
-  const [chequesSelCobro, setChequesSelCobro] = useState<ChequeLite[]>([])
+  const [formasPago, setFormasPago] = useState<FormaPago[]>([nuevaFormaPago("efectivo")])
   const [notaCobro, setNotaCobro] = useState("")
   const [procesando, setProcesando] = useState(false)
   const [errorCobro, setErrorCobro] = useState<string | null>(null)
   const [exitoCobro, setExitoCobro] = useState<string | null>(null)
-  const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string; saldoTotal?: number; creditoAplicado?: number; cheques?: any[]; creditoGenerado?: number } | null>(null)
+  const [ultimoRecibo, setUltimoRecibo] = useState<{ totalCobrado: number; nroReciboBase: string; afectadas: any[]; cliente: any; nota?: string; saldoTotal?: number; creditoAplicado?: number; cheques?: any[]; creditoGenerado?: number; formasResumen?: { metodo: string; monto: number }[] } | null>(null)
   const [facturasSeleccionadas, setFacturasSeleccionadas] = useState<Set<number>>(new Set())
   // Saldo a favor del cliente (notas de crédito por devolución)
   const [usarSaldo, setUsarSaldo] = useState(false)
@@ -153,8 +155,7 @@ export default function Deudores() {
   // ── Cobro masivo ────────────────────────────────────────────────────────────
   function abrirCobro(d: any) {
     setModalCobro(d)
-    setMontoCobro("")
-    setMetodoCobro("efectivo")
+    setFormasPago([nuevaFormaPago("efectivo")])
     setNotaCobro("")
     setErrorCobro(null)
     setExitoCobro(null)
@@ -164,45 +165,39 @@ export default function Deudores() {
 
   function cerrarCobro() {
     setModalCobro(null)
-    setMontoCobro("")
+    setFormasPago([nuevaFormaPago("efectivo")])
     setNotaCobro("")
     setErrorCobro(null)
     setExitoCobro(null)
     setUltimoRecibo(null)
     setFacturasSeleccionadas(new Set())
     setUsarSaldo(false)
-    setMetodoCobro("efectivo")
-    setChequesSelCobro([])
-  }
-
-  // Efectivo a cobrar en modo selección = suma de facturas seleccionadas − crédito a favor (si se usa)
-  function recomputarMontoCobro(sel: Set<number>, facturas: any[], usarCred: boolean) {
-    // Si se paga con cheque(s), el monto lo fija el cheque (no la selección de facturas):
-    // así el excedente sobre las facturas elegidas queda como saldo a favor.
-    if (chequesSelCobro.length > 0) return
-    if (sel.size === 0) { setMontoCobro(""); return }
-    const suma = facturas.filter(f => sel.has(f.id)).reduce((s, f) => s + f.saldo, 0)
-    const credito = usarCred ? (Number(modalCobro?.creditoDisponible) || 0) : 0
-    setMontoCobro(String(Math.max(0, Math.round((suma - credito) * 100) / 100)))
   }
 
   function toggleSaldoCobro() {
-    const nuevo = !usarSaldo
-    setUsarSaldo(nuevo)
+    setUsarSaldo(v => !v)
     setExitoCobro(null)
-    if (facturasSeleccionadas.size > 0) {
-      recomputarMontoCobro(facturasSeleccionadas, modalCobro?.facturas || [], nuevo)
-    }
   }
 
-  function toggleFactura(id: number, facturas: any[]) {
+  function toggleFactura(id: number, _facturas: any[]) {
     setFacturasSeleccionadas(prev => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
-      recomputarMontoCobro(next, facturas, usarSaldo)
-      setErrorCobro(null)
       return next
     })
+    setErrorCobro(null)
+  }
+
+  // Monto a cubrir (para el indicador de "falta/sobra" en Formas de pago):
+  // suma de facturas seleccionadas (o toda la deuda si no hay selección) − crédito usado.
+  function montoObjetivoCobro(): number {
+    if (!modalCobro) return 0
+    const facturas: any[] = modalCobro.facturas || []
+    const base = facturasSeleccionadas.size > 0
+      ? facturas.filter(f => facturasSeleccionadas.has(f.id)).reduce((s, f) => s + f.saldo, 0)
+      : facturas.reduce((s, f) => s + f.saldo, 0)
+    const credito = usarSaldo ? (Number(modalCobro.creditoDisponible) || 0) : 0
+    return Math.max(0, Math.round((base - credito) * 100) / 100)
   }
 
   // Distribuye `monto` sobre las facturas SELECCIONADAS (en orden). Si el monto
@@ -234,9 +229,9 @@ export default function Deudores() {
 
   async function confirmarCobro() {
     if (!modalCobro) return
-    const monto = parseFloat(montoCobro.replace(",", ".")) || 0
+    const monto = totalFormas(formasPago)   // suma de todas las formas de pago (efectivo, cheque, etc.)
     const creditoDisp = usarSaldo ? (Number(modalCobro.creditoDisponible) || 0) : 0
-    if (monto <= 0 && creditoDisp <= 0) { setErrorCobro("Ingresá un monto o usá el saldo a favor."); return }
+    if (monto <= 0 && creditoDisp <= 0) { setErrorCobro("Agregá al menos una forma de pago o usá el saldo a favor."); return }
 
     setProcesando(true)
     setErrorCobro(null)
@@ -271,50 +266,52 @@ export default function Deudores() {
       // desde la cuenta corriente del cliente.
       const nroRecibo = nroReciboBase
 
-      // ¿Cobro con cheque(s)? (solo si el método es cheque/echeq y se eligió alguno)
-      const chequesCobro = (metodoCobro === "cheque" || metodoCobro === "echeq") ? chequesSelCobro : []
+      // Cheques de todas las formas de pago cheque/e-cheq (para enlazar al recibo)
+      const chequesCobro = chequesDeFormas(formasPago)
+
+      // Fuentes de pago ORDENADAS: el crédito (saldo a favor) primero, luego cada
+      // forma de pago en el orden en que las cargó el usuario.
+      const fuentes: Fuente[] = []
+      if (creditoDisp > 0) fuentes.push({ metodo: "credito", disponible: creditoDisp })
+      for (const fp of formasPago) {
+        const m = montoForma(fp)
+        if (m > 0) fuentes.push({ metodo: fp.metodo, disponible: m })
+      }
+      // Reparto: una fila por (factura × método) efectivamente usado
+      const filas = repartirPago(afectadas.map((f: any) => ({ id: f.id, pago: f.pago })), fuentes)
 
       // Saldo de cuenta corriente actual (lo decrementamos a medida que aplicamos)
       const { data: ccIni } = await supabase.from("cuentas_corrientes").select("saldo").eq("cliente_id", modalCobro.cliente_id).order("id", { ascending: false }).limit(1).maybeSingle()
       let saldoCC = Number(ccIni?.saldo ?? 0)
 
-      let creditoRestante = creditoDisp
       let totalCash = 0, totalCredito = 0
+      const nroFacturaDe = (id: number) => {
+        const f = afectadas.find((x: any) => x.id === id)
+        return f?.nro_factura || id
+      }
 
-      for (const f of afectadas) {
-        // Cubrir esta factura con el crédito (nota de crédito) primero, y el resto en efectivo
-        const credUsado = Math.min(creditoRestante, f.pago)
-        creditoRestante = Math.round((creditoRestante - credUsado) * 100) / 100
-        const cashUsado = Math.round((f.pago - credUsado) * 100) / 100
-        totalCredito = Math.round((totalCredito + credUsado) * 100) / 100
-        totalCash = Math.round((totalCash + cashUsado) * 100) / 100
+      for (const fila of filas) {
+        const esCredito = fila.metodo === "credito"
         const notaBase = [
           notaCobro.trim() || null,
-          credUsado > 0 ? `Nota de crédito aplicada: ${fmt(credUsado)}` : null,
+          esCredito ? `Nota de crédito aplicada: ${fmt(fila.monto)}` : null,
         ].filter(Boolean).join(" | ") || null
+        // El crédito se guarda como metodo_pago "otro" (constraint/convención); el resto, su método real.
+        const metodoPago = esCredito ? "otro" : fila.metodo
+        const { error: eIns } = await supabase.from("pagos_cuenta_corriente").insert([{
+          cliente_id: modalCobro.cliente_id, venta_id: fila.venta_id, monto: fila.monto,
+          metodo_pago: metodoPago, nota: notaBase, nro_recibo: nroRecibo,
+        }])
+        if (eIns) throw new Error("Error en factura N°" + nroFacturaDe(fila.venta_id) + ": " + eIns.message)
+        saldoCC = Math.max(0, Math.round((saldoCC - fila.monto) * 100) / 100)
+        // tipo "pago" porque cuentas_corrientes tiene constraint que solo permite 'venta'/'pago'
+        await supabase.from("cuentas_corrientes").insert({ cliente_id: modalCobro.cliente_id, venta_id: fila.venta_id, tipo: "pago", monto: -fila.monto, saldo: saldoCC, fecha: new Date() })
+        if (esCredito) totalCredito = Math.round((totalCredito + fila.monto) * 100) / 100
+        else totalCash = Math.round((totalCash + fila.monto) * 100) / 100
+      }
 
-        if (credUsado > 0) {
-          const { error: e1 } = await supabase.from("pagos_cuenta_corriente").insert([{
-            cliente_id: modalCobro.cliente_id, venta_id: f.id, monto: credUsado,
-            metodo_pago: "otro", nota: notaBase, nro_recibo: nroRecibo,
-          }])
-          if (e1) throw new Error("Error en factura N°" + (f.nro_factura || f.id) + ": " + e1.message)
-          saldoCC = Math.max(0, Math.round((saldoCC - credUsado) * 100) / 100)
-          // tipo "pago" porque cuentas_corrientes tiene constraint que solo permite 'venta'/'pago';
-          // el detalle de que fue nota de crédito queda en pagos_cuenta_corriente (metodo_pago)
-          await supabase.from("cuentas_corrientes").insert({ cliente_id: modalCobro.cliente_id, venta_id: f.id, tipo: "pago", monto: -credUsado, saldo: saldoCC, fecha: new Date() })
-        }
-        if (cashUsado > 0) {
-          const { error: e2 } = await supabase.from("pagos_cuenta_corriente").insert([{
-            cliente_id: modalCobro.cliente_id, venta_id: f.id, monto: cashUsado,
-            metodo_pago: metodoCobro || null, nota: notaBase, nro_recibo: nroRecibo,
-          }])
-          if (e2) throw new Error("Error en factura N°" + (f.nro_factura || f.id) + ": " + e2.message)
-          saldoCC = Math.max(0, Math.round((saldoCC - cashUsado) * 100) / 100)
-          await supabase.from("cuentas_corrientes").insert({ cliente_id: modalCobro.cliente_id, venta_id: f.id, tipo: "pago", monto: -cashUsado, saldo: saldoCC, fecha: new Date() })
-        }
-
-        // Si queda saldada, marcar la venta como cobrada
+      // Marcar como cobradas las facturas que quedaron saldadas
+      for (const f of afectadas) {
         if (f.resultado === "pagado") {
           await supabase.from("ventas").update({ estado: "cobrada" }).eq("id", f.id)
         }
@@ -358,6 +355,8 @@ export default function Deudores() {
       const totalCobrado = Math.round((totalCash + totalCredito) * 100) / 100
       const saldadas = afectadas.filter((f: any) => f.resultado === "pagado").length
       const parciales = afectadas.filter((f: any) => f.resultado === "parcial").length
+      // Desglose por método (sin el crédito, que se muestra aparte como nota de crédito)
+      const formasResumen = resumenPorMetodo(filas.filter(f => f.metodo !== "credito"))
 
       // Saldo total del cliente después de aplicar este cobro
       const saldoTotalCliente = await getSaldoCliente(modalCobro.cliente_id)
@@ -373,6 +372,7 @@ export default function Deudores() {
         saldoTotal: saldoTotalCliente,
         cheques: chequesCobro,
         creditoGenerado: exceso,
+        formasResumen,
       }
       setUltimoRecibo(datosRecibo)
 
@@ -386,7 +386,8 @@ export default function Deudores() {
         saldoTotalCliente,
         totalCredito,
         chequesParaRecibo(chequesCobro),
-        exceso
+        exceso,
+        formasResumen
       )
 
       setExitoCobro(
@@ -396,7 +397,7 @@ export default function Deudores() {
         (parciales > 0 ? ` ${parciales} parcial.` : "") +
         (exceso > 0 ? ` ${fmt(exceso)} quedó a favor.` : "")
       )
-      setMontoCobro("")
+      setFormasPago([nuevaFormaPago("efectivo")])
       setUsarSaldo(false)
 
       // Recargar lista completa — el useEffect([deudores]) maneja el cierre del modal
@@ -598,7 +599,7 @@ export default function Deudores() {
                 <div style={{ color: "#4ade80", fontSize: 13, padding: "10px 14px" }}>{exitoCobro}</div>
                 {ultimoRecibo && (
                   <button
-                    onClick={() => imprimirReciboCobroMasivo(ultimoRecibo.totalCobrado, ultimoRecibo.nroReciboBase, ultimoRecibo.afectadas, ultimoRecibo.cliente, ultimoRecibo.nota, ultimoRecibo.saldoTotal, ultimoRecibo.creditoAplicado, chequesParaRecibo(ultimoRecibo.cheques), ultimoRecibo.creditoGenerado)}
+                    onClick={() => imprimirReciboCobroMasivo(ultimoRecibo.totalCobrado, ultimoRecibo.nroReciboBase, ultimoRecibo.afectadas, ultimoRecibo.cliente, ultimoRecibo.nota, ultimoRecibo.saldoTotal, ultimoRecibo.creditoAplicado, chequesParaRecibo(ultimoRecibo.cheques), ultimoRecibo.creditoGenerado, ultimoRecibo.formasResumen)}
                     style={{ width: "100%", padding: "8px 14px", background: "rgba(34,197,94,0.15)", border: "none", borderTop: "1px solid rgba(34,197,94,0.2)", color: "#4ade80", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "center" }}>
                     🖨️ Reimprimir recibo
                   </button>
@@ -619,60 +620,21 @@ export default function Deudores() {
                 <div>
                   <div style={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>💚 Usar nota de crédito / saldo a favor: {fmt(modalCobro.creditoDisponible)}</div>
                   {usarSaldo && <div style={{ color: "#86efac", fontSize: 11, marginTop: 2 }}>
-                    ⚠️ Este monto se suma solo, aparte de lo que pongas abajo. Si solo querés usar el crédito, dejá "Monto cobrado" en 0.
+                    Se aplica primero; las formas de pago de abajo cubren el resto.
                   </div>}
                 </div>
               </div>
             )}
 
-            {/* Inputs */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
-              <div>
-                <label style={labelStyle}>{usarSaldo ? "Monto cobrado (además del crédito, dejá 0 si no hay más)" : "Monto cobrado"}</label>
-                <input
-                  type="number" min="0" step="0.01"
-                  value={montoCobro}
-                  onChange={e => { setMontoCobro(e.target.value); setErrorCobro(null); setExitoCobro(null) }}
-                  placeholder={usarSaldo ? "0" : `Máx: ${fmt(modalCobro.totalDeuda)}`}
-                  style={inputDarkStyle}
-                  autoFocus
-                />
-                {/* Atajos rápidos */}
-                <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                  {[25, 50, 75, 100].map(pct => {
-                    const val = Math.round(modalCobro.totalDeuda * pct / 100)
-                    const activo = Math.abs((parseFloat(montoCobro) || 0) - val) < 1
-                    return (
-                      <button key={pct} onClick={() => setMontoCobro(String(val))} style={{
-                        flex: 1, padding: "6px 0", borderRadius: 8,
-                        border: activo ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.1)",
-                        background: activo ? "#3b82f6" : "rgba(255,255,255,0.05)",
-                        color: activo ? "white" : "#9ca3af",
-                        fontSize: 11, fontWeight: 600, cursor: "pointer"
-                      }}>{pct}%</button>
-                    )
-                  })}
-                </div>
-              </div>
-              <div style={{ marginBottom: 12 }}>
-                <label style={labelStyle}>Método de pago</label>
-                <select value={metodoCobro} onChange={e => setMetodoCobro(e.target.value)}
-                  style={{ ...inputDarkStyle, cursor: "pointer", background: "#1e293b" }}>
-                  <option value="efectivo" style={{ color: "#000" }}>Efectivo</option>
-                  <option value="transferencia" style={{ color: "#000" }}>Transferencia</option>
-                  <option value="cheque" style={{ color: "#000" }}>Cheque</option>
-                  <option value="echeq" style={{ color: "#000" }}>E-Cheq</option>
-                  <option value="tarjeta" style={{ color: "#000" }}>Tarjeta</option>
-                  <option value="otro" style={{ color: "#000" }}>Otro</option>
-                </select>
-              </div>
-              {(metodoCobro === "cheque" || metodoCobro === "echeq") && (
-                <div style={{ marginBottom: 12 }}>
-                  <label style={labelStyle}>Cheque(s) recibido(s)</label>
-                  <SelectorCheque value={chequesSelCobro} onChange={arr => { setChequesSelCobro(arr); if (arr.length) setMontoCobro(String(arr.reduce((s, c) => s + Number(c.monto_ingresado), 0))) }} />
-                </div>
-              )}
-              <div>
+            {/* Formas de pago (una o varias: efectivo + cheque, etc.) */}
+            <div style={{ marginBottom: 20 }}>
+              <FormasDePago
+                value={formasPago}
+                onChange={f => { setFormasPago(f); setErrorCobro(null); setExitoCobro(null) }}
+                montoObjetivo={montoObjetivoCobro()}
+                disabled={procesando}
+              />
+              <div style={{ marginTop: 14 }}>
                 <label style={labelStyle}>Nota (opcional)</label>
                 <input type="text" value={notaCobro} onChange={e => setNotaCobro(e.target.value)}
                   placeholder="Ej: transferencia mayo, banco Galicia..." style={inputDarkStyle} />
@@ -689,7 +651,7 @@ export default function Deudores() {
                       : "Tocá las facturas a cobrar"}
                   </div>
                   {facturasSeleccionadas.size > 0 && (
-                    <button onClick={() => { setFacturasSeleccionadas(new Set()); setMontoCobro("") }}
+                    <button onClick={() => setFacturasSeleccionadas(new Set())}
                       style={{ fontSize: 11, color: "#6b7280", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
                       Limpiar
                     </button>
@@ -697,12 +659,12 @@ export default function Deudores() {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
                   {(() => {
-                    const monto = parseFloat(montoCobro.replace(",", ".")) || 0
+                    const monto = totalFormas(formasPago)
                     const credDisp = usarSaldo ? (Number(modalCobro.creditoDisponible) || 0) : 0
                     const preview = facturasSeleccionadas.size > 0
                       ? calcularPreviewSeleccionado(modalCobro.facturas, facturasSeleccionadas, monto + credDisp)
-                      : monto > 0
-                        ? calcularPreview(modalCobro.facturas, monto)
+                      : (monto + credDisp) > 0
+                        ? calcularPreview(modalCobro.facturas, monto + credDisp)
                         : modalCobro.facturas.map((f: any) => ({ ...f, pago: 0, resultado: "sin_cambio" }))
                     const colorMap: Record<string, { bg: string; border: string; color: string; label: string }> = {
                       pagado:     { bg: "rgba(34,197,94,0.15)",   border: "rgba(34,197,94,0.35)",   color: "#4ade80", label: "✓ Saldada" },
@@ -753,7 +715,7 @@ export default function Deudores() {
 
                 {/* Resumen */}
                 {(() => {
-                  const monto = parseFloat(montoCobro.replace(",", ".")) || 0
+                  const monto = totalFormas(formasPago)
                   const creditoDisp = usarSaldo ? (Number(modalCobro.creditoDisponible) || 0) : 0
                   if (monto <= 0 && creditoDisp <= 0) return null
                   const seleccion = facturasSeleccionadas.size > 0
@@ -828,13 +790,13 @@ export default function Deudores() {
               }}>Cerrar</button>
               <button
                 onClick={confirmarCobro}
-                disabled={procesando || ((parseFloat(montoCobro.replace(",", ".")) || 0) <= 0 && !(usarSaldo && (modalCobro.creditoDisponible || 0) > 0))}
+                disabled={procesando || (totalFormas(formasPago) <= 0 && !(usarSaldo && (modalCobro.creditoDisponible || 0) > 0))}
                 style={{
                   flex: 2, padding: "11px",
                   background: "linear-gradient(135deg, #16a34a, #22c55e)",
                   border: "none", borderRadius: 10, color: "white",
                   fontSize: 13, fontWeight: 700, cursor: "pointer",
-                  opacity: procesando || ((parseFloat(montoCobro.replace(",", ".")) || 0) <= 0 && !(usarSaldo && (modalCobro.creditoDisponible || 0) > 0)) ? 0.5 : 1,
+                  opacity: procesando || (totalFormas(formasPago) <= 0 && !(usarSaldo && (modalCobro.creditoDisponible || 0) > 0)) ? 0.5 : 1,
                 }}>
                 {procesando ? "Registrando..." : "Confirmar cobro"}
               </button>

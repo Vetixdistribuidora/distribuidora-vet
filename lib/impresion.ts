@@ -96,6 +96,29 @@ function bloqueChequeHTML(cheques?: ChequeRecibo[]): string {
   </div>`
 }
 
+// Etiqueta legible de un método de pago para el recibo
+const METODO_LABEL_RECIBO: Record<string, string> = {
+  efectivo: "Efectivo", transferencia: "Transferencia", cheque: "Cheque",
+  echeq: "E-Cheq", tarjeta: "Tarjeta", otro: "Otro",
+}
+
+// Bloque HTML con el desglose de las formas de pago (método → monto).
+// Solo se muestra si hay más de un método (con uno solo no aporta nada).
+function bloqueFormasHTML(formas?: { metodo: string; monto: number }[]): string {
+  const lista = (formas || []).filter(x => x && Number(x.monto) > 0)
+  if (lista.length < 2) return ""
+  const f = (n: number) => "$" + n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const filas = lista.map(x =>
+    `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px;">
+      <span style="color:#374151;">${METODO_LABEL_RECIBO[x.metodo] || x.metodo}</span>
+      <span style="font-weight:700;color:#111;">${f(Number(x.monto))}</span>
+    </div>`).join("")
+  return `<div style="margin-top:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;">
+    <div style="font-weight:800;color:#374151;margin-bottom:4px;font-size:12px;">💳 Formas de pago</div>
+    ${filas}
+  </div>`
+}
+
 export function imprimirReciboCC(
   pago: { monto: number | string; nota?: string | null; nro_recibo?: string; fecha?: any },
   venta: { id: number; nro_factura?: string; total: number | string },
@@ -103,7 +126,8 @@ export function imprimirReciboCC(
   saldoAnterior: number,
   saldoTotalCliente?: number,
   cheques?: ChequeRecibo[],
-  creditoGenerado?: number
+  creditoGenerado?: number,
+  formasResumen?: { metodo: string; monto: number }[]
 ) {
   const logoUrl = window.location.origin + "/logo.png"
   const fecha = pago.fecha
@@ -133,6 +157,7 @@ export function imprimirReciboCC(
       ${pago.nota ? filaConcepto("Nota / Detalle", String(pago.nota)) : ""}
     </tbody>
   </table>
+  ${bloqueFormasHTML(formasResumen)}
   ${bloqueChequeHTML(cheques)}
   <div class="total-box"><div class="total-inner">
     <div class="total-pagado"><p class="total-pagado-label">Monto recibido</p><p class="total-pagado-monto">${f(Number(pago.monto))}</p></div>
@@ -161,7 +186,8 @@ export function imprimirReciboCobroMasivo(
   saldoTotalCliente?: number,
   creditoAplicado?: number,
   cheques?: ChequeRecibo[],
-  creditoGenerado?: number
+  creditoGenerado?: number,
+  formasResumen?: { metodo: string; monto: number }[]
 ) {
   const logoUrl = window.location.origin + "/logo.png"
   const fecha = new Date().toLocaleDateString("es-AR")
@@ -229,6 +255,7 @@ export function imprimirReciboCobroMasivo(
     <tbody>${filasFacturas}</tbody>
   </table>
   ${resumenHtml}
+  ${bloqueFormasHTML(formasResumen)}
   ${bloqueChequeHTML(cheques)}
   <div class="total-box"><div class="total-inner">
     <div class="total-pagado">
