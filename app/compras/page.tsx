@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { SelectorCheque, ChequeLite } from "@/components/SelectorCheque";
+import { imprimirComprobantePagoProveedor } from "@/lib/impresion";
 // XLSX se carga de forma diferida (lazy) — solo cuando el usuario exporta
 
 interface Proveedor { id: number; nombre: string; }
@@ -1302,6 +1303,11 @@ export default function ComprasPage() {
                                 : <span style={{ color: "#4b5563", fontSize: 11 }}>—</span>
                               }
                               <span style={{ marginLeft: "auto", color: "#4ade80", fontWeight: 800, fontSize: 14, flexShrink: 0 }}>{fmt(p.monto)}</span>
+                              <button onClick={() => imprimirComprobantePagoProveedor(
+                                { id: p.id, monto: p.monto, metodo_pago: p.metodo_pago, notas: p.notas, fecha: p.fecha },
+                                { id: compraVer.id, numero_remito: compraVer.numero_remito, total: compraVer.total, fecha: compraVer.fecha },
+                                { nombre: compraVer.proveedores?.nombre || "Proveedor" }
+                              )} title="Reimprimir comprobante de pago" style={{ flexShrink: 0, background: "rgba(59,130,246,0.15)", color: "#60a5fa", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>🖨️ Recibo</button>
                               {p.notas && <span style={{ width: "100%", fontSize: 11, color: "#6b7280", paddingLeft: 24 }}>📝 {p.notas}</span>}
                             </div>
                           )

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { SelectorCheque, ChequeLite } from "@/components/SelectorCheque";
+import { imprimirComprobantePagoProveedor } from "@/lib/impresion";
 
 interface Proveedor {
   id: string;
@@ -477,6 +478,16 @@ export default function ProveedoresPage() {
     } finally {
       setLoadingHistorial(false);
     }
+  }
+
+  // Reimprimir el comprobante de un pago a proveedor (desde el historial)
+  function reimprimirPagoProv(pg: any) {
+    if (!modalHistorial) return;
+    imprimirComprobantePagoProveedor(
+      { id: pg.id, monto: pg.monto, metodo_pago: pg.metodo_pago, notas: pg.notas, fecha: pg.fecha },
+      { id: pg.compra?.id ?? pg.compra_id, numero_remito: pg.compra?.numero_remito, total: pg.compra?.total, fecha: pg.compra?.fecha },
+      modalHistorial
+    );
   }
 
   const filtrados = proveedores.filter(p =>
@@ -1179,8 +1190,8 @@ export default function ProveedoresPage() {
                           <table style={{ width: "100%", borderCollapse: "collapse" }}>
                             <thead>
                               <tr>
-                                {["Compra / Remito", "Monto", "Método", "Notas"].map((h, i) => (
-                                  <th key={i} style={{ padding: "6px 12px", fontSize: 10, fontWeight: 700, color: "#4b5563", textAlign: i === 1 ? "right" : "left", textTransform: "uppercase", letterSpacing: 0.4 }}>{h}</th>
+                                {["Compra / Remito", "Monto", "Método", "Notas", ""].map((h, i) => (
+                                  <th key={i} style={{ padding: "6px 12px", fontSize: 10, fontWeight: 700, color: "#4b5563", textAlign: i === 1 ? "right" : i === 4 ? "center" : "left", textTransform: "uppercase", letterSpacing: 0.4 }}>{h}</th>
                                 ))}
                               </tr>
                             </thead>
@@ -1203,6 +1214,9 @@ export default function ProveedoresPage() {
                                     ) : <span style={{ color: "#4b5563", fontSize: 12 }}>—</span>}
                                   </td>
                                   <td style={{ padding: "9px 12px", color: "#9ca3af", fontSize: 12 }}>{pg.notas || "—"}</td>
+                                  <td style={{ padding: "9px 12px", textAlign: "center", whiteSpace: "nowrap" }}>
+                                    <button onClick={() => reimprimirPagoProv(pg)} title="Reimprimir comprobante de pago" style={{ background: "rgba(59,130,246,0.15)", color: "#60a5fa", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>🖨️ Recibo</button>
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
