@@ -289,7 +289,16 @@ export function imprimirComprobantePagoProveedor(
   pago: { id?: number | string; monto: number | string; metodo_pago?: string | null; notas?: string | null; fecha?: any },
   compra: { id: number | string; numero_remito?: string | null; total?: number | string | null; fecha?: any },
   proveedor: ProveedorRecibo,
-  opts?: { nroComprobante?: string; saldoRestante?: number; cheques?: ChequeRecibo[] }
+  opts?: {
+    nroComprobante?: string; saldoRestante?: number; cheques?: ChequeRecibo[]
+    // Desglose de formas de pago (método → monto) cuando el pago se hizo con
+    // más de un método el mismo día sobre esta compra. Si tiene 2+ entradas,
+    // el comprobante muestra el desglose diferenciado en vez de una sola fila.
+    formas?: { metodo: string; monto: number }[]
+    // Monto total a mostrar en el recuadro "Monto pagado" (suma de las formas).
+    // Si no se pasa, se usa pago.monto.
+    montoTotal?: number
+  }
 ) {
   const logoUrl = window.location.origin + "/logo.png"
   const parseFecha = (v: any) => {
@@ -305,6 +314,11 @@ export function imprimirComprobantePagoProveedor(
   const compraLabel = compra.numero_remito ? `Remito ${compra.numero_remito}` : `Compra #${compra.id}`
   const metodo = pago.metodo_pago && pago.metodo_pago.trim() ? pago.metodo_pago : null
   const saldoRestante = opts?.saldoRestante
+  // Formas de pago (desglose). Si hay 2+, se muestra el desglose diferenciado
+  // en lugar de la fila simple "Método de pago".
+  const formas = (opts?.formas || []).filter(x => x && Number(x.monto) > 0)
+  const hayDesglose = formas.length >= 2
+  const montoMostrar = opts?.montoTotal != null ? Number(opts.montoTotal) : Number(pago.monto)
   const filaConcepto = (label: string, valor: string) =>
     `<tr><td style="padding:7px 10px;font-size:12px;color:#555;border-bottom:1px solid #f0f0f0;">${label}</td><td style="padding:7px 10px;font-size:12px;font-weight:600;color:#111;border-bottom:1px solid #f0f0f0;text-align:right;">${valor}</td></tr>`
   const css = `@page{size:A4;margin:15mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}html,body{margin:0;padding:0;font-family:Arial;background:#e5e7eb}.acciones{display:flex;gap:10px;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;position:sticky;top:0;z-index:10}.page{width:180mm;min-height:267mm;margin:16px auto;background:white;padding:24px;display:flex;flex-direction:column;box-shadow:0 2px 8px rgba(0,0,0,.12)}.logo{height:130px;display:block}.empresa-info{font-size:11px;color:#555;margin-top:4px;line-height:1.6}.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1971c2;padding-bottom:14px;margin-bottom:16px}.header-right{text-align:center;padding-top:4px}.titulo{font-size:20px;font-weight:800;color:#1971c2;margin:0 0 6px}.nro-doc{font-size:15px;font-weight:700;color:#111;margin:0 0 4px}.fecha-doc{font-size:12px;color:#555;margin:0}.prov-row{padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;line-height:1.9;margin-bottom:16px}.tabla-concepto{width:100%;border-collapse:collapse}.tabla-concepto thead th{background:#f1f5f9;padding:8px 10px;font-size:11px;font-weight:700;color:#374151;text-align:left;text-transform:uppercase;letter-spacing:.4px}.tabla-concepto thead th:last-child{text-align:right}.total-box{margin-top:20px;display:flex;justify-content:flex-end}.total-inner{width:260px}.total-pagado{background:#d3f9d8;border:1px solid #2f9e44;border-radius:8px;padding:12px 16px;text-align:center}.total-pagado-label{font-size:11px;color:#2f9e44;font-weight:600;text-transform:uppercase;margin:0 0 4px}.total-pagado-monto{font-size:24px;font-weight:800;color:#2f9e44;margin:0}.saldo-box{margin-top:8px;border-radius:8px;padding:10px 16px;text-align:center}.saldo-saldado{background:#d3f9d8;border:1px solid #2f9e44;color:#2f9e44}.saldo-pendiente{background:#fff3cd;border:1px solid #e67700;color:#e67700}.saldo-label{font-size:12px;font-weight:700;margin:0}.firma-box{margin-top:40px;display:flex;justify-content:space-between;font-size:11px;color:#555}.firma-linea{border-top:1px solid #555;width:200px;text-align:center;padding-top:6px}.footer{margin-top:auto;padding-top:16px;border-top:1px solid #eee;font-size:10px;color:#aaa;text-align:center}@media(max-width:640px){.page{width:100%;margin:0;padding:12px;min-height:auto;box-shadow:none}.logo{height:70px}.firma-box{flex-direction:column;gap:20px}.firma-linea{width:100%}.total-inner{width:100%}}@media print{body{background:white}.acciones{display:none}.page{width:100%;min-height:calc(297mm - 30mm);margin:0;padding:16px;box-shadow:none}}`
@@ -322,13 +336,14 @@ export function imprimirComprobantePagoProveedor(
       ${filaConcepto("Compra / Remito", compraLabel)}
       ${fechaCompra ? filaConcepto("Fecha de la compra", fechaCompra) : ""}
       ${compra.total != null ? filaConcepto("Total de la compra", f(Number(compra.total))) : ""}
-      ${metodo ? filaConcepto("Método de pago", metodo) : ""}
+      ${!hayDesglose && metodo ? filaConcepto("Método de pago", metodo) : ""}
       ${pago.notas ? filaConcepto("Nota / Detalle", String(pago.notas)) : ""}
     </tbody>
   </table>
+  ${bloqueFormasHTML(formas)}
   ${bloqueChequeHTML(opts?.cheques)}
   <div class="total-box"><div class="total-inner">
-    <div class="total-pagado"><p class="total-pagado-label">Monto pagado</p><p class="total-pagado-monto">${f(Number(pago.monto))}</p></div>
+    <div class="total-pagado"><p class="total-pagado-label">Monto pagado</p><p class="total-pagado-monto">${f(montoMostrar)}</p></div>
     ${saldoRestante != null ? `<div class="saldo-box ${saldoRestante > 0 ? "saldo-pendiente" : "saldo-saldado"}"><p class="saldo-label">${saldoRestante > 0 ? "Saldo restante de la compra: " + f(saldoRestante) : "✓ Compra saldada completamente"}</p></div>` : ""}
   </div></div>
   <div class="firma-box">

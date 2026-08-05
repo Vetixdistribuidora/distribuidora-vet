@@ -481,24 +481,40 @@ export default function ProveedoresPage() {
   }
 
   // Reimprimir el comprobante de un pago a proveedor (desde el historial).
-  // Si el pago fue con cheque, trae los cheques endosados a esa compra para
-  // detallarlos en el comprobante (N°, banco, fecha, monto).
+  // Si ese día se pagó la misma compra con varios métodos (ej: parte cheque +
+  // parte efectivo, o nota de crédito + cheque), agrupa esas partes y las
+  // muestra diferenciadas en el comprobante, con el detalle de cheque(s).
   async function reimprimirPagoProv(pg: any) {
     if (!modalHistorial) return;
     const compraId = pg.compra?.id ?? pg.compra_id;
-    const cheques = await chequesDeCompraSiCorresponde(pg.metodo_pago, compraId);
+    const dia = String(pg.fecha || "").slice(0, 10);
+    // Partes del mismo pago = misma compra + mismo día (ya están en memoria).
+    const partes = historialPagos.filter(x =>
+      (x.compra?.id ?? x.compra_id) === compraId && String(x.fecha || "").slice(0, 10) === dia
+    );
+    const formasMap: Record<string, number> = {};
+    partes.forEach(x => { const m = x.metodo_pago || "Otro"; formasMap[m] = (formasMap[m] || 0) + Number(x.monto); });
+    const formas = Object.entries(formasMap).map(([metodo, monto]) => ({ metodo, monto }));
+    const mixto = formas.length >= 2; // solo agrupa si hubo métodos distintos
+    const huboCheque = mixto
+      ? partes.some(x => (x.metodo_pago || "").toLowerCase() === "cheque")
+      : (pg.metodo_pago || "").toLowerCase() === "cheque";
+    const cheques = huboCheque ? await chequesDeCompra(compraId) : [];
     imprimirComprobantePagoProveedor(
       { id: pg.id, monto: pg.monto, metodo_pago: pg.metodo_pago, notas: pg.notas, fecha: pg.fecha },
       { id: compraId, numero_remito: pg.compra?.numero_remito, total: pg.compra?.total, fecha: pg.compra?.fecha },
       modalHistorial,
-      cheques.length ? { cheques } : undefined
+      {
+        cheques: cheques.length ? cheques : undefined,
+        formas: mixto ? formas : undefined,
+        montoTotal: mixto ? partes.reduce((s, x) => s + Number(x.monto), 0) : undefined,
+      }
     );
   }
 
-  // Trae los cheques endosados a una compra (para el comprobante) solo si el
-  // método de pago fue "Cheque". Devuelve [] en cualquier otro caso.
-  async function chequesDeCompraSiCorresponde(metodo: string | null | undefined, compraId: number | null | undefined) {
-    if ((metodo || "").toLowerCase() !== "cheque" || compraId == null) return [];
+  // Trae los cheques endosados a una compra (N°, banco, fecha, monto) para el comprobante.
+  async function chequesDeCompra(compraId: number | null | undefined) {
+    if (compraId == null) return [];
     const { data } = await supabase
       .from("compra_cheques")
       .select("cheques(numero, tipo, banco, fecha, monto_ingresado)")

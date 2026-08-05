@@ -591,12 +591,23 @@ export default function ComprasPage() {
     setSaldoFavorDisponible(Math.max(0, total))
   }
 
-  // Reimprimir el comprobante de un pago de la compra abierta. Si el pago fue
-  // con cheque, trae los cheques endosados a la compra para detallarlos.
+  // Reimprimir el comprobante de un pago de la compra abierta. Si ese día se
+  // pagó con varios métodos (ej: parte cheque + parte efectivo, o nota de
+  // crédito + cheque), agrupa esas partes y las muestra diferenciadas, con el
+  // detalle de cheque(s).
   async function reimprimirPagoCompra(p: PagoCompra) {
     if (!compraVer) return;
+    const dia = String(p.fecha || "").slice(0, 10);
+    const partes = pagos.filter(x => String(x.fecha || "").slice(0, 10) === dia);
+    const formasMap: Record<string, number> = {};
+    partes.forEach(x => { const m = x.metodo_pago || "Otro"; formasMap[m] = (formasMap[m] || 0) + Number(x.monto); });
+    const formas = Object.entries(formasMap).map(([metodo, monto]) => ({ metodo, monto }));
+    const mixto = formas.length >= 2; // solo agrupa si hubo métodos distintos
+    const huboCheque = mixto
+      ? partes.some(x => (x.metodo_pago || "").toLowerCase() === "cheque")
+      : (p.metodo_pago || "").toLowerCase() === "cheque";
     let cheques: { numero: string; tipo: string; banco?: string; fecha?: string; monto: number }[] = [];
-    if ((p.metodo_pago || "").toLowerCase() === "cheque") {
+    if (huboCheque) {
       const { data } = await supabase
         .from("compra_cheques")
         .select("cheques(numero, tipo, banco, fecha, monto_ingresado)")
@@ -610,7 +621,11 @@ export default function ComprasPage() {
       { id: p.id, monto: p.monto, metodo_pago: p.metodo_pago, notas: p.notas, fecha: p.fecha },
       { id: compraVer.id, numero_remito: compraVer.numero_remito, total: compraVer.total, fecha: compraVer.fecha },
       { nombre: compraVer.proveedores?.nombre || "Proveedor", cuit: compraVer.proveedores?.cuit, telefono: compraVer.proveedores?.telefono, direccion: compraVer.proveedores?.direccion },
-      cheques.length ? { cheques } : undefined
+      {
+        cheques: cheques.length ? cheques : undefined,
+        formas: mixto ? formas : undefined,
+        montoTotal: mixto ? partes.reduce((s, x) => s + Number(x.monto), 0) : undefined,
+      }
     );
   }
 
