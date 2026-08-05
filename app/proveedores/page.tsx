@@ -480,14 +480,33 @@ export default function ProveedoresPage() {
     }
   }
 
-  // Reimprimir el comprobante de un pago a proveedor (desde el historial)
-  function reimprimirPagoProv(pg: any) {
+  // Reimprimir el comprobante de un pago a proveedor (desde el historial).
+  // Si el pago fue con cheque, trae los cheques endosados a esa compra para
+  // detallarlos en el comprobante (N°, banco, fecha, monto).
+  async function reimprimirPagoProv(pg: any) {
     if (!modalHistorial) return;
+    const compraId = pg.compra?.id ?? pg.compra_id;
+    const cheques = await chequesDeCompraSiCorresponde(pg.metodo_pago, compraId);
     imprimirComprobantePagoProveedor(
       { id: pg.id, monto: pg.monto, metodo_pago: pg.metodo_pago, notas: pg.notas, fecha: pg.fecha },
-      { id: pg.compra?.id ?? pg.compra_id, numero_remito: pg.compra?.numero_remito, total: pg.compra?.total, fecha: pg.compra?.fecha },
-      modalHistorial
+      { id: compraId, numero_remito: pg.compra?.numero_remito, total: pg.compra?.total, fecha: pg.compra?.fecha },
+      modalHistorial,
+      cheques.length ? { cheques } : undefined
     );
+  }
+
+  // Trae los cheques endosados a una compra (para el comprobante) solo si el
+  // método de pago fue "Cheque". Devuelve [] en cualquier otro caso.
+  async function chequesDeCompraSiCorresponde(metodo: string | null | undefined, compraId: number | null | undefined) {
+    if ((metodo || "").toLowerCase() !== "cheque" || compraId == null) return [];
+    const { data } = await supabase
+      .from("compra_cheques")
+      .select("cheques(numero, tipo, banco, fecha, monto_ingresado)")
+      .eq("compra_id", compraId);
+    return (data || [])
+      .map((r: any) => r.cheques)
+      .filter(Boolean)
+      .map((c: any) => ({ numero: c.numero, tipo: c.tipo, banco: c.banco, fecha: c.fecha, monto: c.monto_ingresado }));
   }
 
   const filtrados = proveedores.filter(p =>

@@ -289,7 +289,7 @@ export function imprimirComprobantePagoProveedor(
   pago: { id?: number | string; monto: number | string; metodo_pago?: string | null; notas?: string | null; fecha?: any },
   compra: { id: number | string; numero_remito?: string | null; total?: number | string | null; fecha?: any },
   proveedor: ProveedorRecibo,
-  opts?: { nroComprobante?: string; saldoRestante?: number }
+  opts?: { nroComprobante?: string; saldoRestante?: number; cheques?: ChequeRecibo[] }
 ) {
   const logoUrl = window.location.origin + "/logo.png"
   const parseFecha = (v: any) => {
@@ -326,6 +326,7 @@ export function imprimirComprobantePagoProveedor(
       ${pago.notas ? filaConcepto("Nota / Detalle", String(pago.notas)) : ""}
     </tbody>
   </table>
+  ${bloqueChequeHTML(opts?.cheques)}
   <div class="total-box"><div class="total-inner">
     <div class="total-pagado"><p class="total-pagado-label">Monto pagado</p><p class="total-pagado-monto">${f(Number(pago.monto))}</p></div>
     ${saldoRestante != null ? `<div class="saldo-box ${saldoRestante > 0 ? "saldo-pendiente" : "saldo-saldado"}"><p class="saldo-label">${saldoRestante > 0 ? "Saldo restante de la compra: " + f(saldoRestante) : "✓ Compra saldada completamente"}</p></div>` : ""}

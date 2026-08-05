@@ -591,6 +591,29 @@ export default function ComprasPage() {
     setSaldoFavorDisponible(Math.max(0, total))
   }
 
+  // Reimprimir el comprobante de un pago de la compra abierta. Si el pago fue
+  // con cheque, trae los cheques endosados a la compra para detallarlos.
+  async function reimprimirPagoCompra(p: PagoCompra) {
+    if (!compraVer) return;
+    let cheques: { numero: string; tipo: string; banco?: string; fecha?: string; monto: number }[] = [];
+    if ((p.metodo_pago || "").toLowerCase() === "cheque") {
+      const { data } = await supabase
+        .from("compra_cheques")
+        .select("cheques(numero, tipo, banco, fecha, monto_ingresado)")
+        .eq("compra_id", compraVer.id);
+      cheques = (data || [])
+        .map((r: any) => r.cheques)
+        .filter(Boolean)
+        .map((c: any) => ({ numero: c.numero, tipo: c.tipo, banco: c.banco, fecha: c.fecha, monto: c.monto_ingresado }));
+    }
+    imprimirComprobantePagoProveedor(
+      { id: p.id, monto: p.monto, metodo_pago: p.metodo_pago, notas: p.notas, fecha: p.fecha },
+      { id: compraVer.id, numero_remito: compraVer.numero_remito, total: compraVer.total, fecha: compraVer.fecha },
+      { nombre: compraVer.proveedores?.nombre || "Proveedor", cuit: compraVer.proveedores?.cuit, telefono: compraVer.proveedores?.telefono, direccion: compraVer.proveedores?.direccion },
+      cheques.length ? { cheques } : undefined
+    );
+  }
+
   async function guardarPago() {
     if (!compraVer) return;
     const monto = parseFloat(formPago.monto) || 0;
@@ -1303,11 +1326,7 @@ export default function ComprasPage() {
                                 : <span style={{ color: "#4b5563", fontSize: 11 }}>—</span>
                               }
                               <span style={{ marginLeft: "auto", color: "#4ade80", fontWeight: 800, fontSize: 14, flexShrink: 0 }}>{fmt(p.monto)}</span>
-                              <button onClick={() => imprimirComprobantePagoProveedor(
-                                { id: p.id, monto: p.monto, metodo_pago: p.metodo_pago, notas: p.notas, fecha: p.fecha },
-                                { id: compraVer.id, numero_remito: compraVer.numero_remito, total: compraVer.total, fecha: compraVer.fecha },
-                                { nombre: compraVer.proveedores?.nombre || "Proveedor", cuit: compraVer.proveedores?.cuit, telefono: compraVer.proveedores?.telefono, direccion: compraVer.proveedores?.direccion }
-                              )} title="Reimprimir comprobante de pago" style={{ flexShrink: 0, background: "rgba(59,130,246,0.15)", color: "#60a5fa", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>🖨️ Recibo</button>
+                              <button onClick={() => reimprimirPagoCompra(p)} title="Reimprimir comprobante de pago" style={{ flexShrink: 0, background: "rgba(59,130,246,0.15)", color: "#60a5fa", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>🖨️ Recibo</button>
                               {p.notas && <span style={{ width: "100%", fontSize: 11, color: "#6b7280", paddingLeft: 24 }}>📝 {p.notas}</span>}
                             </div>
                           )
