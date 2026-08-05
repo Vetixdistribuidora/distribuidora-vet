@@ -19,7 +19,7 @@ interface Compra {
   total: number; total_pagado: number; estado: string;
   incluye_iva: boolean; monto_iva: number; porcentaje_iva: number; monto_flete: number;
   descuento_pct: number; monto_descuento: number;
-  proveedores: { nombre: string } | null;
+  proveedores: { nombre: string; cuit?: string | null; telefono?: string | null; direccion?: string | null } | null;
 }
 interface DetalleCompra {
   id: number; producto_id: number; cantidad: number; precio_unitario: number; subtotal: number;
@@ -182,7 +182,7 @@ export default function ComprasPage() {
     setLoading(true);
     try {
       const [{ data: c }, { data: p }] = await Promise.all([
-        supabase.from("compras").select("*, proveedores(nombre)").order("fecha", { ascending: false }),
+        supabase.from("compras").select("*, proveedores(nombre, cuit, telefono, direccion)").order("fecha", { ascending: false }),
         supabase.from("proveedores").select("id, nombre").order("nombre"),
       ]);
       if (c) setCompras(c);
@@ -1306,7 +1306,7 @@ export default function ComprasPage() {
                               <button onClick={() => imprimirComprobantePagoProveedor(
                                 { id: p.id, monto: p.monto, metodo_pago: p.metodo_pago, notas: p.notas, fecha: p.fecha },
                                 { id: compraVer.id, numero_remito: compraVer.numero_remito, total: compraVer.total, fecha: compraVer.fecha },
-                                { nombre: compraVer.proveedores?.nombre || "Proveedor" }
+                                { nombre: compraVer.proveedores?.nombre || "Proveedor", cuit: compraVer.proveedores?.cuit, telefono: compraVer.proveedores?.telefono, direccion: compraVer.proveedores?.direccion }
                               )} title="Reimprimir comprobante de pago" style={{ flexShrink: 0, background: "rgba(59,130,246,0.15)", color: "#60a5fa", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>🖨️ Recibo</button>
                               {p.notas && <span style={{ width: "100%", fontSize: 11, color: "#6b7280", paddingLeft: 24 }}>📝 {p.notas}</span>}
                             </div>
