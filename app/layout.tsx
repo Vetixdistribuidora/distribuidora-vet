@@ -7,6 +7,7 @@ import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { getTema } from "@/lib/temas"
+import { esEmailAutorizado } from "@/lib/acceso"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -21,8 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const pathnameRef  = useRef(pathname)
   useEffect(() => { pathnameRef.current = pathname }, [pathname])
 
-  // Páginas públicas que NO requieren autenticación
-  const RUTAS_PUBLICAS = ["/login", "/onboarding", "/registro"]
+  // Páginas públicas que NO requieren autenticación.
+  // El registro y el onboarding están deshabilitados: nadie nuevo puede entrar.
+  const RUTAS_PUBLICAS = ["/login"]
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -36,6 +38,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           router.replace("/login")
         }
       } else if (session && (event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED")) {
+        // ── CERROJO DE ACCESO ──────────────────────────────────────────────
+        // Solo los emails autorizados pueden usar el sistema interno. Cualquier
+        // otra cuenta (ej. un cliente que se registró en la tienda, que comparte
+        // el mismo Supabase) se cierra sesión y se saca al login.
+        if (!esEmailAutorizado(session.user.email)) {
+          await supabase.auth.signOut()
+          usuarioIdRef.current = null
+          setUsuario(null)
+          router.replace("/login")
+          return
+        }
         // Si es el mismo usuario (token refresh), no hacer nada para evitar re-renders
         if (usuarioIdRef.current === session.user.id) return
         usuarioIdRef.current = session.user.id

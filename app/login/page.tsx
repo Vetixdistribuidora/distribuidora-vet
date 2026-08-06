@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+import { esEmailAutorizado } from "@/lib/acceso"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -15,9 +16,13 @@ export default function LoginPage() {
     setLoading(true)
     setError("")
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) {
         setError("Email o contraseña incorrectos")
+      } else if (!esEmailAutorizado(data.user?.email)) {
+        // Cuenta válida en Supabase pero sin permiso para el sistema interno
+        await supabase.auth.signOut()
+        setError("Esta cuenta no tiene acceso al sistema.")
       } else {
         router.push("/")
       }
