@@ -29,14 +29,25 @@ const METODOS: Record<string, { label: string; icon: string; color: string }> = 
   otro:           { label: "Otro",           icon: "➕", color: "#64748b" },
   sin_especificar:{ label: "Sin especificar",icon: "❔", color: "#94a3b8" },
 }
-const ORDEN_METODOS = ["efectivo", "transferencia", "cheque", "echeq", "tarjeta", "credito", "otro", "sin_especificar"]
+// "credito" NO va en ORDEN_METODOS: no es un medio de pago elegible en el alta
+// manual, solo se usa como etiqueta al mostrar cobros pagados con nota de crédito.
+const ORDEN_METODOS = ["efectivo", "transferencia", "cheque", "echeq", "tarjeta", "otro", "sin_especificar"]
 
 // ¿Este cobro de cuenta corriente se pagó aplicando una nota de crédito / saldo
 // a favor del cliente? Deudores lo guarda como metodo_pago "otro" con la nota
 // "Nota de crédito aplicada: $X" (también aceptamos un método "credito" directo).
+// No es plata real que entra a la caja.
 function esCobroCredito(metodo: string | null | undefined, nota: string | null | undefined): boolean {
   if ((metodo || "").toLowerCase() === "credito") return true
   return /nota de cr[eé]dito/i.test(nota || "")
+}
+
+// ¿Este pago a proveedor se hizo con nota de crédito / saldo a favor?
+// (Proveedores lo guarda como metodo_pago "Nota de crédito"; Compras, como
+// "Saldo a favor".) Tampoco es plata real que sale de la caja.
+function esEgresoCredito(metodo: string | null | undefined): boolean {
+  const m = (metodo || "").toLowerCase()
+  return m === "nota de crédito" || m === "nota de credito" || m === "saldo a favor" || m === "credito"
 }
 
 // Categorías de egreso ───────────────────────────────────────────────────────
@@ -129,6 +140,7 @@ type FilaCaja = {
   egreso: number
   origen: "venta" | "cobro_cc" | "compra" | "manual"
   editable: boolean
+  noCash?: boolean       // nota de crédito / saldo a favor → no es plata real, no suma a la caja
   raw?: any
 }
 
@@ -204,10 +216,14 @@ export default function CajaPage() {
     setToast({ msg, tipo }); setTimeout(() => setToast(null), 3000)
   }
 
-  const ingresosMes = Object.values(ingresosPorMetodo).reduce((s, m) => s + m.total, 0)
-  const egresosMes = Object.values(egresosPorCat).reduce((s, v) => s + v, 0)
+  // El crédito (nota de crédito / saldo a favor) nunca cuenta como caja real
+  const ingresosMes = Object.entries(ingresosPorMetodo).reduce((s, [k, m]) => s + (k === "credito" ? 0 : m.total), 0)
+  const egresosMes = Object.entries(egresosPorCat).reduce((s, [k, v]) => s + (k === "credito" ? 0 : v), 0)
   const netoMes = ingresosMes - egresosMes
   const cierre = apertura + netoMes
+  // Notas de crédito / saldo a favor del mes (informativo — NO suman a la caja)
+  const creditoIngMes = filas.reduce((s, f) => s + (f.noCash ? f.ingreso : 0), 0)
+  const creditoEgMes = filas.reduce((s, f) => s + (f.noCash ? f.egreso : 0), 0)
 
   // ── Carga principal ───────────────────────────────────────────────────────
   const cargar = useCallback(async () => {
@@ -344,37 +360,37 @@ export default function CajaPage() {
       }
       // Cobros de cuenta corriente
       for (const p of cobrosCC) {
-        const metodo = esCobroCredito(p.metodo_pago, p.nota)
-          ? "credito"
-          : normMetodo(p.metodo_pago || inferirMetodo(p.nota))
+        const esCred = esCobroCredito(p.metodo_pago, p.nota)
+        const metodo = esCred ? "credito" : normMetodo(p.metodo_pago || inferirMetodo(p.nota))
         const monto = Number(p.monto) || 0
         if (enMesVisto(p.fecha)) {
-          addIng(metodo, monto, "cc")
+          if (!esCred) addIng(metodo, monto, "cc")   // la nota de crédito no es plata real → no suma
           const v = ventasInfo[p.venta_id]
           const cli = v?.clientes
           filasMes.push({
             id: "p-" + p.id, fecha: p.fecha,
             detalle: `Cobro CC${cli ? " · " + (cli.nombre || "") + " " + (cli.apellido || "") : ""}${p.nro_recibo ? " · Rec " + p.nro_recibo : ""}`.trim(),
             categoriaKey: metodo, grupoLabel: "Cobro cuenta corriente", metodo, ingreso: monto, egreso: 0,
-            origen: "cobro_cc", editable: false,
+            origen: "cobro_cc", editable: false, noCash: esCred,
           })
         } else if (enPrevio(p.fecha)) {
-          previoNeto += monto
+          if (!esCred) previoNeto += monto           // el crédito no arrastra al saldo de apertura
         }
       }
       // Pagos a proveedores (egreso)
       for (const cp of comprasPagos) {
+        const esCred = esEgresoCredito(cp.metodo_pago)
         const monto = Number(cp.monto) || 0
         if (enMesVisto(cp.fecha)) {
-          egCat["proveedores"] = (egCat["proveedores"] || 0) + monto
+          if (!esCred) egCat["proveedores"] = (egCat["proveedores"] || 0) + monto   // NC no es plata real → no suma
           filasMes.push({
             id: "cp-" + cp.id, fecha: cp.fecha,
             detalle: `Pago a ${proveedorPorCompra[cp.compra_id] || "proveedor"}${cp.notas ? " · " + cp.notas : ""}`,
-            categoriaKey: "proveedores", grupoLabel: "Pago a proveedor", metodo: normMetodo(cp.metodo_pago),
-            ingreso: 0, egreso: monto, origen: "compra", editable: false,
+            categoriaKey: esCred ? "credito" : "proveedores", grupoLabel: "Pago a proveedor", metodo: esCred ? "credito" : normMetodo(cp.metodo_pago),
+            ingreso: 0, egreso: monto, origen: "compra", editable: false, noCash: esCred,
           })
         } else if (enPrevio(cp.fecha)) {
-          previoNeto -= monto
+          if (!esCred) previoNeto -= monto           // el crédito no arrastra al saldo de apertura
         }
       }
       // Movimientos manuales
@@ -553,7 +569,8 @@ export default function CajaPage() {
   // ── Exportar Excel ──
   async function exportar() {
     const XLSX = await import("xlsx")
-    const datos = filas.map(f => ({
+    // Excluimos las notas de crédito (no son caja real) para que las filas cierren con los totales
+    const datos = filas.filter(f => !f.noCash).map(f => ({
       "Fecha": fmtFecha(f.fecha),
       "Detalle": f.detalle,
       "Concepto": f.grupoLabel,
@@ -573,8 +590,11 @@ export default function CajaPage() {
   }
 
   // ── Agrupar movimientos en bloques separados (cada uno = una planilla) ──
+  // Las notas de crédito (noCash) van a su propia planilla informativa aparte.
+  const filasNoCash = filas.filter(f => f.noCash)
   const filasPorBloque: Record<string, FilaCaja[]> = {}
   for (const f of filas) {
+    if (f.noCash) continue
     const bk = f.ingreso > 0 ? "ingresos" : f.categoriaKey
     if (!filasPorBloque[bk]) filasPorBloque[bk] = []
     filasPorBloque[bk].push(f)
@@ -678,6 +698,12 @@ export default function CajaPage() {
             <span style={{ color: "#64748b", fontWeight: 700, fontSize: 13 }}>Total ingresos</span>
             <span style={{ color: "#16a34a", fontWeight: 800, fontSize: 17 }}>{fmt(ingresosMes)}</span>
           </div>
+          {creditoIngMes > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, fontSize: 11, color: "#0d9488" }}>
+              <span>🎫 Nota de crédito aplicada</span>
+              <span style={{ fontWeight: 700 }}>{fmt(creditoIngMes)} · no suma a caja</span>
+            </div>
+          )}
         </div>
 
         {/* Egresos por categoría */}
@@ -706,6 +732,12 @@ export default function CajaPage() {
             <span style={{ color: "#64748b", fontWeight: 700, fontSize: 13 }}>Total egresos</span>
             <span style={{ color: "#ef4444", fontWeight: 800, fontSize: 17 }}>{fmt(egresosMes)}</span>
           </div>
+          {creditoEgMes > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, fontSize: 11, color: "#0d9488" }}>
+              <span>🎫 Pagado con nota de crédito</span>
+              <span style={{ fontWeight: 700 }}>{fmt(creditoEgMes)} · no suma a caja</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -769,6 +801,43 @@ export default function CajaPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── Planilla informativa: notas de crédito (no es caja real) ── */}
+      {filasNoCash.length > 0 && (
+        <div style={{ ...cardBase, marginTop: 16, padding: 0, overflow: "hidden", borderLeft: "4px solid #0d9488" }}>
+          <div style={{ padding: "14px 18px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 18 }}>🎫</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a" }}>Notas de crédito / saldo a favor</div>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>No es plata real que entró o salió — no afecta el saldo de caja</div>
+              </div>
+            </div>
+            <span style={{ fontSize: 11, color: "#0d9488", fontWeight: 700, background: "#f0fdfa", border: "1px solid #99f6e4", borderRadius: 999, padding: "3px 10px" }}>informativo</span>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 540 }}>
+              <thead>
+                <tr style={{ background: "#f8fafc" }}>
+                  {["Fecha", "Detalle", "Tipo", "Monto"].map((h, i) => (
+                    <th key={h} style={{ textAlign: i === 3 ? "right" : "left", padding: "8px 14px", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filasNoCash.map(f => (
+                  <tr key={f.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "8px 14px", fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>{fmtFecha(f.fecha)}</td>
+                    <td style={{ padding: "8px 14px", fontSize: 13, color: "#0f172a", maxWidth: 320 }}>{f.detalle}</td>
+                    <td style={{ padding: "8px 14px", fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>{f.ingreso > 0 ? "Cobro con NC" : "Pago con NC"}</td>
+                    <td style={{ padding: "8px 14px", textAlign: "right", fontSize: 13, fontWeight: 700, color: "#0d9488", whiteSpace: "nowrap" }}>{fmt(f.ingreso || f.egreso)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
