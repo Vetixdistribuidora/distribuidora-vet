@@ -25,10 +25,19 @@ const METODOS: Record<string, { label: string; icon: string; color: string }> = 
   cheque:         { label: "Cheque",         icon: "🧾", color: "#7c3aed" },
   echeq:          { label: "E-Cheq",         icon: "📲", color: "#0891b2" },
   tarjeta:        { label: "Tarjeta",        icon: "💳", color: "#ea580c" },
+  credito:        { label: "Nota de crédito", icon: "🎫", color: "#0d9488" },
   otro:           { label: "Otro",           icon: "➕", color: "#64748b" },
   sin_especificar:{ label: "Sin especificar",icon: "❔", color: "#94a3b8" },
 }
-const ORDEN_METODOS = ["efectivo", "transferencia", "cheque", "echeq", "tarjeta", "otro", "sin_especificar"]
+const ORDEN_METODOS = ["efectivo", "transferencia", "cheque", "echeq", "tarjeta", "credito", "otro", "sin_especificar"]
+
+// ¿Este cobro de cuenta corriente se pagó aplicando una nota de crédito / saldo
+// a favor del cliente? Deudores lo guarda como metodo_pago "otro" con la nota
+// "Nota de crédito aplicada: $X" (también aceptamos un método "credito" directo).
+function esCobroCredito(metodo: string | null | undefined, nota: string | null | undefined): boolean {
+  if ((metodo || "").toLowerCase() === "credito") return true
+  return /nota de cr[eé]dito/i.test(nota || "")
+}
 
 // Categorías de egreso ───────────────────────────────────────────────────────
 const CAT_EGRESO: Record<string, { label: string; icon: string; color: string; auto?: boolean }> = {
@@ -42,8 +51,49 @@ const CAT_EGRESO: Record<string, { label: string; icon: string; color: string; a
 }
 const ORDEN_CAT_EGRESO = ["proveedores", "retiro", "flete", "gasto_distribuidora", "gasto_casa", "gasto_camioneta", "otro_egreso"]
 
-// Metadata de una categoría de egreso — si es custom (escrita por el usuario) usa un default
-const metaCatEgreso = (k: string) => CAT_EGRESO[k] || { label: k, icon: "📝", color: "#64748b" }
+// Íconos para categorías custom según palabra clave (para que no sean todas iguales).
+const ICONOS_CUSTOM_KW: [RegExp, string][] = [
+  [/entreteni|recrea|ocio|salida|cine|streaming|netflix|spotify/i, "🎬"],
+  [/santiago|zabale|socio|personal|dueñ|due(ñ|n)o/i, "🧑"],
+  [/internet|wifi|web|hosting|dominio/i, "🌐"],
+  [/alquiler|renta/i, "🔑"],
+  [/sueldo|salario|emplead|jornal|aguinaldo/i, "👥"],
+  [/luz|electric/i, "💡"],
+  [/agua/i, "💧"],
+  [/\bgas\b|garrafa/i, "🔥"],
+  [/nafta|combustible|gasoil|gas oil|diesel|ypf|shell/i, "⛽"],
+  [/impuesto|afip|arca|tasa|municipal|ingresos brutos|iibb|monotributo/i, "🧾"],
+  [/segur/i, "🛡️"],
+  [/comida|almuerzo|super|mercado|viand|kiosco/i, "🍽️"],
+  [/banco|comision|comisión|financ|interes|interés/i, "🏦"],
+  [/telefono|teléfono|celular|movil|móvil|linea|línea/i, "📱"],
+  [/manteni|repar|arreglo|service/i, "🔧"],
+  [/limpieza|higiene/i, "🧽"],
+  [/papeler|librer|insumo/i, "🖊️"],
+  [/public|marketing|redes|instagram|facebook|cartel/i, "📣"],
+  [/envio|envío|correo|encomienda|flete/i, "📦"],
+  [/salud|medic|farmac|obra social/i, "⚕️"],
+]
+const ICONOS_CUSTOM_FALLBACK = ["🏷️", "🗂️", "🎯", "⭐", "🔖", "💠", "🧩", "📌"]
+const COLORES_CUSTOM = ["#6366f1", "#0ea5e9", "#14b8a6", "#a855f7", "#ec4899", "#f59e0b", "#22c55e", "#ef4444"]
+// Hash estable de un string → mismo ícono/color siempre para la misma categoría.
+function hashStr(s: string): number {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0
+  return Math.abs(h)
+}
+// Metadata de una categoría de egreso — si es custom (escrita por el usuario) le
+// asigna un ícono por palabra clave, o uno estable y variado según su nombre.
+const metaCatEgreso = (k: string) => {
+  if (CAT_EGRESO[k]) return CAT_EGRESO[k]
+  const kw = ICONOS_CUSTOM_KW.find(([re]) => re.test(k))
+  const h = hashStr(k.toLowerCase())
+  return {
+    label: k,
+    icon: kw ? kw[1] : ICONOS_CUSTOM_FALLBACK[h % ICONOS_CUSTOM_FALLBACK.length],
+    color: COLORES_CUSTOM[h % COLORES_CUSTOM.length],
+  }
+}
 
 // Categorías de ingreso manual
 const CAT_INGRESO: Record<string, { label: string; icon: string }> = {
@@ -135,6 +185,9 @@ export default function CajaPage() {
   const [filas, setFilas] = useState<FilaCaja[]>([])
   const [ingresosPorMetodo, setIngresosPorMetodo] = useState<Record<string, { total: number; ventas: number; cc: number; manual: number }>>({})
   const [egresosPorCat, setEgresosPorCat] = useState<Record<string, number>>({})
+  // Todas las categorías de egreso custom usadas alguna vez (para que los chips
+  // queden disponibles todos los meses, sin tener que recrearlas cada mes).
+  const [catsEgresoHist, setCatsEgresoHist] = useState<string[]>([])
 
   // Modales
   const [modalMov, setModalMov] = useState<null | "nuevo" | "editar">(null)
@@ -220,6 +273,13 @@ export default function CajaPage() {
       const comprasPagos = comprasPagosRes.data || []
       const movs = movsRes.data || []
 
+      // Categorías de egreso usadas alguna vez (TODOS los meses) → chips permanentes
+      const { data: catsHist } = await supabase
+        .from("movimientos_caja").select("categoria").eq("tipo", "egreso")
+      const setCats = new Set<string>()
+      ;(catsHist || []).forEach((r: any) => { if (r.categoria) setCats.add(r.categoria) })
+      setCatsEgresoHist([...setCats])
+
       // 2b. Para los pagos: traer info de su venta (metodo_cobro + cliente) → quedarnos con los CC
       const ventaIds = [...new Set(pagos.map((p: any) => p.venta_id).filter((x: any) => x != null))]
       const ventasInfo: Record<number, any> = {}
@@ -284,7 +344,9 @@ export default function CajaPage() {
       }
       // Cobros de cuenta corriente
       for (const p of cobrosCC) {
-        const metodo = normMetodo(p.metodo_pago || inferirMetodo(p.nota))
+        const metodo = esCobroCredito(p.metodo_pago, p.nota)
+          ? "credito"
+          : normMetodo(p.metodo_pago || inferirMetodo(p.nota))
         const monto = Number(p.monto) || 0
         if (enMesVisto(p.fecha)) {
           addIng(metodo, monto, "cc")
@@ -736,7 +798,7 @@ export default function CajaPage() {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                 {[
                   ...ORDEN_CAT_EGRESO.filter(k => k !== "proveedores"),
-                  ...Object.keys(egresosPorCat).filter(k => egresosPorCat[k] && !ORDEN_CAT_EGRESO.includes(k)),
+                  ...catsEgresoHist.filter(k => !ORDEN_CAT_EGRESO.includes(k)),
                 ].map(k => {
                   const meta = metaCatEgreso(k)
                   const activa = (movForm.categoriaTexto || "").trim().toLowerCase() === meta.label.toLowerCase()
