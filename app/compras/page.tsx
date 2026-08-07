@@ -634,10 +634,14 @@ export default function ComprasPage() {
     const monto = parseFloat(formPago.monto) || 0;
     const pctDesc = parseFloat(formPago.descuento) || 0;
     const saldoDeudaOrig = compraVer.total - compraVer.total_pagado;
-    // El descuento perdona parte de la deuda actual (reduce el total de la compra)
-    const montoDesc = pctDesc > 0 ? Math.round(saldoDeudaOrig * (pctDesc / 100) * 100) / 100 : 0;
-    const saldoDeuda = Math.round((saldoDeudaOrig - montoDesc) * 100) / 100; // a pagar después del descuento
-    const saldoAplicado = usarSaldoFavor ? Math.min(saldoFavorDisponible, saldoDeuda) : 0;
+    // El saldo a favor cubre parte del saldo BRUTO; el descuento por % se aplica
+    // sobre el NETO (lo que NO cubre el saldo a favor), tal como lo factura el
+    // proveedor. Antes descontaba el % también sobre el saldo a favor, lo que
+    // daba de menos y obligaba a bajar el porcentaje a mano.
+    const saldoAplicado = usarSaldoFavor ? Math.min(saldoFavorDisponible, saldoDeudaOrig) : 0;
+    const neto = Math.round((saldoDeudaOrig - saldoAplicado) * 100) / 100;
+    const montoDesc = pctDesc > 0 ? Math.round(neto * (pctDesc / 100) * 100) / 100 : 0;
+    const saldoDeuda = Math.round((saldoDeudaOrig - montoDesc) * 100) / 100; // a saldar (crédito + efectivo) tras descuento
     const montoEfectivo = monto + saldoAplicado; // total en plata que cubre la deuda
     if (monto <= 0 && saldoAplicado <= 0 && montoDesc <= 0) return;
 
@@ -1363,9 +1367,11 @@ export default function ComprasPage() {
       {modalPago && compraVer && (() => {
         const saldoDeudaTotal = compraVer.total - compraVer.total_pagado;
         const pctDescPrev = parseFloat(formPago.descuento) || 0;
-        const montoDescPrev = pctDescPrev > 0 ? Math.round(saldoDeudaTotal * (pctDescPrev / 100) * 100) / 100 : 0;
-        const saldoDeuda = Math.round((saldoDeudaTotal - montoDescPrev) * 100) / 100; // a pagar tras descuento
-        const saldoAplicado = usarSaldoFavor ? Math.min(saldoFavorDisponible, saldoDeuda) : 0;
+        // El saldo a favor cubre el bruto; el descuento se calcula sobre el neto.
+        const saldoAplicado = usarSaldoFavor ? Math.min(saldoFavorDisponible, saldoDeudaTotal) : 0;
+        const netoPrev = Math.round((saldoDeudaTotal - saldoAplicado) * 100) / 100;
+        const montoDescPrev = pctDescPrev > 0 ? Math.round(netoPrev * (pctDescPrev / 100) * 100) / 100 : 0;
+        const saldoDeuda = Math.round((saldoDeudaTotal - montoDescPrev) * 100) / 100; // a saldar (crédito + efectivo) tras descuento
         const montoIngresado = parseFloat(formPago.monto) || 0;
         const montoEfectivo = montoIngresado + saldoAplicado;
         const exceso = montoIngresado > (saldoDeuda - saldoAplicado) ? montoIngresado - (saldoDeuda - saldoAplicado) : 0;

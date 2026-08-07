@@ -306,12 +306,20 @@ export default function ProveedoresPage() {
     const pctDesc = parseFloat(descuentoPago) || 0;
     // ── Modo selección: cada compra tildada se paga en full (con descuento opcional) ──
     if (comprasSeleccionadas.size > 0) {
+      // La nota de crédito / saldo a favor cubre parte del saldo BRUTO; el
+      // descuento por % se aplica sobre el NETO (lo que NO cubre la nota de
+      // crédito), tal como lo factura el proveedor. Así, con 3% real da el
+      // mismo total que la factura (antes descontaba 3% también sobre la NC).
+      let creditoRestante = usarSaldoFavor ? saldoFavorProv : 0;
       return comprasPendientes.map(c => {
         const saldo = Math.round((c.total - c.total_pagado) * 100) / 100;
-        if (!comprasSeleccionadas.has(c.id)) return { ...c, saldo, montoDesc: 0, pago: 0, resultado: "sin_cambio" };
-        const montoDesc = pctDesc > 0 ? Math.round(saldo * (pctDesc / 100) * 100) / 100 : 0;
+        if (!comprasSeleccionadas.has(c.id)) return { ...c, saldo, credito: 0, montoDesc: 0, pago: 0, resultado: "sin_cambio" };
+        const credito = Math.min(creditoRestante, saldo);
+        creditoRestante = Math.round((creditoRestante - credito) * 100) / 100;
+        const neto = Math.round((saldo - credito) * 100) / 100;
+        const montoDesc = pctDesc > 0 ? Math.round(neto * (pctDesc / 100) * 100) / 100 : 0;
         const pago = Math.round((saldo - montoDesc) * 100) / 100;
-        return { ...c, saldo, montoDesc, pago, resultado: "pagado" };
+        return { ...c, saldo, credito, montoDesc, pago, resultado: "pagado" };
       });
     }
     // ── Modo monto libre: reparte de la más antigua a la más nueva (sin descuento) ──
@@ -320,12 +328,15 @@ export default function ProveedoresPage() {
     const total = monto + saldoExtra;
     if (total <= 0 || comprasPendientes.length === 0) return [];
     let restante = total;
+    let creditoRestante = saldoExtra;
     return comprasPendientes.map(c => {
       const saldo = Math.round((c.total - c.total_pagado) * 100) / 100;
-      if (restante <= 0) return { ...c, saldo, montoDesc: 0, pago: 0, resultado: "sin_cambio" };
+      if (restante <= 0) return { ...c, saldo, credito: 0, montoDesc: 0, pago: 0, resultado: "sin_cambio" };
       const pago = Math.min(restante, saldo);
       restante = Math.round((restante - pago) * 100) / 100;
-      return { ...c, saldo, montoDesc: 0, pago: Math.round(pago * 100) / 100, resultado: pago >= saldo ? "pagado" : "parcial" };
+      const credito = Math.min(creditoRestante, pago);
+      creditoRestante = Math.round((creditoRestante - credito) * 100) / 100;
+      return { ...c, saldo, credito, montoDesc: 0, pago: Math.round(pago * 100) / 100, resultado: pago >= saldo ? "pagado" : "parcial" };
     });
   }
 
@@ -901,7 +912,7 @@ export default function ProveedoresPage() {
                   const preview = calcularPreview();
                   const totalAplicado = preview.reduce((s: number, c: any) => s + c.pago, 0);
                   const totalDescuento = preview.reduce((s: number, c: any) => s + (c.montoDesc || 0), 0);
-                  const creditoUsado = Math.min(saldoExtra, totalAplicado);
+                  const creditoUsado = Math.min(saldoExtra, preview.reduce((s: number, c: any) => s + (c.credito || 0), 0));
                   const cashReal = Math.max(0, Math.round((totalAplicado - creditoUsado) * 100) / 100);
                   const exceso = seleccion ? 0 : Math.max(0, Math.round((monto + saldoExtra - totalAplicado) * 100) / 100);
                   const saldadas = preview.filter((c: any) => c.resultado === "pagado").length;
